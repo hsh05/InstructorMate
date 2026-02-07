@@ -1,16 +1,47 @@
-# demo_app
 
-A new Flutter project.
+---
 
-## Getting Started
+## Core Features
+- Upload syllabus directly in **PDF format**
+- Extract text page-by-page (in-memory processing)
+- Convert pages into structured content chunks
+- Retrieve only **relevant syllabus sections**
+- Generate **context-grounded answers**
+- Return **answer with source references**
+- User-friendly **Flutter-based interface**
+- No database usage (CSV / memory-based)
 
-This project is a starting point for a Flutter application.
+---
 
-A few resources to get you started if this is your first Flutter project:
+## Key Design Principles
+- **Single Responsibility Principle (SRP)**: Each class performs one task
+- **Dependency Injection (DI)**: Components are injected, not hard-coded
+- **Separation of Concerns**: UI, backend, retrieval, and LLM logic are decoupled
+- **Prompt Safety**: LLM answers only from provided syllabus content
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Technology Stack
+**Backend**
+- Python 3.12+
+- FastAPI
+- pypdf
+- OpenAI API
+- Pydantic
+- Uvicorn
+
+**Frontend**
+- Flutter
+- Dart
+- file_picker
+- http
+
+---
+
+## How to Run
+
+### Backend
+```bash
+pip install fastapi uvicorn pypdf openai python-dotenv
+uvicorn server:app --reload
+

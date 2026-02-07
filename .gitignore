@@ -3,6 +3,15 @@
 
 ### Flutter ###
 # Flutter/Dart/Pub related
+# Local IDE / Flutter files
+# Local secrets / outputs (do not commit)
+.env
+output/
+uploads/
+syllabus_files/
+*.pdf
+.idea/
+.metadata
 **/doc/api/
 .dart_tool/
 .flutter-plugins
@@ -18,6 +27,14 @@ lib/generated_plugin_registrant.dart
 # Regenerating the pubspec.lock file lets you test your package against the latest compatible versions of its dependencies.
 # See https://dart.dev/guides/libraries/private-files#pubspeclock
 #pubspec.lock
+
+backend/.env
+backend/output/
+backend/uploads/
+backend/syllabus_files/
+*.pdf
+__pycache__/
+
 
 # Android related
 **/android/**/gradle-wrapper.jar
