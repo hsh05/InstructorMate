@@ -7,9 +7,7 @@ import 'package:http/http.dart' as http; // HTTP requests
 import 'package:http_parser/http_parser.dart'; // MediaType for multipart
 import 'package:url_launcher/url_launcher.dart'; // open download URLs in browser
 
-
 void main() => runApp(const SyllabusApp()); // app entry point
-
 
 class SyllabusApp extends StatelessWidget { // root widget
   const SyllabusApp({super.key}); // constructor
@@ -24,7 +22,6 @@ class SyllabusApp extends StatelessWidget { // root widget
   } // end build
 } // end class
 
-
 class SyllabusHome extends StatefulWidget { // stateful because we hold state
   const SyllabusHome({super.key}); // constructor
 
@@ -32,10 +29,13 @@ class SyllabusHome extends StatefulWidget { // stateful because we hold state
   State<SyllabusHome> createState() => _SyllabusHomeState(); // create state
 } // end widget
 
-
 class _SyllabusHomeState extends State<SyllabusHome> { // state class
+<<<<<<< Updated upstream
 
   final String baseUrl = "https://instructormate1.onrender.com";// backend URL
+=======
+  static const String baseUrl = "https://instructormate1.onrender.com"; // backend URL
+>>>>>>> Stashed changes
 
   final TextEditingController _questionCtrl = TextEditingController(); // controller for question input
 
@@ -57,7 +57,6 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     _questionCtrl.dispose(); // dispose controller
     super.dispose(); // call parent dispose
   } // end dispose
-
 
   Future<void> pickPdf() async { // pick a pdf from device
     setState(() { // update UI
@@ -93,7 +92,6 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     }); // end setState
   } // end pickPdf
 
-
   Future<void> convertSelectedPdf() async { // upload pdf and convert on backend
     if (_pickedFile == null || _fileBytes == null) { // validate selection
       setState(() => _error = "Please choose a PDF first."); // error
@@ -111,7 +109,7 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     }); // end setState
 
     try { // protected block
-      final uri = Uri.parse("$_baseUrl/convert-upload"); // endpoint URL
+      final uri = Uri.parse("$baseUrl/convert-upload"); // endpoint URL
 
       final req = http.MultipartRequest('POST', uri) // create multipart request
         ..files.add( // add file
@@ -155,7 +153,6 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     } // end finally
   } // end convertSelectedPdf
 
-
   Future<void> ask() async { // ask question using chunks csv
     final question = _questionCtrl.text.trim(); // sanitize question
     if (question.isEmpty) { // validate question
@@ -175,7 +172,7 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     }); // end setState
 
     try { // protected call
-      final uri = Uri.parse("$_baseUrl/ask-from-chunks-path"); // endpoint URL
+      final uri = Uri.parse("$baseUrl/ask-from-chunks-path"); // endpoint URL
 
       final resp = await http.post( // send POST
         uri, // endpoint
@@ -211,7 +208,6 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     } // end finally
   } // end ask
 
-
   Future<void> viewCsvInUi(String title, String csvPath) async { // load CSV text and show in UI
     setState(() { // update UI
       _loading = true; // start loading
@@ -222,7 +218,7 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
 
     try { // protected request
       final encodedPath = Uri.encodeQueryComponent(csvPath); // url-encode path for query param
-      final uri = Uri.parse("$_baseUrl/csv-text?path=$encodedPath"); // build URL
+      final uri = Uri.parse("$baseUrl/csv-text?path=$encodedPath"); // build URL
       final resp = await http.get(uri); // call GET
 
       if (resp.statusCode != 200) { // handle errors
@@ -244,10 +240,9 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     } // end finally
   } // end viewCsvInUi
 
-
   Future<void> downloadCsv(String csvPath) async { // open download URL in browser
     final encodedPath = Uri.encodeQueryComponent(csvPath); // encode path
-    final url = Uri.parse("$_baseUrl/csv-download?path=$encodedPath"); // build download URL
+    final url = Uri.parse("$baseUrl/csv-download?path=$encodedPath"); // build download URL
     final ok = await launchUrl(url, mode: LaunchMode.externalApplication); // launch browser/app
     if (!ok) { // if launch failed
       if (!mounted) return; // safety
@@ -255,17 +250,15 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
     } // end fail
   } // end downloadCsv
 
-
   @override
   Widget build(BuildContext context) { // build UI
     final fileName = _pickedFile?.name ?? ""; // selected file name
 
     final canViewMain = _singleRowCsvPath != null && _singleRowCsvPath!.isNotEmpty; // view main enabled
-    final canViewChunks = _chunksCsvPath != null && _chunksCsvPath!.isNotEmpty; // view chunks enabled
 
     return Scaffold( // page scaffold
       appBar: AppBar( // top app bar
-        title: const Text("Syllabus Q&A (Convert + Ask + View/Download CSV)"), // title
+        title: const Text("Syllabus Q&A"), // title
       ), // end AppBar
       body: Padding( // add padding
         padding: const EdgeInsets.all(16), // padding size
@@ -300,26 +293,6 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
             const SizedBox(height: 16), // spacing
 
             const Text( // section label
-              "Conversion Output (Backend Paths)", // text
-              style: TextStyle(fontWeight: FontWeight.bold), // style
-            ), // end Text
-            const SizedBox(height: 8), // spacing
-
-            Container( // path box
-              padding: const EdgeInsets.all(12), // padding
-              decoration: BoxDecoration( // decoration
-                border: Border.all(color: Colors.black12), // border
-                borderRadius: BorderRadius.circular(8), // radius
-              ), // end decoration
-              child: Text( // display paths
-                "main_csv: ${_singleRowCsvPath ?? "—"}\n"
-                "chunks_csv: ${_chunksCsvPath ?? "—"}", // text
-              ), // end Text
-            ), // end Container
-
-            const SizedBox(height: 16), // spacing
-
-            const Text( // section label
               "Step 1.5 — View / Download the Generated CSV", // label
               style: TextStyle(fontWeight: FontWeight.bold), // style
             ), // end Text
@@ -348,30 +321,6 @@ class _SyllabusHomeState extends State<SyllabusHome> { // state class
             ), // end Row
 
             const SizedBox(height: 10), // spacing
-
-            Row( // second row
-              children: [ // row children
-                Expanded( // expand
-                  child: ElevatedButton( // view chunks csv
-                    onPressed: (_loading || !canViewChunks)
-                        ? null
-                        : () => viewCsvInUi("Chunks CSV (For Q&A)", _chunksCsvPath!), // view chunks
-                    child: const Text("View Chunks CSV"), // label
-                  ), // end button
-                ), // end Expanded
-                const SizedBox(width: 10), // spacing
-                Expanded( // expand
-                  child: ElevatedButton( // download chunks csv
-                    onPressed: (_loading || !canViewChunks)
-                        ? null
-                        : () => downloadCsv(_chunksCsvPath!), // download chunks
-                    child: const Text("Download Chunks CSV"), // label
-                  ), // end button
-                ), // end Expanded
-              ], // end row children
-            ), // end Row
-
-            const SizedBox(height: 16), // spacing
 
             if (_csvPreviewTitle != null) ...[ // show preview section if available
               Text( // preview title

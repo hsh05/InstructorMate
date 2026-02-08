@@ -7,6 +7,6 @@ void main() {
     await tester.pump();
 
     // If the app bar title exists, this confirms the UI built.
-    expect(find.text("Syllabus Q&A (Convert + Ask)"), findsOneWidget);
+    expect(find.text("Syllabus Q&A"), findsOneWidget);
   });
 }

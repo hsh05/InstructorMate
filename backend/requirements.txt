@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 fastapi
 uvicorn[standard]
 python-multipart
@@ -6,3 +7,13 @@ pydantic
 pypdf
 openai
 pandas
+=======
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+pydantic
+pypdf
+openai
+pandas
+>>>>>>> Stashed changes
