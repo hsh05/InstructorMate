@@ -1,48 +1,44 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart';
 
 class LoginController {
-  final TextEditingController emailController;
-  final TextEditingController passwordController;
+  final TextEditingController email, password;
 
-  LoginController({
-    required this.emailController,
-    required this.passwordController,
-  });
+  LoginController(this.email, this.password);
 
-  bool validateInput() {
-    final email = emailController.text;
-    final password = passwordController.text;
-
-    if (email.isEmpty || !email.contains('@')) return false;
-    if (password.isEmpty || password.length < 6) return false;
-
-    return true;
-  }
-
-  /// New login method that checks credentials against users.csv
   Future<bool> login() async {
-    if (!validateInput()) return false;
+    try {
+      final csv = await rootBundle.loadString('lib/assets/users.csv');
+      final inputEmail = email.text.trim().toLowerCase();
+      final inputPassword = password.text.trim();
 
-    // Load CSV from assets
-    final csvContent = await rootBundle.loadString('lib/assets/users.csv');
-    final lines = csvContent.split('\n');
+      // Split and clean lines properly
+      final lines = csv.split('\n')
+        .map((line) => line.trim())  // Remove whitespace from each line
+        .where((line) => line.isNotEmpty)  // Remove empty lines
+        .toList();
 
-    final inputEmail = emailController.text.trim();
-    final inputPassword = passwordController.text.trim();
-
-    for (var line in lines) {
-      final fields = line.split(',');
-      if (fields.length < 2) continue; // skip invalid lines
-
-      final csvEmail = fields[0].trim();
-      final csvPassword = fields[1].trim();
-
-      if (csvEmail == inputEmail && csvPassword == inputPassword) {
-        return true; // found a match
+      // Skip header and check each line
+      for (int i = 1; i < lines.length; i++) {
+        final fields = lines[i].split(',');
+        
+        if (fields.length >= 2) {
+          final csvEmail = fields[0].trim().toLowerCase();
+          final csvPassword = fields[1].trim();
+          
+          if (csvEmail == inputEmail && csvPassword == inputPassword) {
+            debugPrint('✅ Login successful for: $inputEmail');
+            return true;
+          }
+        }
       }
+      
+      debugPrint('❌ Login failed - no match found');
+      return false;
+      
+    } catch (e) {
+      debugPrint('❌ Login error: $e');
+      return false;
     }
-
-    return false; // no match
   }
 }
