@@ -35,19 +35,19 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    if (!_loginController.validateInput()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Please enter valid email and password',
-            style: AppStyles.bodyMedium,
-          ),
-          backgroundColor: AppStyles.error,
+Future<void> _handleLogin() async {
+  if (!_loginController.validateInput()) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Please enter valid email and password',
+          style: AppStyles.bodyMedium.copyWith(color: AppStyles.white),        
         ),
-      );
-      return;
-    }
+        backgroundColor: AppStyles.error,
+      ),
+    );
+    return;
+  }
 
     setState(() {
       _isLoading = true;
@@ -226,22 +226,23 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildLoginButton() {
-    return SizedBox(
-      height: AppStyles.buttonHeight,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleLogin,
-        style: AppStyles.elevatedButtonStyle,
-        child: _isLoading
-            ? SizedBox(
-                height: AppStyles.loadingIndicatorSize,
-                width: AppStyles.loadingIndicatorSize,
-                child: CircularProgressIndicator(
-                  strokeWidth: AppStyles.loadingIndicatorStrokeWidth,
-                  valueColor: AlwaysStoppedAnimation(AppStyles.white),
-                ),
-              )
-            : Text('Login', style: AppStyles.buttonText),
-      ),
-    );
-  }
+  return Container(
+    height: AppStyles.buttonHeight,
+    decoration: AppStyles.buttonDecoration, // 👈 THIS is the missing color
+    child: ElevatedButton(
+      onPressed: _isLoading ? null : _handleLogin,
+      style: AppStyles.elevatedButtonStyle, // stays transparent on purpose
+      child: _isLoading
+          ? SizedBox(
+              height: AppStyles.loadingIndicatorSize,
+              width: AppStyles.loadingIndicatorSize,
+              child: CircularProgressIndicator(
+                strokeWidth: AppStyles.loadingIndicatorStrokeWidth,
+                valueColor: AlwaysStoppedAnimation(AppStyles.white),
+              ),
+            )
+          : Text('Login', style: AppStyles.buttonText),
+    ),
+  );
+}
 }

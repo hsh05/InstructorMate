@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 class LoginController {
   final TextEditingController emailController;
@@ -19,8 +20,29 @@ class LoginController {
     return true;
   }
 
+  /// New login method that checks credentials against users.csv
   Future<bool> login() async {
-    await Future.delayed(const Duration(seconds: 2));
-    return validateInput();
+    if (!validateInput()) return false;
+
+    // Load CSV from assets
+    final csvContent = await rootBundle.loadString('lib/assets/users.csv');
+    final lines = csvContent.split('\n');
+
+    final inputEmail = emailController.text.trim();
+    final inputPassword = passwordController.text.trim();
+
+    for (var line in lines) {
+      final fields = line.split(',');
+      if (fields.length < 2) continue; // skip invalid lines
+
+      final csvEmail = fields[0].trim();
+      final csvPassword = fields[1].trim();
+
+      if (csvEmail == inputEmail && csvPassword == inputPassword) {
+        return true; // found a match
+      }
+    }
+
+    return false; // no match
   }
 }
