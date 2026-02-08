@@ -29,13 +29,8 @@ class SyllabusHome extends StatefulWidget { // stateful because we hold state
   State<SyllabusHome> createState() => _SyllabusHomeState(); // create state
 } // end widget
 
-class _SyllabusHomeState extends State<SyllabusHome> { // state class
-<<<<<<< Updated upstream
-
-  final String baseUrl = "https://instructormate1.onrender.com";// backend URL
-=======
-  static const String baseUrl = "https://instructormate1.onrender.com"; // backend URL
->>>>>>> Stashed changes
+class _SyllabusHomeState extends State<SyllabusHome> {
+  static const String baseUrl = "https://instructormate1.onrender.com";
 
   final TextEditingController _questionCtrl = TextEditingController(); // controller for question input
 
