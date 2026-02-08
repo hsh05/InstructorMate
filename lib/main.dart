@@ -35,7 +35,7 @@ class SyllabusHome extends StatefulWidget { // stateful because we hold state
 
 class _SyllabusHomeState extends State<SyllabusHome> { // state class
 
-  static const String _baseUrl = "http://127.0.0.1:8000"; // backend URL
+  final String baseUrl = "https://instructormate1.onrender.com";// backend URL
 
   final TextEditingController _questionCtrl = TextEditingController(); // controller for question input
 
