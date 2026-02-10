@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/state/syllabus_vm.dart';
-import 'top_bar.dart';
+import '../syllabus_home.dart';
 
 // =============================
 // MESSAGE BUBBLES
