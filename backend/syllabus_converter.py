@@ -2,13 +2,13 @@ from __future__ import annotations  # enable forward references in type hints
 
 import csv  # read/write CSV files
 import json  # parse model outputs (JSON)
-import re  # validate snake_case column names
+import re  # validate / normalize column names
 from dataclasses import dataclass  # lightweight immutable data structures
 from pathlib import Path  # safe path operations
-from typing import Dict, List, Optional, Any  # typing helpers
+from typing import Any, Dict, List, Optional, Tuple  # typing helpers
 
-from pypdf import PdfReader  # PDF text extraction library
 from openai import OpenAI  # OpenAI client
+from pypdf import PdfReader  # PDF text extraction library
 
 
 @dataclass(frozen=True)  # make instances immutable
@@ -24,26 +24,97 @@ class ConversionResult:  # represent final conversion file paths
     chunks_csv: str  # output path to chunks CSV used for Q&A
 
 
+class JsonParseError(ValueError):  # specialized parse error for clarity
+    pass  # no extra fields needed
+
+
+class SafeJson:  # SRP: robust JSON parsing utilities
+    @staticmethod
+    def loads_strict_or_extract(text: str) -> Any:  # parse JSON or extract JSON substring
+        text = (text or "").strip()  # normalize and strip whitespace
+        if not text:  # empty output is invalid
+            raise JsonParseError("Empty model output; expected JSON.")  # clear failure
+
+        try:  # first try normal strict parsing
+            return json.loads(text)  # parse full string
+        except Exception:  # if it fails, try to extract JSON object/array substring
+            pass  # continue below
+
+        extracted = SafeJson._extract_first_json(text)  # attempt to locate JSON portion
+        if extracted is None:  # if we could not find a JSON-looking block
+            raise JsonParseError("Model output was not valid JSON and no JSON block was found.")  # fail clearly
+
+        try:  # try parsing the extracted block
+            return json.loads(extracted)  # parse extracted JSON
+        except Exception as e:  # still invalid JSON
+            raise JsonParseError(f"Failed to parse extracted JSON block: {e}") from e  # include root cause
+
+    @staticmethod
+    def _extract_first_json(text: str) -> Optional[str]:  # find first {...} or [...] block
+        start_candidates: List[Tuple[int, str]] = []  # store candidate starts
+        obj_i = text.find("{")  # find first object start
+        arr_i = text.find("[")  # find first array start
+        if obj_i != -1:  # if object exists
+            start_candidates.append((obj_i, "{"))  # add object start
+        if arr_i != -1:  # if array exists
+            start_candidates.append((arr_i, "["))  # add array start
+        if not start_candidates:  # no JSON opening bracket found
+            return None  # cannot extract
+
+        start_candidates.sort(key=lambda x: x[0])  # pick the earliest bracket
+        start, opening = start_candidates[0]  # take earliest
+        closing = "}" if opening == "{" else "]"  # choose matching closer
+
+        depth = 0  # track nested bracket depth
+        in_string = False  # track string literals
+        escape = False  # track escapes inside strings
+
+        for i in range(start, len(text)):  # scan forward from first bracket
+            ch = text[i]  # current char
+
+            if in_string:  # if currently inside JSON string
+                if escape:  # if previous char was backslash
+                    escape = False  # consume escape
+                elif ch == "\\":  # start escape
+                    escape = True  # mark escape
+                elif ch == '"':  # end of string
+                    in_string = False  # exit string mode
+                continue  # skip bracket logic when inside strings
+
+            if ch == '"':  # enter string
+                in_string = True  # now in string
+                continue  # continue loop
+
+            if ch == opening:  # opening bracket
+                depth += 1  # increase depth
+            elif ch == closing:  # closing bracket
+                depth -= 1  # decrease depth
+                if depth == 0:  # if we closed the first JSON block
+                    return text[start : i + 1]  # return full JSON substring
+
+        return None  # did not find a balanced block
+
+
 class PdfTextExtractor:  # SRP: only extract text from PDF
     def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:  # convert PDF to list of PdfChunk
         if not pdf_path.exists():  # validate path exists
-            raise FileNotFoundError(f"PDF not found: {pdf_path.resolve()}")  # raise clear error
+            raise FileNotFoundError(f"PDF not found: {pdf_path.resolve()}")  # clear error
 
-        reader = PdfReader(str(pdf_path))  # open PDF reader
-        chunks: List[PdfChunk] = []  # allocate list
+        reader = PdfReader(str(pdf_path))  # open PDF
+        chunks: List[PdfChunk] = []  # allocate output list
         chunk_id = 1  # start chunk id at 1
 
-        for page_index, page in enumerate(reader.pages, start=1):  # loop pages 1-based
-            text = (page.extract_text() or "").strip()  # extract text and trim whitespace
-            if not text:  # if page has no text
-                continue  # skip it
-            chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))  # store chunk
+        for page_index, page in enumerate(reader.pages, start=1):  # loop pages
+            text = (page.extract_text() or "").strip()  # extract text and trim
+            if not text:  # skip empty pages
+                continue  # continue loop
+            chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))  # append chunk
             chunk_id += 1  # increment id
 
         if not chunks:  # if nothing extracted
             raise RuntimeError("No text extracted. PDF may be scanned; OCR would be needed.")  # fail clearly
 
-        return chunks  # return chunks list
+        return chunks  # return extracted chunks
 
 
 class CsvSchemaLoader:  # SRP: load schema columns from a reference CSV header
@@ -56,7 +127,7 @@ class CsvSchemaLoader:  # SRP: load schema columns from a reference CSV header
             reader = csv.reader(f)  # build CSV reader
             header = next(reader, None)  # read first row
 
-        if not header:  # if header missing
+        if not header:  # header missing
             raise ValueError("Template CSV has no header row.")  # fail clearly
 
         return [h.strip() for h in header if h and h.strip()]  # return trimmed header names
@@ -65,7 +136,6 @@ class CsvSchemaLoader:  # SRP: load schema columns from a reference CSV header
 class SchemaPromptBuilder:  # SRP: build prompts for schema inference
     def build_reference_aware_prompt(self, syllabus_text: str, reference_columns: List[str]) -> str:  # build prompt
         ref_cols = ", ".join(reference_columns)  # join reference columns for readability
-
         return (  # return full prompt text
             "You are a syllabus schema designer.\n"  # role
             "\n"  # spacing
@@ -94,6 +164,26 @@ class SchemaPromptBuilder:  # SRP: build prompts for schema inference
         )  # end prompt
 
 
+class ColumnRules:  # SRP: naming rules for column keys
+    @staticmethod
+    def normalize_name(name: str) -> str:  # convert name to snake_case
+        name = (name or "").strip().lower()  # trim and lower
+        name = re.sub(r"[^a-z0-9]+", "_", name)  # replace non-alnum with underscore
+        name = re.sub(r"_+", "_", name)  # collapse multiple underscores
+        return name.strip("_")  # trim leading/trailing underscores
+
+    @staticmethod
+    def normalize_and_validate(columns: List[Dict[str, Any]]) -> None:  # normalize column "name" fields in-place
+        if not isinstance(columns, list):  # ensure correct type
+            raise ValueError("columns must be a list")  # fail early
+        for col in columns:  # iterate columns
+            raw_name = str(col.get("name", "")).strip()  # read raw name
+            normalized = ColumnRules.normalize_name(raw_name)  # normalize to snake_case
+            if not normalized:  # invalid after normalization
+                raise ValueError(f"Invalid column name after normalization: {raw_name!r}")  # fail clearly
+            col["name"] = normalized  # overwrite name with safe normalized version
+
+
 class SyllabusSchemaInferer:  # SRP: infer schema columns using OpenAI
     def __init__(self, model: str = "gpt-5") -> None:  # configure model
         self.client = OpenAI()  # create OpenAI client
@@ -104,12 +194,12 @@ class SyllabusSchemaInferer:  # SRP: infer schema columns using OpenAI
     def infer_columns(self, chunks: List[PdfChunk], template_csv_path: Optional[str]) -> List[Dict[str, str]]:  # infer schema
         syllabus_text = self._compact_text(chunks, max_chars=12000)  # shrink text for token efficiency
 
-        reference_columns: List[str] = []  # default: none
+        reference_columns: List[str] = []  # allocate required columns list
         if template_csv_path:  # if template provided
             reference_columns = self.schema_loader.load_columns(template_csv_path)  # load required columns
 
-        if not reference_columns:  # if no reference columns
-            raise ValueError("template_csv_path is required to enforce consistent column names.")  # enforce template usage
+        if not reference_columns:  # enforce template usage for consistent header
+            raise ValueError("template_csv_path is required to enforce consistent column names.")  # fail clearly
 
         prompt = self.prompt_builder.build_reference_aware_prompt(syllabus_text, reference_columns)  # build prompt
 
@@ -118,43 +208,29 @@ class SyllabusSchemaInferer:  # SRP: infer schema columns using OpenAI
             input=[{"role": "user", "content": prompt}],  # user prompt
         )  # end call
 
-        raw = response.output_text.strip()  # get output text
-        data = json.loads(raw)  # parse JSON strictly
-        columns = data.get("columns", [])  # read columns list
+        raw = (response.output_text or "").strip()  # read output safely
+        data = SafeJson.loads_strict_or_extract(raw)  # parse JSON robustly
 
+        if not isinstance(data, dict):  # must be object
+            raise ValueError("Schema inference failed: output is not a JSON object.")  # fail clearly
+
+        columns = data.get("columns", None)  # read columns key
         if not isinstance(columns, list) or not columns:  # validate list exists
             raise ValueError("Schema inference failed: 'columns' missing or empty.")  # fail clearly
 
-        self._validate_columns(columns)  # validate snake_case names
+        ColumnRules.normalize_and_validate(columns)  # normalize column names safely
         final_columns = self._ensure_reference_columns(columns, reference_columns)  # enforce required columns
         return final_columns  # return enforced schema
 
     def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:  # cap text
         joined = "\n\n".join(f"[page {c.page}]\n{c.text}" for c in chunks)  # join with page tags
         return joined[:max_chars]  # truncate
-    
-    def _normalize_name(self, name: str) -> str:
-    # Convert to snake_case
-        name = name.strip().lower()
-        name = re.sub(r"[^a-z0-9]+", "_", name)  # replace non-alnum with _
-        name = re.sub(r"_+", "_", name)  # collapse multiple _
-        return name.strip("_")
-
-    def _validate_columns(self, columns: List[Dict[str, Any]]) -> None:
-       for col in columns:
-        raw_name = str(col.get("name", "")).strip()
-        normalized = self._normalize_name(raw_name)
-
-        if not normalized:
-            raise ValueError(f"Invalid column name after normalization: {raw_name}")
-
-        col["name"] = normalized  # ✅ overwrite with safe name
 
     def _ensure_reference_columns(self, columns: List[Dict[str, Any]], reference_columns: List[str]) -> List[Dict[str, str]]:  # enforce required cols
         model_map: Dict[str, Dict[str, str]] = {}  # map name -> spec
 
         for c in columns:  # read model columns
-            name = str(c.get("name", "")).strip()  # normalize name
+            name = str(c.get("name", "")).strip()  # normalized name
             model_map[name] = {  # store normalized spec
                 "name": name,  # name
                 "description": str(c.get("description", "")).strip(),  # description
@@ -165,15 +241,15 @@ class SyllabusSchemaInferer:  # SRP: infer schema columns using OpenAI
 
         for ref_name in reference_columns:  # enforce each required column
             if ref_name in model_map:  # if model included it
-                final_cols.append(model_map.pop(ref_name))  # take model’s spec
+                final_cols.append(model_map.pop(ref_name))  # use model’s spec
             else:  # if model missed it
                 final_cols.append({  # create safe fallback
-                    "name": ref_name,  # exact name
+                    "name": ref_name,  # exact required name
                     "description": "Required column preserved from template.",  # generic description
-                    "expected_type": "string",  # safe default
-                })  # add it
+                    "expected_type": "string",  # safe default type
+                })  # add fallback
 
-        for _, spec in model_map.items():  # append extras (only if model produced them)
+        for _, spec in model_map.items():  # append extra columns (optional)
             final_cols.append(spec)  # append extra
 
         return final_cols  # return final schema
@@ -208,10 +284,10 @@ class SyllabusFieldExtractor:  # SRP: extract values given a schema (single-row)
             input=[{"role": "user", "content": prompt}],  # prompt
         )  # end call
 
-        raw = response.output_text.strip()  # read output
-        data = json.loads(raw)  # parse JSON
+        raw = (response.output_text or "").strip()  # read output safely
+        data = SafeJson.loads_strict_or_extract(raw)  # parse JSON robustly
 
-        if not isinstance(data, dict):  # validate output
+        if not isinstance(data, dict):  # must be object
             raise ValueError("Extraction failed: output is not a JSON object.")  # fail clearly
 
         normalized: Dict[str, str] = {}  # final row dict
@@ -220,7 +296,7 @@ class SyllabusFieldExtractor:  # SRP: extract values given a schema (single-row)
             value = data.get(name, "")  # get extracted value
             normalized[name] = str(value) if value is not None else ""  # force string
 
-        return normalized  # return row
+        return normalized  # return single row map
 
     def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:  # cap text
         joined = "\n\n".join(f"[page {c.page}]\n{c.text}" for c in chunks)  # join pages
