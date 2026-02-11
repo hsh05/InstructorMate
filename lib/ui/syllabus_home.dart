@@ -1,221 +1,208 @@
-// lib/ui/syllabus_home.dart
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+// lib/ui/syllabus_home.dart // file path comment
+import 'dart:typed_data'; // Uint8List
 
-import '../app/state/syllabus_vm.dart';
-import 'widgets/top_bar.dart';
-import 'widgets/chat_widgets.dart';
+import 'package:file_picker/file_picker.dart'; // pick PDF
+import 'package:flutter/material.dart'; // Flutter UI
+import 'package:url_launcher/url_launcher.dart'; // open download links
 
-class SyllabusHome extends StatefulWidget {
-  const SyllabusHome({super.key, required this.vm});
-  final SyllabusViewModel vm;
+import '../app/state/syllabus_vm.dart'; // VM import
 
-  @override
-  State<SyllabusHome> createState() => _SyllabusHomeState();
-}
-
-class _SyllabusHomeState extends State<SyllabusHome> {
-  SyllabusViewModel get vm => widget.vm;
+class SyllabusHome extends StatefulWidget { // main screen widget
+  const SyllabusHome({super.key, required this.vm}); // constructor
+  final SyllabusViewModel vm; // view-model dependency
 
   @override
-  void dispose() {
-    vm.dispose();
-    super.dispose();
-  }
+  State<SyllabusHome> createState() => _SyllabusHomeState(); // create state
+} // end widget
 
-  Future<void> _openCsvPreviewSheet() async {
-    await vm.viewCsv();
-    if (!mounted) return;
-    final preview = vm.preview;
-    if (preview == null) return;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (_) => CsvPreviewSheet(
-        title: preview.title,
-        csvText: preview.text,
-        onDownload: (vm.mainCsvPath == null) ? null : vm.downloadCsv,
-      ),
-    );
-  }
+class _SyllabusHomeState extends State<SyllabusHome> { // screen state
+  final questionCtrl = TextEditingController(); // controller for question input
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: vm,
-      builder: (context, _) {
-        final theme = Theme.of(context);
-        final cs = theme.colorScheme;
+  void dispose() { // dispose resources
+    questionCtrl.dispose(); // dispose controller
+    super.dispose(); // call parent dispose
+  } // end dispose
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final h = constraints.maxHeight;
+  Future<void> _pickAndConvert() async { // pick PDF then convert immediately
+    final messenger = ScaffoldMessenger.of(context); // ✅ capture messenger BEFORE await to avoid context-after-await lint
 
-            // ✅ Breakpoints
-            final isMobile = w < 600;
-            final isTablet = w >= 600 && w < 1024;
-            final isDesktop = w >= 1024;
+    final res = await FilePicker.platform.pickFiles( // open file picker
+      type: FileType.custom, // custom type
+      allowedExtensions: const ["pdf"], // allow pdf only
+      withData: true, // load bytes in memory
+    ); // end pickFiles
 
-            // ✅ Build UiScale from *actual* available constraints (not just full screen)
-            final ui = UiScale(w, h);
+    if (!mounted) return; // ✅ stop if widget disposed while picking
 
-            // ✅ Responsive page padding to avoid "crowded" look on medium widths
-            final pagePad = isDesktop ? ui.px(20) : (isTablet ? ui.px(14) : ui.px(12));
-            final topPad = isDesktop ? ui.px(14) : ui.px(10);
+    if (res == null || res.files.isEmpty) return; // user cancelled
 
-            // ✅ Responsive chat list padding (this is a BIG part of the crowded feel)
-            final listPad = EdgeInsets.fromLTRB(
-              isDesktop ? ui.px(16) : ui.px(12),
-              isDesktop ? ui.px(16) : ui.px(12),
-              isDesktop ? ui.px(16) : ui.px(12),
-              isDesktop ? ui.px(20) : ui.px(16),
-            );
+    final f = res.files.first; // first selected file
+    final Uint8List? bytes = f.bytes; // bytes (null if not loaded)
+    if (bytes == null) { // guard null bytes
+      messenger.showSnackBar( // show snack
+        const SnackBar(content: Text("Could not read file bytes.")), // message
+      ); // end snack
+      return; // stop
+    } // end null guard
 
-            // ✅ Slightly reduce card radius on narrow screens (looks less “squeezed”)
-            final cardRadius = isDesktop ? ui.cardRadius : ui.px(18);
+    await widget.vm.convert( // call VM convert
+      pdfBytes: bytes, // ✅ no cast needed
+      fileName: f.name, // file name
+    ); // end convert await
 
-            // ✅ Optional: constrain content width on desktop so it doesn’t stretch too wide
-            final maxContentWidth = isDesktop ? 1100.0 : double.infinity;
+    if (!mounted) return; // ✅ stop if widget disposed while converting
 
-            return Scaffold(
-              body: Stack(
-                children: [
-                  Positioned.fill(
-                    child: DecoratedBox(
+    if (widget.vm.error != null) { // if error occurred
+      messenger.showSnackBar( // ✅ use captured messenger (no context warning)
+        SnackBar(content: Text(widget.vm.error!)), // show error
+      ); // end snack
+    } // end error
+  } // end pickAndConvert
+
+  Future<void> _ask() async { // ask helper to centralize async + context-safe snackbar
+    final messenger = ScaffoldMessenger.of(context); // ✅ capture messenger before await
+
+    final q = questionCtrl.text.trim(); // read question
+    if (q.isEmpty) return; // ignore empty
+
+    await widget.vm.askQuestion(q); // ask via VM
+
+    if (!mounted) return; // ✅ guard after await
+
+    if (widget.vm.error != null) { // show error if any
+      messenger.showSnackBar( // ✅ use captured messenger
+        SnackBar(content: Text(widget.vm.error!)), // message
+      ); // end snack
+    } // end error
+  } // end ask
+
+  Future<void> _downloadSingleRowCsv() async { // download helper
+    final vm = widget.vm; // local shortcut
+    final path = (vm.singleRowCsvPath ?? "").trim(); // get csv path
+    if (path.isEmpty) return; // guard empty
+
+    final uri = vm.api.csvDownloadUri(csvPath: path); // build download URL
+    await launchUrl(uri, mode: LaunchMode.externalApplication); // open browser
+  } // end download helper
+
+  @override
+  Widget build(BuildContext context) { // build UI
+    return AnimatedBuilder( // listen to VM changes
+      animation: widget.vm, // VM is a ChangeNotifier
+      builder: (context, _) { // rebuild callback
+        final vm = widget.vm; // local shortcut
+        final hasPreview = vm.singleRowPreview != null; // preview exists?
+        final canDownload = (vm.singleRowCsvPath ?? "").trim().isNotEmpty; // can download?
+
+        return Scaffold( // screen scaffold
+          appBar: AppBar( // top bar
+            title: const Text("Syllabus Q&A"), // title
+          ), // end appbar
+          body: Padding( // padding
+            padding: const EdgeInsets.all(16), // padding value
+            child: Column( // vertical layout
+              children: [ // children
+                Row( // top row
+                  children: [ // row children
+                    ElevatedButton.icon( // upload/convert button
+                      onPressed: vm.converting ? null : _pickAndConvert, // disable while converting
+                      icon: vm.converting // spinner while converting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.upload_file),
+                      label: Text(vm.converting ? "Converting..." : "Upload PDF"),
+                    ), // end button
+                    const SizedBox(width: 12), // spacing
+                    if (vm.hasConverted) // if conversion ready
+                      Text("✅ Ready", style: Theme.of(context).textTheme.bodyMedium),
+                  ], // end row children
+                ), // end row
+
+                const SizedBox(height: 12), // spacing
+
+                if (hasPreview) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Single-row CSV Preview",
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            const Color(0xFFF7F2FF),
-                            cs.primary.withValues(alpha: 0.06),
-                            const Color(0xFFFCFAFF),
-                          ],
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          vm.singleRowPreview!,
+                          style: const TextStyle(fontFamily: "monospace", fontSize: 12),
                         ),
                       ),
                     ),
                   ),
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: RadialGradient(
-                            center: const Alignment(0.15, -0.85),
-                            radius: 1.2,
-                            colors: [
-                              Colors.white.withValues(alpha: 0.22),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SafeArea(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxContentWidth),
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(pagePad, topPad, pagePad, pagePad),
-                          child: Column(
-                            children: [
-                              TopBar(
-                                ui: ui,
-                                title: "Syllabus Q&A",
-                                fileChipText: vm.hasPdf ? vm.fileNameShort : null,
-                                stage: vm.stage,
-                                stageProgress: vm.stageProgress,
-                                busy: vm.isBusy,
-                                subtitle: vm.hasConverted
-                                    ? "Ready • Ask anything"
-                                    : (vm.hasPdf
-                                        ? "PDF selected • Convert to enable Q&A"
-                                        : "Upload a syllabus PDF to begin"),
-                                onUpload: vm.picking ? null : vm.pickPdf,
-                                onConvert: (!vm.hasPdf || vm.converting) ? null : vm.convertPdf,
-                                onPreview: (!vm.hasConverted || vm.viewing) ? null : _openCsvPreviewSheet,
-                                onDownload: (!vm.hasConverted) ? null : vm.downloadCsv,
-                                onClear: vm.isBusy ? null : vm.clearEverything,
-                              ),
-                              SizedBox(height: ui.px(isMobile ? 10 : 12)),
-                              Expanded(
-                                child: Container(
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    color: cs.surface.withValues(alpha: 0.92),
-                                    borderRadius: BorderRadius.circular(cardRadius),
-                                    border: Border.all(color: cs.outlineVariant),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.05),
-                                        blurRadius: ui.px(isMobile ? 20 : 34),
-                                        offset: Offset(0, ui.px(isMobile ? 10 : 16)),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(cardRadius),
-                                    child: Column(
-                                      children: [
-                                        Expanded(
-                                          child: Scrollbar(
-                                            controller: vm.scrollCtrl,
-                                            thumbVisibility: kIsWeb,
-                                            child: ListView.builder(
-                                              controller: vm.scrollCtrl,
-                                              padding: listPad,
-                                              itemCount: vm.messages.length,
-                                              itemBuilder: (context, i) {
-                                                final m = vm.messages[i];
-                                                final prev = (i > 0) ? vm.messages[i - 1] : null;
-                                                final next = (i < vm.messages.length - 1) ? vm.messages[i + 1] : null;
-
-                                                final samePrev = prev != null && prev.role == m.role;
-                                                final sameNext = next != null && next.role == m.role;
-
-                                                return ElegantMessage(
-                                                  ui: ui,
-                                                  message: m,
-                                                  showAvatar: m.role == ChatRole.assistant && !samePrev,
-                                                  compactTop: m.role == ChatRole.assistant && samePrev,
-                                                  compactBottom: m.role == ChatRole.assistant && sameNext,
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                        if (vm.hasConverted && !vm.asking)
-                                          Padding(
-                                            padding: EdgeInsets.fromLTRB(
-                                              ui.px(isMobile ? 10 : 12),
-                                              0,
-                                              ui.px(isMobile ? 10 : 12),
-                                              ui.px(isMobile ? 6 : 8),
-                                            ),
-                                            child: QuickPrompts(ui: ui, onPick: vm.sendQuick),
-                                          ),
-                                        Composer(ui: ui, vm: vm),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                ] else ...[
+                  const Spacer(),
                 ],
-              ),
-            );
-          },
+
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: questionCtrl,
+                  decoration: const InputDecoration(
+                    labelText: "Ask a question",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: vm.asking ? null : _ask, // ✅ uses helper that is context-safe
+                        child: vm.asking
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text("Ask"),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: canDownload ? _downloadSingleRowCsv : null, // ✅ only enable when we have path
+                      icon: const Icon(Icons.download),
+                      label: const Text("Download"),
+                    ),
+                  ],
+                ),
+
+                if (vm.answer != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      vm.answer!,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                  )
+                ],
+              ],
+            ),
+          ),
         );
       },
     );
-  }
-}
+  } // end build
+} // end state class

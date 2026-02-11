@@ -1,8 +1,8 @@
-from __future__ import annotations  # enable forward references in type hints
+from __future__ import annotations  # forward references in type hints
 
 import csv  # read/write CSV files
+import hashlib  # hashing for caching by PDF content
 import json  # parse model outputs (JSON)
-import re  # validate / normalize column names
 from dataclasses import dataclass  # lightweight immutable data structures
 from pathlib import Path  # safe path operations
 from typing import Any, Dict, List, Optional, Tuple  # typing helpers
@@ -37,66 +37,66 @@ class SafeJson:  # SRP: robust JSON parsing utilities
 
         try:  # first try normal strict parsing
             return json.loads(text)  # parse full string
-        except Exception:  # if it fails, try to extract JSON object/array substring
+        except Exception:  # if it fails, try to extract JSON object substring
             pass  # continue below
 
-        extracted = SafeJson._extract_first_json(text)  # attempt to locate JSON portion
-        if extracted is None:  # if we could not find a JSON-looking block
-            raise JsonParseError("Model output was not valid JSON and no JSON block was found.")  # fail clearly
+        extracted = SafeJson._extract_first_json(text)  # locate JSON portion
+        if extracted is None:  # if no JSON-looking block found
+            raise JsonParseError("Model output was not valid JSON and no JSON block was found.")  # fail
 
-        try:  # try parsing the extracted block
+        try:  # try parsing extracted block
             return json.loads(extracted)  # parse extracted JSON
         except Exception as e:  # still invalid JSON
-            raise JsonParseError(f"Failed to parse extracted JSON block: {e}") from e  # include root cause
+            raise JsonParseError(f"Failed to parse extracted JSON block: {e}") from e  # include cause
 
     @staticmethod
     def _extract_first_json(text: str) -> Optional[str]:  # find first {...} or [...] block
-        start_candidates: List[Tuple[int, str]] = []  # store candidate starts
-        obj_i = text.find("{")  # find first object start
-        arr_i = text.find("[")  # find first array start
+        start_candidates: List[Tuple[int, str]] = []  # candidate starts list
+        obj_i = text.find("{")  # find first object
+        arr_i = text.find("[")  # find first array
         if obj_i != -1:  # if object exists
-            start_candidates.append((obj_i, "{"))  # add object start
+            start_candidates.append((obj_i, "{"))  # add candidate
         if arr_i != -1:  # if array exists
-            start_candidates.append((arr_i, "["))  # add array start
-        if not start_candidates:  # no JSON opening bracket found
+            start_candidates.append((arr_i, "["))  # add candidate
+        if not start_candidates:  # if nothing found
             return None  # cannot extract
 
-        start_candidates.sort(key=lambda x: x[0])  # pick the earliest bracket
-        start, opening = start_candidates[0]  # take earliest
-        closing = "}" if opening == "{" else "]"  # choose matching closer
+        start_candidates.sort(key=lambda x: x[0])  # choose earliest bracket
+        start, opening = start_candidates[0]  # select earliest
+        closing = "}" if opening == "{" else "]"  # choose matching closing bracket
 
-        depth = 0  # track nested bracket depth
-        in_string = False  # track string literals
-        escape = False  # track escapes inside strings
+        depth = 0  # track nesting depth
+        in_string = False  # track if inside quotes
+        escape = False  # track escaped characters
 
-        for i in range(start, len(text)):  # scan forward from first bracket
-            ch = text[i]  # current char
+        for i in range(start, len(text)):  # scan forward
+            ch = text[i]  # current character
 
-            if in_string:  # if currently inside JSON string
-                if escape:  # if previous char was backslash
+            if in_string:  # if inside string
+                if escape:  # if previous was backslash
                     escape = False  # consume escape
                 elif ch == "\\":  # start escape
                     escape = True  # mark escape
-                elif ch == '"':  # end of string
-                    in_string = False  # exit string mode
-                continue  # skip bracket logic when inside strings
+                elif ch == '"':  # end string
+                    in_string = False  # leave string mode
+                continue  # skip bracket logic inside strings
 
             if ch == '"':  # enter string
-                in_string = True  # now in string
-                continue  # continue loop
+                in_string = True  # set string mode
+                continue  # next
 
             if ch == opening:  # opening bracket
                 depth += 1  # increase depth
             elif ch == closing:  # closing bracket
                 depth -= 1  # decrease depth
-                if depth == 0:  # if we closed the first JSON block
-                    return text[start : i + 1]  # return full JSON substring
+                if depth == 0:  # finished first JSON block
+                    return text[start : i + 1]  # return substring
 
-        return None  # did not find a balanced block
+        return None  # no balanced JSON found
 
 
 class PdfTextExtractor:  # SRP: only extract text from PDF
-    def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:  # convert PDF to list of PdfChunk
+    def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:  # PDF -> list of PdfChunk
         if not pdf_path.exists():  # validate path exists
             raise FileNotFoundError(f"PDF not found: {pdf_path.resolve()}")  # clear error
 
@@ -107,8 +107,8 @@ class PdfTextExtractor:  # SRP: only extract text from PDF
         for page_index, page in enumerate(reader.pages, start=1):  # loop pages
             text = (page.extract_text() or "").strip()  # extract text and trim
             if not text:  # skip empty pages
-                continue  # continue loop
-            chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))  # append chunk
+                continue  # next page
+            chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))  # store chunk
             chunk_id += 1  # increment id
 
         if not chunks:  # if nothing extracted
@@ -130,139 +130,21 @@ class CsvSchemaLoader:  # SRP: load schema columns from a reference CSV header
         if not header:  # header missing
             raise ValueError("Template CSV has no header row.")  # fail clearly
 
-        return [h.strip() for h in header if h and h.strip()]  # return trimmed header names
+        cols = [h.strip() for h in header if h and h.strip()]  # trim + remove empties
+        if not cols:  # header exists but empty
+            raise ValueError("Template CSV header is empty.")  # fail clearly
+
+        return cols  # return column list
 
 
-class SchemaPromptBuilder:  # SRP: build prompts for schema inference
-    def build_reference_aware_prompt(self, syllabus_text: str, reference_columns: List[str]) -> str:  # build prompt
-        ref_cols = ", ".join(reference_columns)  # join reference columns for readability
-        return (  # return full prompt text
-            "You are a syllabus schema designer.\n"  # role
-            "\n"  # spacing
-            "You will receive:\n"  # intro
-            "(A) REQUIRED columns from a reference CSV template (must be preserved exactly)\n"  # requirement
-            "(B) Syllabus text\n"  # syllabus content
-            "\n"  # spacing
-            "Goal:\n"  # goal header
-            "Create a SINGLE-ROW CSV schema for this syllabus.\n"  # goal
-            "\n"  # spacing
-            "Rules:\n"  # rules header
-            "1) You MUST include every REQUIRED column exactly (same spelling, same snake_case).\n"  # must keep
-            "2) You MAY add extra columns ONLY if the syllabus clearly contains that info in a structured way.\n"  # allow extras
-            "3) Do NOT rename or remove REQUIRED columns.\n"  # forbid rename/remove
-            "4) Do NOT invent information that is not present.\n"  # no hallucination
-            "5) Column names must be snake_case ASCII: [a-z0-9_], no spaces.\n"  # naming rule
-            "6) Prefer 12–35 total columns.\n"  # size guidance
-            "7) Output ONLY valid JSON, no markdown, no explanation.\n"  # strict output
-            "\n"  # spacing
-            "JSON format:\n"  # format header
-            '{\n  "columns": [\n    {"name": "col_name", "description": "what goes here", "expected_type": "string|number|list|string_multiline"}\n  ]\n}\n'  # JSON shape
-            "\n"  # spacing
-            f"REQUIRED COLUMNS:\n{ref_cols}\n"  # insert required columns
-            "\n"  # spacing
-            f"SYLLABUS TEXT:\n{syllabus_text}\n"  # insert syllabus text
-        )  # end prompt
-
-
-class ColumnRules:  # SRP: naming rules for column keys
-    @staticmethod
-    def normalize_name(name: str) -> str:  # convert name to snake_case
-        name = (name or "").strip().lower()  # trim and lower
-        name = re.sub(r"[^a-z0-9]+", "_", name)  # replace non-alnum with underscore
-        name = re.sub(r"_+", "_", name)  # collapse multiple underscores
-        return name.strip("_")  # trim leading/trailing underscores
-
-    @staticmethod
-    def normalize_and_validate(columns: List[Dict[str, Any]]) -> None:  # normalize column "name" fields in-place
-        if not isinstance(columns, list):  # ensure correct type
-            raise ValueError("columns must be a list")  # fail early
-        for col in columns:  # iterate columns
-            raw_name = str(col.get("name", "")).strip()  # read raw name
-            normalized = ColumnRules.normalize_name(raw_name)  # normalize to snake_case
-            if not normalized:  # invalid after normalization
-                raise ValueError(f"Invalid column name after normalization: {raw_name!r}")  # fail clearly
-            col["name"] = normalized  # overwrite name with safe normalized version
-
-
-class SyllabusSchemaInferer:  # SRP: infer schema columns using OpenAI
-    def __init__(self, model: str = "gpt-5") -> None:  # configure model
-        self.client = OpenAI()  # create OpenAI client
-        self.model = model  # store model
-        self.schema_loader = CsvSchemaLoader()  # dependency: template loader
-        self.prompt_builder = SchemaPromptBuilder()  # dependency: prompt builder
-
-    def infer_columns(self, chunks: List[PdfChunk], template_csv_path: Optional[str]) -> List[Dict[str, str]]:  # infer schema
-        syllabus_text = self._compact_text(chunks, max_chars=12000)  # shrink text for token efficiency
-
-        reference_columns: List[str] = []  # allocate required columns list
-        if template_csv_path:  # if template provided
-            reference_columns = self.schema_loader.load_columns(template_csv_path)  # load required columns
-
-        if not reference_columns:  # enforce template usage for consistent header
-            raise ValueError("template_csv_path is required to enforce consistent column names.")  # fail clearly
-
-        prompt = self.prompt_builder.build_reference_aware_prompt(syllabus_text, reference_columns)  # build prompt
-
-        response = self.client.responses.create(  # call OpenAI
-            model=self.model,  # model
-            input=[{"role": "user", "content": prompt}],  # user prompt
-        )  # end call
-
-        raw = (response.output_text or "").strip()  # read output safely
-        data = SafeJson.loads_strict_or_extract(raw)  # parse JSON robustly
-
-        if not isinstance(data, dict):  # must be object
-            raise ValueError("Schema inference failed: output is not a JSON object.")  # fail clearly
-
-        columns = data.get("columns", None)  # read columns key
-        if not isinstance(columns, list) or not columns:  # validate list exists
-            raise ValueError("Schema inference failed: 'columns' missing or empty.")  # fail clearly
-
-        ColumnRules.normalize_and_validate(columns)  # normalize column names safely
-        final_columns = self._ensure_reference_columns(columns, reference_columns)  # enforce required columns
-        return final_columns  # return enforced schema
-
-    def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:  # cap text
-        joined = "\n\n".join(f"[page {c.page}]\n{c.text}" for c in chunks)  # join with page tags
-        return joined[:max_chars]  # truncate
-
-    def _ensure_reference_columns(self, columns: List[Dict[str, Any]], reference_columns: List[str]) -> List[Dict[str, str]]:  # enforce required cols
-        model_map: Dict[str, Dict[str, str]] = {}  # map name -> spec
-
-        for c in columns:  # read model columns
-            name = str(c.get("name", "")).strip()  # normalized name
-            model_map[name] = {  # store normalized spec
-                "name": name,  # name
-                "description": str(c.get("description", "")).strip(),  # description
-                "expected_type": str(c.get("expected_type", "string")).strip(),  # expected type
-            }  # end dict
-
-        final_cols: List[Dict[str, str]] = []  # final ordered list
-
-        for ref_name in reference_columns:  # enforce each required column
-            if ref_name in model_map:  # if model included it
-                final_cols.append(model_map.pop(ref_name))  # use model’s spec
-            else:  # if model missed it
-                final_cols.append({  # create safe fallback
-                    "name": ref_name,  # exact required name
-                    "description": "Required column preserved from template.",  # generic description
-                    "expected_type": "string",  # safe default type
-                })  # add fallback
-
-        for _, spec in model_map.items():  # append extra columns (optional)
-            final_cols.append(spec)  # append extra
-
-        return final_cols  # return final schema
-
-
-class SyllabusFieldExtractor:  # SRP: extract values given a schema (single-row)
+class SyllabusFieldExtractor:  # SRP: extract values for a fixed schema (single-row)
     def __init__(self, model: str = "gpt-5") -> None:  # configure model
         self.client = OpenAI()  # OpenAI client
         self.model = model  # model name
 
-    def extract_single_row(self, chunks: List[PdfChunk], columns: List[Dict[str, str]]) -> Dict[str, str]:  # extract row
-        syllabus_text = self._compact_text(chunks, max_chars=14000)  # cap text
-        col_spec = json.dumps(columns, ensure_ascii=True)  # serialize schema
+    def extract_single_row(self, chunks: List[PdfChunk], columns: List[str]) -> Dict[str, str]:  # extract row
+        syllabus_text = self._compact_text(chunks, max_chars=8500)  # cap text (speed/cost)
+        cols_json = json.dumps(columns, ensure_ascii=True)  # serialize column list
 
         prompt = (  # build extraction prompt
             "You extract structured fields from syllabus text.\n"  # role
@@ -273,15 +155,16 @@ class SyllabusFieldExtractor:  # SRP: extract values given a schema (single-row)
             "- If a value is not found, use an empty string.\n"  # missing rule
             "- Keep lists as semicolon-separated strings.\n"  # CSV-friendly
             "- For multiline fields, use '\\n' inside the string.\n"  # newline rule
+            "- Keys MUST match the given columns EXACTLY.\n"  # strict keys
             "\n"  # spacing
-            f"COLUMNS(JSON): {col_spec}\n"  # provide schema
+            f"COLUMNS(JSON array of strings): {cols_json}\n"  # provide schema
             "\n"  # spacing
             f"SYLLABUS TEXT:\n{syllabus_text}\n"  # provide syllabus text
         )  # end prompt
 
         response = self.client.responses.create(  # call OpenAI
             model=self.model,  # model
-            input=[{"role": "user", "content": prompt}],  # prompt
+            input=[{"role": "user", "content": prompt}],  # user prompt
         )  # end call
 
         raw = (response.output_text or "").strip()  # read output safely
@@ -291,15 +174,14 @@ class SyllabusFieldExtractor:  # SRP: extract values given a schema (single-row)
             raise ValueError("Extraction failed: output is not a JSON object.")  # fail clearly
 
         normalized: Dict[str, str] = {}  # final row dict
-        for col in columns:  # preserve schema order
-            name = str(col["name"])  # read column name
-            value = data.get(name, "")  # get extracted value
+        for name in columns:  # preserve template order
+            value = data.get(name, "")  # get value
             normalized[name] = str(value) if value is not None else ""  # force string
 
-        return normalized  # return single row map
+        return normalized  # return row
 
-    def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:  # cap text
-        joined = "\n\n".join(f"[page {c.page}]\n{c.text}" for c in chunks)  # join pages
+    def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:  # cap text helper
+        joined = "\n\n".join(f"[page {c.page}]\n{c.text}" for c in chunks)  # join pages with tags
         return joined[:max_chars]  # truncate
 
 
@@ -321,11 +203,11 @@ class CsvFileWriter:  # SRP: write CSV files
                 writer.writerow({"chunk_id": c.chunk_id, "page": c.page, "text": c.text})  # write row
 
 
-class SyllabusConverterService:  # orchestrator: PDF -> schema -> values -> CSVs
+class SyllabusConverterService:  # orchestrator: PDF -> values -> CSVs
     def __init__(self, model: str = "gpt-5") -> None:  # configure model
         self.extractor = PdfTextExtractor()  # dependency: PDF extractor
-        self.schema_inferer = SyllabusSchemaInferer(model=model)  # dependency: schema inferer
-        self.field_extractor = SyllabusFieldExtractor(model=model)  # dependency: field extractor
+        self.schema_loader = CsvSchemaLoader()  # dependency: template header loader
+        self.field_extractor = SyllabusFieldExtractor(model=model)  # dependency: field extractor (1 LLM call)
         self.writer = CsvFileWriter()  # dependency: writer
 
     def convert(  # main conversion method
@@ -333,18 +215,40 @@ class SyllabusConverterService:  # orchestrator: PDF -> schema -> values -> CSVs
         pdf_path: str,  # input pdf path
         output_dir: str,  # output directory
         template_csv_path: str,  # template csv path (required)
-        output_base_name: Optional[str] = None,  # optional override base name for output files
+        output_base_name: Optional[str] = None,  # optional base name for outputs
     ) -> ConversionResult:  # returns output paths
         pdf = Path(pdf_path)  # normalize to Path
-        chunks = self.extractor.extract_chunks(pdf)  # extract chunks
-        columns = self.schema_inferer.infer_columns(chunks, template_csv_path=template_csv_path)  # infer schema
-        single_row = self.field_extractor.extract_single_row(chunks, columns)  # extract single-row values
+        if not pdf.exists():  # validate pdf exists early
+            raise FileNotFoundError(f"PDF not found: {pdf.resolve()}")  # clear error
 
-        base = output_base_name.strip() if output_base_name and output_base_name.strip() else pdf.stem  # choose base name
         out_dir = Path(output_dir)  # normalize output dir
-        single_row_path = out_dir / f"{base}.single_row.csv"  # name single-row file
-        chunks_path = out_dir / f"{base}.chunks.csv"  # name chunks file
+        out_dir.mkdir(parents=True, exist_ok=True)  # ensure output dir exists
 
+        # ✅ ALWAYS load template columns first (fast + needed for deterministic naming)
+        columns = self.schema_loader.load_columns(template_csv_path)  # strict schema from template header
+
+        # ✅ compute hashes BEFORE any heavy work (this enables true cache-hit short-circuit)
+        pdf_bytes = pdf.read_bytes()  # read pdf bytes once (needed for hashing + maybe later)
+        pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()[:10]  # stable content hash (short)
+        header_hash = hashlib.sha256(("|".join(columns)).encode("utf-8")).hexdigest()[:10]  # schema hash
+
+        base = output_base_name.strip() if output_base_name and output_base_name.strip() else pdf.stem  # base name
+        prefix = f"{base}.{pdf_hash}.{header_hash}"  # deterministic cache key prefix
+
+        single_row_path = out_dir / f"{prefix}.single_row.csv"  # deterministic single-row path
+        chunks_path = out_dir / f"{prefix}.chunks.csv"  # deterministic chunks path
+
+        # ✅ CACHE-HIT SHORT-CIRCUIT: return immediately (NO text extraction, NO OpenAI)
+        if single_row_path.exists() and chunks_path.exists():  # if both outputs exist
+            return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))  # fast return
+
+        # ❗only now do the heavy extraction
+        chunks = self.extractor.extract_chunks(pdf)  # extract chunks from PDF (slowish)
+
+        # ❗only now do the LLM call (slowest)
+        single_row = self.field_extractor.extract_single_row(chunks, columns)  # ONE OpenAI call
+
+        # ✅ write outputs to deterministic paths
         self.writer.write_single_row(single_row_path, single_row)  # write single-row CSV
         self.writer.write_chunks(chunks_path, chunks)  # write chunks CSV
 
@@ -355,7 +259,7 @@ def convert_pdf_to_csvs(  # instructor-required function: takes a file path
     pdf_path: str,  # path to PDF
     output_dir: str = "output",  # output directory
     model: str = "gpt-5",  # OpenAI model
-    template_csv_path: str = "OOP_0102221_Syllabus_SingleRow.csv",  # reference schema template
+    template_csv_path: str = "templates/default_template.csv",  # reference schema template
     output_base_name: Optional[str] = None,  # optional override base name for outputs
 ) -> Dict[str, str]:  # return dict of output paths
     service = SyllabusConverterService(model=model)  # create service
