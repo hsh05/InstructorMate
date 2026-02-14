@@ -12,39 +12,47 @@ class SyllabusViewModel extends ChangeNotifier { // ViewModel class (state holde
   bool asking = false; // UI flag: ask in progress
   String? error; // last error message if any
 
-  String? singleRowCsvPath; // backend output path for single-row csv
-  String? chunksCsvPath; // backend output path for chunks csv
+  // ✅ NEW: stable identifier from backend (no filesystem paths in UI)
+  String? docId; // backend document id
 
   String? singleRowPreview; // preview text of single-row csv
   String? answer; // latest Q&A answer text
 
-  bool get hasConverted => (singleRowCsvPath ?? "").isNotEmpty && (chunksCsvPath ?? "").isNotEmpty; // conversion done?
+  bool get hasConverted => (docId ?? "").trim().isNotEmpty; // conversion done?
 
   void init() { // optional init hook
-    // currently nothing required, but kept for scalability (best practice) // comment
+    // currently nothing required, but kept for scalability (best practice)
   } // end init
+
+  void _resetForNewConversion() { // reset state before new conversion
+    asking = false; // stop asking state
+    error = null; // clear previous error
+    answer = null; // clear previous answer
+    singleRowPreview = null; // clear preview
+    docId = null; // clear doc id
+  } // end reset helper
 
   Future<void> convert({ // convert PDF upload
     required Uint8List pdfBytes, // pdf bytes
     required String fileName, // pdf file name
   }) async {
     converting = true; // set busy flag
-    asking = false; // stop asking flag if any
-    error = null; // clear previous error
-    answer = null; // clear previous answer
-    singleRowPreview = null; // clear preview
-    singleRowCsvPath = null; // clear old paths
-    chunksCsvPath = null; // clear old paths
+    _resetForNewConversion(); // clear old state
     notifyListeners(); // update UI
 
     try { // protect API call
-      final res = await api.convertUpload(pdfBytes: pdfBytes, fileName: fileName); // call backend convert-upload
-      singleRowCsvPath = (res["single_row_csv"] ?? "").toString(); // read single-row csv path
-      chunksCsvPath = (res["chunks_csv"] ?? "").toString(); // read chunks csv path
+      final id = await api.convertUploadGetDocId( // call backend convert-upload
+        pdfBytes: pdfBytes, // bytes
+        fileName: fileName, // name
+      ); // end call
 
-      if ((singleRowCsvPath ?? "").isNotEmpty) { // if we got a valid path
-        singleRowPreview = await api.fetchCsvText(csvPath: singleRowCsvPath!); // fetch preview text
-      } // end preview fetch
+      docId = id; // store doc id
+
+      // ✅ fetch preview by docId
+      singleRowPreview = await api.fetchCsvTextByDocId( // fetch preview text
+        docId: docId!, // doc id
+        kind: "single_row", // preview single row csv
+      ); // end preview fetch
     } catch (e) { // catch failures
       error = e.toString(); // store error for UI
     } finally { // always end
@@ -53,7 +61,7 @@ class SyllabusViewModel extends ChangeNotifier { // ViewModel class (state holde
     } // end finally
   } // end convert
 
-  Future<void> askQuestion(String question) async { // ask question using chunks file
+  Future<void> askQuestion(String question) async { // ask question using doc id
     final q = question.trim(); // normalize question
     if (q.isEmpty) return; // ignore empty questions
 
@@ -68,9 +76,9 @@ class SyllabusViewModel extends ChangeNotifier { // ViewModel class (state holde
     notifyListeners(); // update UI
 
     try { // protect API call
-      answer = await api.askFromChunksPath( // call backend ask endpoint
+      answer = await api.ask( // call backend ask endpoint
         question: q, // question text
-        chunksCsvPath: chunksCsvPath!, // chunks csv path
+        docId: docId!, // doc id
       ); // end call
     } catch (e) { // catch failures
       error = e.toString(); // store error

@@ -6,5 +6,6 @@ class AppConfig { // central place for app constants/config
     defaultValue: 'http://127.0.0.1:8000', // local dev fallback
   ); // end baseUrl
 
-  static const Duration httpTimeout = Duration(seconds: 120); // backend conversion can take time
+  static const Duration httpTimeout = Duration(minutes: 5); // ✅ web-safe
+// backend conversion can take time
 } // end class
