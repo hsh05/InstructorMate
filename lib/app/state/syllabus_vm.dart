@@ -191,7 +191,7 @@ Future<void> pickPdf() async {
     if (q.isEmpty || asking) return;
 
     if (!hasConverted) {
-      _pushAssistant("Upload + Convert first, then ask questions.");
+      _pushAssistant("Upload then ask questions.");
       return;
     }
 

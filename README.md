@@ -45,3 +45,13 @@
 pip install fastapi uvicorn pypdf openai python-dotenv
 uvicorn server:app --reload
 
+git branch
+git switch merna-syllabus-ui
+git add .
+git status
+git commit -m "your message"
+git push origin merna-syllabus-ui
+git push deploy merna-syllabus-ui
+
+
+

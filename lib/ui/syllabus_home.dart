@@ -1,9 +1,6 @@
-import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../app/state/syllabus_vm.dart';
-import 'widgets/chat_widgets.dart';
-import 'ui_scale.dart';
-
 
 class SyllabusHome extends StatefulWidget {
   const SyllabusHome({super.key, required this.vm});
@@ -13,60 +10,40 @@ class SyllabusHome extends StatefulWidget {
   State<SyllabusHome> createState() => _SyllabusHomeState();
 }
 
-class _SyllabusHomeState extends State<SyllabusHome>
-    with TickerProviderStateMixin {
+class _SyllabusHomeState extends State<SyllabusHome> {
   bool showPreview = false;
 
   @override
   Widget build(BuildContext context) {
     final vm = widget.vm;
+    final size = MediaQuery.of(context).size;
+    final ui = UiScale(size.width, size.height);
 
     return AnimatedBuilder(
       animation: vm,
       builder: (_, __) {
-        final isDesktop = MediaQuery.of(context).size.width > 1000;
-
         return Scaffold(
-          backgroundColor: const Color(0xFFF6F4FB),
-          body: Stack(
+          backgroundColor: const Color(0xFFF4F1FF),
+          body: Column(
             children: [
-              // ================= BACKGROUND GRADIENT =================
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFFF6F4FB),
-                      Color(0xFFECE8FA),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
-              ),
-
-              // ================= MAIN CONTENT =================
-              SafeArea(
-                child: Column(
+              _topBar(vm, ui),
+              Expanded(
+                child: Row(
                   children: [
-                    _floatingTopBar(vm),
-                    Expanded(
-                      child: isDesktop
-                          ? Row(
-                              children: [
-                                Expanded(child: _chatArea(vm)),
-                                if (vm.hasConverted && showPreview)
-                                  SizedBox(
-                                    width: 520,
-                                    child: _previewCard(vm),
-                                  ),
-                              ],
-                            )
-                          : _chatArea(vm),
-                    ),
-                    _composer(vm),
+                    Expanded(child: _chatSection(vm, ui)),
+                    if (ui.isDesktop)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeOutCubic,
+                        width: showPreview ? 520 : 0,
+                        child: showPreview
+                            ? _previewSlider(vm, ui)
+                            : const SizedBox(),
+                      ),
                   ],
                 ),
               ),
+              _composer(vm, ui),
             ],
           ),
         );
@@ -74,183 +51,219 @@ class _SyllabusHomeState extends State<SyllabusHome>
     );
   }
 
-  // =========================================================
-  // FLOATING BLURRED TOP BAR
-  // =========================================================
+  // ================= TOP BAR =================
 
-  Widget _floatingTopBar(SyllabusViewModel vm) {
+  Widget _topBar(SyllabusViewModel vm, UiScale ui) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(ui.px(20)),
+        child: Row(
+          children: [
+            const Text(
+              "InstructorMate",
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+            ),
+            const Spacer(),
+            if (vm.hasConverted)
+              IconButton(
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () {
+                  if (ui.isDesktop) {
+                    setState(() => showPreview = !showPreview);
+                  } else {
+                    _openMobilePreview(vm, ui);
+                  }
+                },
+              ),
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              onPressed: vm.isBusy ? null : () => vm.pickPdf(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= CHAT =================
+
+  Widget _chatSection(SyllabusViewModel vm, UiScale ui) {
     return Padding(
-      padding: const EdgeInsets.all(16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 20, vertical: 18),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.65),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                  color: Colors.white.withOpacity(0.4)),
+      padding: EdgeInsets.symmetric(horizontal: ui.px(24)),
+      child: Column(
+        children: [
+          if (!vm.hasConverted)
+            Container(
+              margin: EdgeInsets.only(bottom: ui.px(20)),
+              padding: EdgeInsets.all(ui.px(18)),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(ui.cardRadius),
+              ),
+              child: const Text(
+                "Upload a syllabus PDF to begin.",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.school, size: 22),
-                const SizedBox(width: 12),
-                const Text(
-                  "Syllabus Q&A",
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16),
-                ),
-                const Spacer(),
+          Expanded(
+            child: ListView.builder(
+              controller: vm.scrollCtrl,
+              itemCount:
+                  vm.messages.length + (vm.asking || vm.converting ? 1 : 0),
+              itemBuilder: (_, i) {
+                if (i >= vm.messages.length) {
+                  return _loadingBubble(ui);
+                }
 
-                if (vm.hasConverted)
-                  TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        showPreview = !showPreview;
-                      });
-                    },
-                    icon: const Icon(Icons.visibility_outlined),
-                    label: Text(showPreview
-                        ? "Hide Preview"
-                        : "View Preview"),
-                  ),
+                final msg = vm.messages[i];
 
-                IconButton(
-                  icon: const Icon(Icons.upload_file),
-                  onPressed: vm.isBusy
-                      ? null
-                      : () async => vm.pickPdf(),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: vm.isBusy
-                      ? null
-                      : () => vm.clearEverything(),
-                ),
-              ],
+                if (msg.role == ChatRole.status ||
+                    msg.role == ChatRole.system) {
+                  return const SizedBox(); // remove status visually
+                }
+
+                return _bubble(msg, ui);
+              },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bubble(ChatMessage msg, UiScale ui) {
+    final isUser = msg.role == ChatRole.user;
+
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.only(bottom: ui.px(14)),
+        padding: EdgeInsets.all(ui.px(14)),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+        decoration: BoxDecoration(
+          gradient: isUser
+              ? const LinearGradient(
+                  colors: [Color(0xFF7C6CF6), Color(0xFF9B8CFF)],
+                )
+              : const LinearGradient(
+                  colors: [Colors.white, Color(0xFFF3F0FA)],
+                ),
+          borderRadius: BorderRadius.circular(ui.bubbleRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Text(
+          msg.text,
+          style: TextStyle(
+            color: isUser ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
     );
   }
 
-  // =========================================================
-  // CHAT AREA (dominant)
-  // =========================================================
-
- Widget _chatArea(SyllabusViewModel vm) {
-  final size = MediaQuery.of(context).size;
-  final ui = UiScale(size.width, size.height);
-
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: ListView.builder(
-      controller: vm.scrollCtrl,
-      padding: const EdgeInsets.only(bottom: 140),
-      itemCount: vm.messages.length,
-      itemBuilder: (_, i) {
-        final message = vm.messages[i];
-        final previous = i > 0 ? vm.messages[i - 1] : null;
-
-        final grouped =
-            previous != null && previous.role == message.role;
-
-        return AnimatedSlide(
-          duration: const Duration(milliseconds: 250),
-          offset: const Offset(0, 0.05),
-          child: ElegantMessage(
-            ui: ui, // ✅ FIXED
-            message: message,
-            showAvatar: !grouped,
-            compactTop: grouped,
-            compactBottom: false,
-          ),
-        );
-      },
-    ),
-  );
-}
-
-  // =========================================================
-  // COMPOSER (ChatGPT style)
-  // =========================================================
-
-  Widget _composer(SyllabusViewModel vm) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 18,
-            offset: const Offset(0, -6),
-          ),
-        ],
+  Widget _loadingBubble(UiScale ui) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.only(bottom: ui.px(14)),
+        padding: EdgeInsets.symmetric(
+          horizontal: ui.px(18),
+          vertical: ui.px(14),
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(ui.bubbleRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Color(0xFF7C6CF6),
+              ),
+            ),
+            SizedBox(width: 12),
+            Text(
+              "Processing...",
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  // ================= COMPOSER =================
+
+  Widget _composer(SyllabusViewModel vm, UiScale ui) {
+    return Container(
+      padding: EdgeInsets.all(ui.px(20)),
+      color: Colors.white,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
           if (vm.hasConverted)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Wrap(
-                spacing: 8,
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
                 children: [
-                  _suggested("When is Quiz 1?", vm),
-                  _suggested("Grading breakdown", vm),
-                  _suggested("Main topics", vm),
+                  _chip("When is Quiz 1?", vm),
+                  SizedBox(width: ui.px(10)),
+                  _chip("Grading breakdown?", vm),
+                  SizedBox(width: ui.px(10)),
+                  _chip("Main topics?", vm),
                 ],
               ),
             ),
-
+          SizedBox(height: ui.px(14)),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: vm.inputCtrl,
                   focusNode: vm.inputFocus,
-                  minLines: 1,
-                  maxLines: 4,
                   decoration: InputDecoration(
                     hintText: "Ask anything...",
                     filled: true,
-                    fillColor: const Color(0xFFF2F0FA),
-                    contentPadding:
-                        const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 14),
+                    fillColor: const Color(0xFFF3F0FA),
                     border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(28),
+                      borderRadius: BorderRadius.circular(30),
                       borderSide: BorderSide.none,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: ui.px(12)),
               Container(
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                    colors: [
-                      Color(0xFF7B6CF6),
-                      Color(0xFF9A88FF),
-                    ],
+                    colors: [Color(0xFF7C6CF6), Color(0xFF9B8CFF)],
                   ),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_upward,
-                      color: Colors.white),
+                  icon: const Icon(Icons.send, color: Colors.white),
                   onPressed:
-                      vm.asking ? null : () => vm.sendQuestion(),
+                      vm.asking || !vm.hasConverted ? null : vm.sendQuestion,
                 ),
-              )
+              ),
             ],
           ),
         ],
@@ -258,106 +271,164 @@ class _SyllabusHomeState extends State<SyllabusHome>
     );
   }
 
-  Widget _suggested(String text, SyllabusViewModel vm) {
+  Widget _chip(String text, SyllabusViewModel vm) {
     return InkWell(
-      borderRadius: BorderRadius.circular(20),
       onTap: () => vm.sendQuick(text),
+      borderRadius: BorderRadius.circular(999),
       child: Container(
         padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
           color: const Color(0xFFEDE9FF),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(999),
         ),
-        child: Text(text,
-            style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13)),
+        child:
+            Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }
 
-  // =========================================================
-  // STRUCTURED PREVIEW CARD
-  // =========================================================
+  // ================= PREVIEW =================
 
-  Widget _previewCard(SyllabusViewModel vm) {
-    if (vm.preview == null ||
-        vm.preview!.text.trim().isEmpty) {
-      return const Center(
-        child: Text("No structured preview available."),
-      );
-    }
+Widget _previewSlider(SyllabusViewModel vm, UiScale ui) {
+  final raw = vm.preview?.text ?? "";
 
-    final lines = vm.preview!.text.split('\n');
-    final Map<String, String> grouped = {};
-
-    for (var line in lines) {
-      if (!line.contains(',')) continue;
-      final index = line.indexOf(',');
-      grouped[line.substring(0, index)] =
-          line.substring(index + 1);
-    }
-
-    return Container(
-      margin: const EdgeInsets.all(24),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 24,
-          )
-        ],
+  return Container(
+    width: double.infinity,
+    height: double.infinity,
+    padding: EdgeInsets.all(ui.px(24)),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.only(
+        topLeft: Radius.circular(ui.cardRadius),
+        bottomLeft: Radius.circular(ui.cardRadius),
       ),
-      child: ListView(
-        children: [
-          const Text(
-            "Preview of Selected Syllabus",
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.08),
+          blurRadius: 30,
+          offset: const Offset(-4, 0),
+        )
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Generated CSV",
+          style: TextStyle(
+            fontSize: ui.px(18),
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 20),
+        ),
 
-          ...grouped.entries.map((e) {
-            return Padding(
-              padding:
-                  const EdgeInsets.only(bottom: 16),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Text(e.key,
-                      style: const TextStyle(
-                          fontWeight:
-                              FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(e.value),
-                ],
-              ),
-            );
-          }),
+        SizedBox(height: ui.px(16)),
 
-          const SizedBox(height: 20),
+        // CSV VIEW
+        Expanded(
+          child: Container(
+            padding: EdgeInsets.all(ui.px(14)),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F5FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE6E0FF)),
+            ),
+            child: raw.trim().isEmpty
+                ? Center(
+                    child: Text(
+                      "No CSV generated yet.",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black.withOpacity(0.6),
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: SelectableText(
+                      raw,
+                      style: TextStyle(
+                        fontFamily: "monospace",
+                        fontSize: ui.px(13),
+                        height: 1.5,
+                        color: Colors.black.withOpacity(0.85),
+                      ),
+                    ),
+                  ),
+          ),
+        ),
 
-          ElevatedButton.icon(
+        SizedBox(height: ui.px(18)),
+
+        // DOWNLOAD BUTTON
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF7C6CF6), Color(0xFF9B8CFF)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ElevatedButton.icon(
             onPressed: () => vm.downloadCsv(),
-            icon: const Icon(Icons.download),
-            label: const Text("Download CSV"),
+            icon: const Icon(Icons.download, color: Colors.white),
+            label: const Text(
+              "Download CSV",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                  vertical: 14),
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              padding: EdgeInsets.symmetric(vertical: ui.px(14)),
               shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(16),
               ),
             ),
           ),
-        ],
+        ),
+      ],
+    ),
+  );
+}
+
+
+void _openMobilePreview(SyllabusViewModel vm, UiScale ui) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent, // important
+    builder: (_) => ClipRRect(
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(24), // rounded top
       ),
-    );
-  }
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.80,
+        width: double.infinity,
+        child: _previewSlider(vm, ui),
+      ),
+    ),
+  );
+}
+
+
+}
+
+// ================= SCALE =================
+
+class UiScale {
+  UiScale(this.w, this.h);
+  final double w;
+  final double h;
+
+  bool get isDesktop => w >= 1024;
+
+  double get _s =>
+      (math.min(w, h) / 430).clamp(0.92, 1.18).toDouble();
+
+  double px(double v) => v * _s;
+
+  double get cardRadius => px(22);
+  double get bubbleRadius => px(18);
 }
