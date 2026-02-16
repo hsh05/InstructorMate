@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-import traceback
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Literal
+from typing import Dict, Literal
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,15 +22,10 @@ from ask_syllabus import (
 )
 from syllabus_converter import convert_pdf_to_csvs
 
-# ----------------------------
-# Logging
-# ----------------------------
 logger = logging.getLogger("syllabus_backend")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# ----------------------------
-# Config / DI
-# ----------------------------
+
 @dataclass(frozen=True)
 class AppConfig:
     top_k: int = 12
@@ -38,8 +33,8 @@ class AppConfig:
     template_csv_path: str = str((Path(__file__).parent / "templates" / "default_template.csv").resolve())
     output_dir: str = "output"
     uploads_dir: str = "uploads"
-    max_upload_mb: int = 25  # basic safety limit
-    cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5000")
+    max_upload_mb: int = 25
+    ask_timeout_sec: int = 25
 
 
 config = AppConfig()
@@ -51,7 +46,7 @@ class ServiceContainer:
 
     def build_pipeline(self, chunks_csv_path: Path) -> AskPipeline:
         store = SyllabusCsvStore(str(chunks_csv_path))
-        retriever = LightweightRetriever(top_k=self.config.top_k)
+        retriever = LightweightRetriever(top_k=self.config.top_k, score_threshold=2.0)
         llm = SyllabusChatGPT(model=self.config.model)
         return AskPipeline(store=store, retriever=retriever, llm=llm)
 
@@ -61,7 +56,6 @@ container = ServiceContainer(config)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure output folders exist at boot
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     Path(config.uploads_dir).mkdir(parents=True, exist_ok=True)
     yield
@@ -69,18 +63,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Syllabus QA Backend", lifespan=lifespan)
 
-# ❗You said: DO NOT change CORS. Keeping exactly your current settings.
+# Keeping your current open CORS for now (student project)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # allow all origins (ok for student project; tighten later)
-    allow_credentials=False,      # cookies not needed
-    allow_methods=["*"],          # allow all methods
-    allow_headers=["*"],          # allow all headers
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# ----------------------------
-# Models
-# ----------------------------
+
 class ConvertResponse(BaseModel):
     doc_id: str
     single_row_name: str
@@ -98,12 +90,6 @@ class AnswerResponse(BaseModel):
 
 CsvKind = Literal["single_row", "chunks"]
 
-# ----------------------------
-# Helpers
-# ----------------------------
-# Allow your deterministic prefix style safely:
-# - letters/numbers/dot/underscore/dash
-# - 5..200 chars (this is what was biting you)
 _DOC_ID_RE = re.compile(r"^[a-zA-Z0-9._-]{5,200}$")
 
 _CITATION_PATTERNS = [
@@ -125,8 +111,6 @@ def _strip_chunk_page_markers(text: str) -> str:
 
 def _validate_doc_id(doc_id: str) -> str:
     d = (doc_id or "").strip()
-
-    # ✅ Give yourself a *useful* error message when it fails.
     if not d or not _DOC_ID_RE.match(d):
         raise HTTPException(
             status_code=400,
@@ -136,14 +120,10 @@ def _validate_doc_id(doc_id: str) -> str:
 
 
 def _csv_path_from_doc_id(doc_id: str, kind: CsvKind) -> Path:
-    # doc_id is your deterministic prefix:
-    # e.g. "{base}.{pdfhash}.{headerhash}"
     out_dir = Path(config.output_dir).resolve()
-
     filename = f"{doc_id}.single_row.csv" if kind == "single_row" else f"{doc_id}.chunks.csv"
     p = (out_dir / filename).resolve()
 
-    # Ensure it is inside output_dir (defense in depth)
     try:
         p.relative_to(out_dir)
     except Exception:
@@ -154,7 +134,6 @@ def _csv_path_from_doc_id(doc_id: str, kind: CsvKind) -> Path:
     return p
 
 
-# Optional: simple request-id to help debugging
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     rid = request.headers.get("x-request-id") or datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -163,36 +142,28 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
-# ----------------------------
-# Endpoints
-# ----------------------------
 @app.post("/convert-upload", response_model=ConvertResponse)
 async def convert_upload(pdf: UploadFile = File(...)) -> ConvertResponse:
-    # ✅ Validate file extension early (fast fail)
     if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
-    # ✅ Read bytes
     pdf_bytes = await pdf.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Empty PDF uploaded.")
 
-    # ✅ Basic size limit
     max_bytes = config.max_upload_mb * 1024 * 1024
     if len(pdf_bytes) > max_bytes:
         raise HTTPException(status_code=413, detail=f"PDF too large. Limit is {config.max_upload_mb} MB.")
 
-    # ✅ Save uploaded file to disk
     uploads_dir = Path(config.uploads_dir)
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    safe_name = Path(pdf.filename).name              # strip path, keep just filename
-    original_base = Path(safe_name).stem             # used for doc_id base naming
+    safe_name = Path(pdf.filename).name
+    original_base = Path(safe_name).stem
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     saved_pdf_path = uploads_dir / f"{timestamp}_{safe_name}"
     saved_pdf_path.write_bytes(pdf_bytes)
 
-    # ✅ Convert PDF → CSV(s)
     try:
         result: Dict[str, str] = convert_pdf_to_csvs(
             pdf_path=str(saved_pdf_path),
@@ -205,15 +176,10 @@ async def convert_upload(pdf: UploadFile = File(...)) -> ConvertResponse:
         logger.exception("Conversion failed")
         raise HTTPException(status_code=500, detail=f"Conversion failed: {e}")
 
-    # Convert returns full paths; we convert them into a safe doc_id (prefix) for the UI.
     single_row_path = Path(result["single_row_csv"])
     chunks_path = Path(result["chunks_csv"])
 
-    # Expected filenames:
-    # {doc_id}.single_row.csv and {doc_id}.chunks.csv
     doc_id = single_row_path.name.replace(".single_row.csv", "")
-
-    # ✅ Validate doc_id (this was causing your “90s then 400”)
     doc_id = _validate_doc_id(doc_id)
 
     return ConvertResponse(
@@ -243,16 +209,25 @@ def csv_download(doc_id: str, kind: CsvKind = "single_row") -> FileResponse:
 
 
 @app.post("/ask", response_model=AnswerResponse)
-def ask(req: AskRequest) -> AnswerResponse:
+async def ask(req: AskRequest) -> AnswerResponse:
     question = req.question.strip()
     doc_id = _validate_doc_id(req.doc_id)
-
     chunks_csv_path = _csv_path_from_doc_id(doc_id, "chunks")
 
     try:
         pipeline = container.build_pipeline(chunks_csv_path)
-        answer = pipeline.run(question).strip() or "Not found in the syllabus."
+
+        loop = asyncio.get_running_loop()
+        answer = await asyncio.wait_for(
+            loop.run_in_executor(None, pipeline.run, question),
+            timeout=config.ask_timeout_sec,
+        )
+
+        answer = (answer or "").strip() or "Not found in the syllabus."
         answer = _strip_chunk_page_markers(answer)
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail=f"Ask timed out after {config.ask_timeout_sec}s.")
     except Exception as e:
         logger.exception("Ask failed")
         raise HTTPException(status_code=500, detail=f"Ask failed: {e}")

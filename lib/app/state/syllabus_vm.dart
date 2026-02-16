@@ -1,90 +1,289 @@
-// lib/app/state/syllabus_vm.dart // file path comment
-import 'dart:typed_data'; // Uint8List type
-import 'package:flutter/foundation.dart'; // ChangeNotifier
+// lib/app/state/syllabus_vm.dart
+import 'dart:typed_data';
 
-import '../api_client.dart'; // ApiClient
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class SyllabusViewModel extends ChangeNotifier { // ViewModel class (state holder)
-  SyllabusViewModel({required this.api}); // constructor
-  final ApiClient api; // injected API dependency
+import '../api_client.dart';
 
-  bool converting = false; // UI flag: conversion in progress
-  bool asking = false; // UI flag: ask in progress
-  String? error; // last error message if any
+import '../models/chat_models.dart';
 
-  // ✅ NEW: stable identifier from backend (no filesystem paths in UI)
-  String? docId; // backend document id
+export '../models/chat_models.dart';
+//import '../../ui/widgets/chat_widgets.dart';
 
-  String? singleRowPreview; // preview text of single-row csv
-  String? answer; // latest Q&A answer text
 
-  bool get hasConverted => (docId ?? "").trim().isNotEmpty; // conversion done?
+class SyllabusViewModel extends ChangeNotifier {
+  SyllabusViewModel({required this.api});
 
-  void init() { // optional init hook
-    // currently nothing required, but kept for scalability (best practice)
-  } // end init
+  final ApiClient api;
 
-  void _resetForNewConversion() { // reset state before new conversion
-    asking = false; // stop asking state
-    error = null; // clear previous error
-    answer = null; // clear previous answer
-    singleRowPreview = null; // clear preview
-    docId = null; // clear doc id
-  } // end reset helper
+  // Controllers used by UI
+  final ScrollController scrollCtrl = ScrollController();
+  final TextEditingController inputCtrl = TextEditingController();
+  final FocusNode inputFocus = FocusNode();
 
-  Future<void> convert({ // convert PDF upload
-    required Uint8List pdfBytes, // pdf bytes
-    required String fileName, // pdf file name
-  }) async {
-    converting = true; // set busy flag
-    _resetForNewConversion(); // clear old state
-    notifyListeners(); // update UI
+  // Data
+  Uint8List? _pdfBytes;
+  String? _fileName;
 
-    try { // protect API call
-      final id = await api.convertUploadGetDocId( // call backend convert-upload
-        pdfBytes: pdfBytes, // bytes
-        fileName: fileName, // name
-      ); // end call
+  // Backend identifier (docId-only flow)
+  String? docId;
 
-      docId = id; // store doc id
+  // UI state flags
+  bool picking = false;
+  bool converting = false;
+  bool asking = false;
+  bool viewing = false;
 
-      // ✅ fetch preview by docId
-      singleRowPreview = await api.fetchCsvTextByDocId( // fetch preview text
-        docId: docId!, // doc id
-        kind: "single_row", // preview single row csv
-      ); // end preview fetch
-    } catch (e) { // catch failures
-      error = e.toString(); // store error for UI
-    } finally { // always end
-      converting = false; // clear busy flag
-      notifyListeners(); // update UI
-    } // end finally
-  } // end convert
+  // Preview holder
+  CsvPreview? preview;
 
-  Future<void> askQuestion(String question) async { // ask question using doc id
-    final q = question.trim(); // normalize question
-    if (q.isEmpty) return; // ignore empty questions
+  // Chat messages
+  final List<ChatMessage> messages = [];
 
-    if (!hasConverted) { // if conversion not done yet
-      error = "Please upload/convert a PDF first."; // show message
-      notifyListeners(); // update UI
-      return; // stop
-    } // end guard
+  // ----- Derived -----
+  bool get hasPdf => _pdfBytes != null && (_fileName?.isNotEmpty ?? false);
+  bool get hasConverted => (docId != null && docId!.trim().isNotEmpty);
+  bool get isBusy => picking || converting || asking || viewing;
 
-    asking = true; // set asking flag
-    error = null; // clear error
-    notifyListeners(); // update UI
+  FlowStage get stage {
+    if (!hasPdf) return FlowStage.upload;
+    if (!hasConverted) return FlowStage.convert;
+    return FlowStage.ask;
+  }
 
-    try { // protect API call
-      answer = await api.ask( // call backend ask endpoint
-        question: q, // question text
-        docId: docId!, // doc id
-      ); // end call
-    } catch (e) { // catch failures
-      error = e.toString(); // store error
-    } finally { // always end
-      asking = false; // clear asking flag
-      notifyListeners(); // update UI
-    } // end finally
-  } // end askQuestion
-} // end ViewModel
+  double get stageProgress {
+    if (!hasPdf) return 0.05;
+    if (converting) return 0.50;
+    if (hasConverted && asking) return 0.85;
+    if (hasConverted) return 0.70;
+    return 0.35;
+  }
+
+  String get fileNameShort {
+    final f = _fileName ?? "";
+    if (f.length <= 26) return f;
+    return "${f.substring(0, 14)}…${f.substring(f.length - 10)}";
+  }
+
+  // ----- lifecycle -----
+  void init() {
+    messages
+      ..clear()
+      ..add(
+        ChatMessage(
+          role: ChatRole.system,
+          text: "Welcome 👋\nUpload a syllabus PDF, convert, then ask questions.",
+        ),
+      );
+    notifyListeners();
+    _scrollToBottom(jump: true);
+  }
+
+  // -----------------------
+  // Actions
+  // -----------------------
+
+Future<void> pickPdf() async {
+  if (picking) return;
+
+  picking = true;
+  notifyListeners();
+
+  try {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+      withData: true,
+    );
+
+    if (res == null || res.files.isEmpty) return;
+
+    final f = res.files.first;
+    _pdfBytes = f.bytes;
+    _fileName = f.name;
+
+    docId = null;
+    preview = null;
+    messages.clear();
+
+    // ✅ auto convert after upload
+    await convertPdf();
+
+  } catch (_) {
+    // keep your existing error handling if any
+  } finally {
+    picking = false;
+    notifyListeners();
+  }
+}
+
+
+  Future<void> convertPdf() async {
+    if (converting || !hasPdf) return;
+    converting = true;
+    notifyListeners();
+
+    try {
+      _pushStatus("Uploading & converting…");
+
+      // ✅ your ApiClient returns docId
+      final id = await api.convertUploadGetDocId(
+        pdfBytes: _pdfBytes!,
+        fileName: _fileName!,
+      );
+
+      docId = id;
+      await viewCsv();
+      _pushAssistant("Converted ✅\nYou can now ask questions.");
+    } catch (e) {
+      _pushAssistant("Conversion failed: $e");
+    } finally {
+      converting = false;
+      notifyListeners();
+      _scrollToBottom();
+    }
+  }
+
+  Future<void> viewCsv() async {
+    if (viewing || !hasConverted) return;
+    viewing = true;
+    notifyListeners();
+
+    try {
+      final text = await api.fetchCsvTextByDocId(
+        docId: docId!,
+        kind: "single_row",
+      );
+      preview = CsvPreview(title: "Single-row CSV", text: text);
+    } catch (e) {
+      _pushAssistant("View CSV failed: $e");
+    } finally {
+      viewing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> downloadCsv() async {
+    if (!hasConverted) return;
+    try {
+      final uri = api.csvDownloadByDocIdUri(
+        docId: docId!,
+        kind: "single_row",
+      );
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) _pushAssistant("Could not open download link.");
+    } catch (e) {
+      _pushAssistant("Download failed: $e");
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendQuick(String text) async {
+    inputCtrl.text = text;
+    await sendQuestion();
+  }
+
+  Future<void> sendQuestion() async {
+    final q = inputCtrl.text.trim();
+    if (q.isEmpty || asking) return;
+
+    if (!hasConverted) {
+      _pushAssistant("Upload + Convert first, then ask questions.");
+      return;
+    }
+
+    asking = true;
+    notifyListeners();
+
+    _pushUser(q);
+    inputCtrl.clear();
+    _scrollToBottom();
+
+    try {
+      _pushStatus("Answering…");
+
+      // ✅ your ApiClient returns String answer
+      final answer = await api.ask(question: q, docId: docId!);
+
+      if (answer.trim().isEmpty) {
+        _pushAssistant("No answer returned.");
+      } else {
+        _pushAssistant(answer);
+      }
+    } catch (e) {
+      _pushAssistant("Ask failed: $e");
+    } finally {
+      asking = false;
+      notifyListeners();
+      _scrollToBottom();
+    }
+  }
+
+  void clearEverything() {
+    _pdfBytes = null;
+    _fileName = null;
+    docId = null;
+    preview = null;
+
+    messages
+      ..clear()
+      ..add(
+        ChatMessage(
+          role: ChatRole.system,
+          text: "Welcome 👋\nUpload a syllabus PDF, convert, then ask questions.",
+        ),
+      );
+
+    notifyListeners();
+    _scrollToBottom(jump: true);
+  }
+
+  // -----------------------
+  // helpers
+  // -----------------------
+
+  void _pushUser(String t) {
+    messages.add(ChatMessage(role: ChatRole.user, text: t));
+    notifyListeners();
+  }
+
+  void _pushAssistant(String t) {
+    messages.add(ChatMessage(role: ChatRole.assistant, text: t));
+    notifyListeners();
+  }
+
+  void _pushStatus(String t) {
+    messages.add(ChatMessage(role: ChatRole.status, text: t));
+    notifyListeners();
+  }
+
+  void _scrollToBottom({bool jump = false}) {
+    if (!scrollCtrl.hasClients) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!scrollCtrl.hasClients) return;
+      final target = scrollCtrl.position.maxScrollExtent + 200;
+
+      if (jump) {
+        scrollCtrl.jumpTo(target);
+      } else {
+        scrollCtrl.animateTo(
+          target,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    scrollCtrl.dispose();
+    inputCtrl.dispose();
+    inputFocus.dispose();
+    super.dispose();
+  }
+}

@@ -1,11 +1,9 @@
-// lib/ui/syllabus_home.dart
-import 'dart:typed_data';
-
-import 'package:file_picker/file_picker.dart';
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../app/state/syllabus_vm.dart';
+import 'widgets/chat_widgets.dart';
+import 'ui_scale.dart';
+
 
 class SyllabusHome extends StatefulWidget {
   const SyllabusHome({super.key, required this.vm});
@@ -15,261 +13,351 @@ class SyllabusHome extends StatefulWidget {
   State<SyllabusHome> createState() => _SyllabusHomeState();
 }
 
-class _SyllabusHomeState extends State<SyllabusHome> {
-  final questionCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    questionCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickAndConvert() async {
-    final messenger = ScaffoldMessenger.of(context);
-
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ["pdf"],
-      withData: true,
-    );
-
-    if (!mounted) return;
-    if (res == null || res.files.isEmpty) return;
-
-    final f = res.files.first;
-    final Uint8List? bytes = f.bytes;
-    if (bytes == null) {
-      messenger.showSnackBar(const SnackBar(content: Text("Could not read file bytes.")));
-      return;
-    }
-
-    await widget.vm.convert(pdfBytes: bytes, fileName: f.name);
-
-    if (!mounted) return;
-    if (widget.vm.error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(widget.vm.error!)));
-    }
-  }
-
-  Future<void> _ask() async {
-    final messenger = ScaffoldMessenger.of(context);
-
-    final q = questionCtrl.text.trim();
-    if (q.isEmpty) return;
-
-    await widget.vm.askQuestion(q);
-
-    if (!mounted) return;
-    if (widget.vm.error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(widget.vm.error!)));
-    }
-  }
-
-  Future<void> _downloadSingleRow() async {
-    final vm = widget.vm;
-
-    // ✅ after backend refactor: vm should store docId (not filesystem paths)
-    final docId = (vm.docId ?? "").trim();
-    if (docId.isEmpty) return;
-
-    final uri = vm.api.csvDownloadByDocIdUri(docId: docId, kind: "single_row");
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
+class _SyllabusHomeState extends State<SyllabusHome>
+    with TickerProviderStateMixin {
+  bool showPreview = false;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.vm,
-      builder: (context, _) {
-        final vm = widget.vm;
+    final vm = widget.vm;
 
-        final hasConverted = vm.hasConverted; // ideally: based on docId != null
-        final hasPreview = (vm.singleRowPreview ?? "").trim().isNotEmpty;
-        final busy = vm.converting || vm.asking;
+    return AnimatedBuilder(
+      animation: vm,
+      builder: (_, __) {
+        final isDesktop = MediaQuery.of(context).size.width > 1000;
 
         return Scaffold(
-          appBar: AppBar(title: const Text("Syllabus Q&A")),
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _TopActions(
-                    converting: vm.converting,
-                    hasConverted: hasConverted,
-                    onPickAndConvert: _pickAndConvert,
+          backgroundColor: const Color(0xFFF6F4FB),
+          body: Stack(
+            children: [
+              // ================= BACKGROUND GRADIENT =================
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFFF6F4FB),
+                      Color(0xFFECE8FA),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                   ),
-
-                  const SizedBox(height: 12),
-
-                  // ✅ Stable preview area (doesn't fight Spacer/Expanded)
-                  _PreviewPanel(
-                    visible: hasPreview,
-                    text: vm.singleRowPreview ?? "",
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // ✅ Ask panel pinned to bottom
-                  _AskPanel(
-                    controller: questionCtrl,
-                    asking: vm.asking,
-                    canDownload: hasConverted && !vm.converting,
-                    onAsk: busy ? null : _ask,
-                    onDownload: hasConverted ? _downloadSingleRow : null,
-                    answer: vm.answer,
-                  ),
-                ],
+                ),
               ),
-            ),
+
+              // ================= MAIN CONTENT =================
+              SafeArea(
+                child: Column(
+                  children: [
+                    _floatingTopBar(vm),
+                    Expanded(
+                      child: isDesktop
+                          ? Row(
+                              children: [
+                                Expanded(child: _chatArea(vm)),
+                                if (vm.hasConverted && showPreview)
+                                  SizedBox(
+                                    width: 520,
+                                    child: _previewCard(vm),
+                                  ),
+                              ],
+                            )
+                          : _chatArea(vm),
+                    ),
+                    _composer(vm),
+                  ],
+                ),
+              ),
+            ],
           ),
         );
       },
     );
   }
-}
 
-class _TopActions extends StatelessWidget {
-  const _TopActions({
-    required this.converting,
-    required this.hasConverted,
-    required this.onPickAndConvert,
-  });
+  // =========================================================
+  // FLOATING BLURRED TOP BAR
+  // =========================================================
 
-  final bool converting;
-  final bool hasConverted;
-  final VoidCallback onPickAndConvert;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        ElevatedButton.icon(
-          onPressed: converting ? null : onPickAndConvert,
-          icon: converting
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.upload_file),
-          label: Text(converting ? "Converting..." : "Upload PDF"),
-        ),
-        const SizedBox(width: 12),
-        if (hasConverted)
-          Text("✅ Ready", style: Theme.of(context).textTheme.bodyMedium),
-      ],
-    );
-  }
-}
-
-class _PreviewPanel extends StatelessWidget {
-  const _PreviewPanel({required this.visible, required this.text});
-
-  final bool visible;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!visible) {
-      // keeps layout stable: show a small placeholder box instead of Spacer()
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12),
-        ),
-        child: Text(
-          "Upload a PDF to generate a preview.",
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 260), // ✅ prevents giant Expanded jumps
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Single-row CSV Preview", style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Expanded(
-              child: SingleChildScrollView(
-                child: Text(
-                  text,
-                  style: const TextStyle(fontFamily: "monospace", fontSize: 12),
-                ),
-              ),
+  Widget _floatingTopBar(SyllabusViewModel vm) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 20, vertical: 18),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.65),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.4)),
             ),
-          ],
+            child: Row(
+              children: [
+                const Icon(Icons.school, size: 22),
+                const SizedBox(width: 12),
+                const Text(
+                  "Syllabus Q&A",
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16),
+                ),
+                const Spacer(),
+
+                if (vm.hasConverted)
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        showPreview = !showPreview;
+                      });
+                    },
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: Text(showPreview
+                        ? "Hide Preview"
+                        : "View Preview"),
+                  ),
+
+                IconButton(
+                  icon: const Icon(Icons.upload_file),
+                  onPressed: vm.isBusy
+                      ? null
+                      : () async => vm.pickPdf(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: vm.isBusy
+                      ? null
+                      : () => vm.clearEverything(),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
+
+  // =========================================================
+  // CHAT AREA (dominant)
+  // =========================================================
+
+ Widget _chatArea(SyllabusViewModel vm) {
+  final size = MediaQuery.of(context).size;
+  final ui = UiScale(size.width, size.height);
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: ListView.builder(
+      controller: vm.scrollCtrl,
+      padding: const EdgeInsets.only(bottom: 140),
+      itemCount: vm.messages.length,
+      itemBuilder: (_, i) {
+        final message = vm.messages[i];
+        final previous = i > 0 ? vm.messages[i - 1] : null;
+
+        final grouped =
+            previous != null && previous.role == message.role;
+
+        return AnimatedSlide(
+          duration: const Duration(milliseconds: 250),
+          offset: const Offset(0, 0.05),
+          child: ElegantMessage(
+            ui: ui, // ✅ FIXED
+            message: message,
+            showAvatar: !grouped,
+            compactTop: grouped,
+            compactBottom: false,
+          ),
+        );
+      },
+    ),
+  );
 }
 
-class _AskPanel extends StatelessWidget {
-  const _AskPanel({
-    required this.controller,
-    required this.asking,
-    required this.canDownload,
-    required this.onAsk,
-    required this.onDownload,
-    required this.answer,
-  });
+  // =========================================================
+  // COMPOSER (ChatGPT style)
+  // =========================================================
 
-  final TextEditingController controller;
-  final bool asking;
-  final bool canDownload;
-  final VoidCallback? onAsk;
-  final VoidCallback? onDownload;
-  final String? answer;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TextField(
-          controller: controller,
-          textInputAction: TextInputAction.send,
-          onSubmitted: (_) => onAsk?.call(),
-          decoration: const InputDecoration(
-            labelText: "Ask a question",
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: asking ? null : onAsk,
-                child: asking
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text("Ask"),
-              ),
-            ),
-            const SizedBox(width: 10),
-            OutlinedButton.icon(
-              onPressed: canDownload ? onDownload : null,
-              icon: const Icon(Icons.download),
-              label: const Text("Download"),
-            ),
-          ],
-        ),
-        if (answer != null && answer!.trim().isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(answer!, style: Theme.of(context).textTheme.bodyLarge),
+  Widget _composer(SyllabusViewModel vm) {
+    return Container(
+      padding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 18,
+            offset: const Offset(0, -6),
           ),
         ],
-      ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (vm.hasConverted)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  _suggested("When is Quiz 1?", vm),
+                  _suggested("Grading breakdown", vm),
+                  _suggested("Main topics", vm),
+                ],
+              ),
+            ),
+
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: vm.inputCtrl,
+                  focusNode: vm.inputFocus,
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    hintText: "Ask anything...",
+                    filled: true,
+                    fillColor: const Color(0xFFF2F0FA),
+                    contentPadding:
+                        const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.circular(28),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFF7B6CF6),
+                      Color(0xFF9A88FF),
+                    ],
+                  ),
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_upward,
+                      color: Colors.white),
+                  onPressed:
+                      vm.asking ? null : () => vm.sendQuestion(),
+                ),
+              )
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _suggested(String text, SyllabusViewModel vm) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => vm.sendQuick(text),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEDE9FF),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(text,
+            style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13)),
+      ),
+    );
+  }
+
+  // =========================================================
+  // STRUCTURED PREVIEW CARD
+  // =========================================================
+
+  Widget _previewCard(SyllabusViewModel vm) {
+    if (vm.preview == null ||
+        vm.preview!.text.trim().isEmpty) {
+      return const Center(
+        child: Text("No structured preview available."),
+      );
+    }
+
+    final lines = vm.preview!.text.split('\n');
+    final Map<String, String> grouped = {};
+
+    for (var line in lines) {
+      if (!line.contains(',')) continue;
+      final index = line.indexOf(',');
+      grouped[line.substring(0, index)] =
+          line.substring(index + 1);
+    }
+
+    return Container(
+      margin: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 24,
+          )
+        ],
+      ),
+      child: ListView(
+        children: [
+          const Text(
+            "Preview of Selected Syllabus",
+            style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 20),
+
+          ...grouped.entries.map((e) {
+            return Padding(
+              padding:
+                  const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Text(e.key,
+                      style: const TextStyle(
+                          fontWeight:
+                              FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(e.value),
+                ],
+              ),
+            );
+          }),
+
+          const SizedBox(height: 20),
+
+          ElevatedButton.icon(
+            onPressed: () => vm.downloadCsv(),
+            icon: const Icon(Icons.download),
+            label: const Text("Download CSV"),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
