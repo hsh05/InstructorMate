@@ -1,6 +1,8 @@
 // lib/app/api_client.dart
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -73,12 +75,17 @@ class ApiClient {
       );
 
     final usedTimeout = requestTimeout ?? convertDefaultTimeout;
-
     http.StreamedResponse streamed;
     try {
       streamed = await req.send().timeout(usedTimeout);
+    } on TimeoutException {
+      throw Exception("Convert request timed out after ${usedTimeout.inSeconds}s.");
+    } on SocketException catch (e) {
+      throw Exception("Network error (socket): ${e.message}. Check internet / URL / DNS.");
+    } on HandshakeException catch (e) {
+      throw Exception("TLS/SSL handshake failed: ${e.message}. Use https:// and verify cert.");
     } catch (e) {
-      throw Exception("Convert request timed out. Try a smaller PDF or retry.");
+      throw Exception("Convert request failed: $e");
     }
 
     final resp = await http.Response.fromStream(streamed);
