@@ -14,7 +14,8 @@ class StatChip extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
+  @override
+Widget build(BuildContext context) => Container(
     padding: EdgeInsets.symmetric(
       horizontal: AppStyles.paddingS,
       vertical: AppStyles.paddingXS,
@@ -32,11 +33,17 @@ class StatChip extends StatelessWidget {
           color: iconColor ?? AppStyles.darkGray,
         ),
         SizedBox(width: AppStyles.gapXS),
-        Text(
-          label,
-          style: AppStyles.bodySmall.copyWith(
-            fontWeight: FontWeight.w600,
-            color: AppStyles.darkGray,
+        // FIXED SECTION:
+        Flexible( 
+          child: Text(
+            label,
+            style: AppStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppStyles.darkGray,
+            ),
+            overflow: TextOverflow.ellipsis, // Adds '...' if text is too long
+            maxLines: 1,                    // Prevents text from wrapping to a second line
+            softWrap: false,                // Ensures it stays on one line
           ),
         ),
       ],

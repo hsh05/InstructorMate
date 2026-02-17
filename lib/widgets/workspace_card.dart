@@ -58,25 +58,36 @@ class WorkspaceCard extends StatelessWidget {
       Text(
         workspace.title,
         style: AppStyles.headingSmall,
+        // Added these to handle long titles safely
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
       SizedBox(height: AppStyles.gapXS),
       Text(
         'Course workspace • ${workspace.semester}',
         style: AppStyles.bodyMedium,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
       SizedBox(height: AppStyles.gapM),
       Row(
         children: [
-          StatChip(
-            icon: Icons.people_rounded,
-            label: '${workspace.studentCount} students',
-            iconColor: AppStyles.primaryPurple,
+          // Wrap the first chip in Expanded
+          Expanded(
+            child: StatChip(
+              icon: Icons.people_rounded,
+              label: '${workspace.studentCount} students',
+              iconColor: AppStyles.primaryPurple,
+            ),
           ),
           SizedBox(width: AppStyles.gapS),
-          StatChip(
-            icon: Icons.task_alt_rounded,
-            label: '${workspace.taskCount} tasks today',
-            iconColor: AppStyles.primaryDeepPurple,
+          // Wrap the second chip in Expanded
+          Expanded(
+            child: StatChip(
+              icon: Icons.task_alt_rounded,
+              label: '${workspace.taskCount} tasks today',
+              iconColor: AppStyles.primaryDeepPurple,
+            ),
           ),
         ],
       ),
