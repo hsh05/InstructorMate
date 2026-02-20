@@ -44,12 +44,13 @@
 ```bash
 pip install fastapi uvicorn pypdf openai python-dotenv
 uvicorn server:app --host 0.0.0.0 --port 8000
+uvicorn main:app --reload
 
 git branch
 git switch merna-syllabus-ui
 git add .
 git status
-git commit -m "your message"
+git commit -m "backend+frontend"
 git push origin merna-syllabus-ui
 git push deploy merna-syllabus-ui
 

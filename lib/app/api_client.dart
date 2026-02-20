@@ -1,234 +1,174 @@
 // lib/app/api_client.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:async';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
-/// SRP: backend communication only.
+import '../app/workspace_models.dart';
+
 class ApiClient {
-  ApiClient({required String baseUrl, required this.timeout})
-      : baseUri = _normalizeBaseUri(baseUrl);
+  ApiClient({required String baseUrl}) : baseUri = _normalizeBaseUri(baseUrl);
 
   final Uri baseUri;
-  final Duration timeout;
 
-  // Optional: override for endpoints that are naturally slower (e.g. PDF convert).
-  static const Duration convertDefaultTimeout = Duration(seconds: 120);
-  static const Duration askDefaultTimeout = Duration(seconds: 30);
-
-  /// Normalize BASE_URL so it works on every platform.
   static Uri _normalizeBaseUri(String raw) {
-    var s = (raw).trim();
-    if (s.isEmpty) {
-      throw Exception("BASE_URL is empty. Example: http://127.0.0.1:8000");
-    }
-
-    if (!s.startsWith("http://") && !s.startsWith("https://")) {
-      s = "http://$s";
-    }
-
-    while (s.endsWith("/")) {
-      s = s.substring(0, s.length - 1);
-    }
-
+    var s = raw.trim();
+    if (s.isEmpty) throw Exception("BASE_URL is empty. Example: http://127.0.0.1:8000");
+    if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s";
+    while (s.endsWith("/")) s = s.substring(0, s.length - 1);
     final u = Uri.parse(s);
-    if (u.host.isEmpty) {
-      throw Exception("Invalid BASE_URL (no host): $s");
-    }
+    if (u.host.isEmpty) throw Exception("Invalid BASE_URL (no host): $s");
     return u;
   }
 
-  /// Safe URL builder.
-  Uri _u(String path, {Map<String, String>? q}) {
-    final cleanPath = path.startsWith("/") ? path : "/$path";
-    var uri = baseUri.resolve(cleanPath);
-    if (q != null && q.isNotEmpty) {
-      uri = uri.replace(queryParameters: q);
-    }
-    return uri;
+  Uri _u(String path) {
+    final p = path.startsWith("/") ? path : "/$path";
+    return baseUri.resolve(p);
   }
 
-  // ----------------------------
-  // Convert upload → doc_id
-  // ----------------------------
-  Future<String> convertUploadGetDocId({
-    required Uint8List pdfBytes,
-    required String fileName,
-    Duration? requestTimeout, // allow per-call override
+  // ---------------------------
+  // Workspaces
+  // ---------------------------
+  Future<Workspace> importWorkspace({
+    required Uint8List bytes,
+    required String filename,
+    String preferredId = "",
   }) async {
-    if (pdfBytes.isEmpty) {
-      throw Exception("PDF is empty.");
-    }
-    final safeName = fileName.trim().isEmpty ? "syllabus.pdf" : fileName.trim();
-
-    final req = http.MultipartRequest('POST', _u("/convert-upload"))
+    // ✅ FIX: backend endpoint is /workspaces/upload
+    final req = http.MultipartRequest("POST", _u("/workspaces/upload"))
+      ..fields["preferred_id"] = preferredId
       ..files.add(
         http.MultipartFile.fromBytes(
-          'pdf',
-          pdfBytes,
-          filename: safeName,
-          contentType: MediaType('application', 'pdf'),
+          "file",
+          bytes,
+          filename: filename,
+          contentType: _contentTypeFor(filename),
         ),
       );
 
-    final usedTimeout = requestTimeout ?? convertDefaultTimeout;
     http.StreamedResponse streamed;
     try {
-      streamed = await req.send().timeout(usedTimeout);
+      streamed = await req.send().timeout(const Duration(seconds: 120));
     } on TimeoutException {
-      throw Exception("Convert request timed out after ${usedTimeout.inSeconds}s.");
-    } on SocketException catch (e) {
-      throw Exception("Network error (socket): ${e.message}. Check internet / URL / DNS.");
-    } on HandshakeException catch (e) {
-      throw Exception("TLS/SSL handshake failed: ${e.message}. Use https:// and verify cert.");
+      throw Exception("Import timed out. Try again.");
     } catch (e) {
-      throw Exception("Convert request failed: $e");
+      throw Exception("Network/CORS error while uploading. Check backend CORS + port. ($e)");
     }
 
     final resp = await http.Response.fromStream(streamed);
 
     if (resp.statusCode != 200) {
-      throw Exception(_extractBackendDetail(resp));
+      throw Exception(_extractDetail(resp));
     }
 
-    final j = _decodeJsonMap(resp.body, fallbackMessage: "Invalid JSON from backend.");
-    final docId = (j["doc_id"] ?? "").toString().trim();
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
 
-    if (docId.isEmpty) {
-      throw Exception("Backend returned no doc_id.");
-    }
-    return docId;
+    // backend returns { workspace: {...}, ... }
+    final wsMap = map["workspace"] as Map<String, dynamic>;
+    return Workspace.fromJson(wsMap);
   }
 
-  // ----------------------------
-  // CSV view as text
-  // ----------------------------
-  Future<String> fetchCsvTextByDocId({
-    required String docId,
-    String kind = "single_row",
-    Duration? requestTimeout,
+  Future<List<WorkspaceSummary>> listWorkspaces() async {
+    final resp = await http.get(_u("/workspaces")).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+
+    final arr = jsonDecode(resp.body) as List<dynamic>;
+    return arr
+        .map((e) => WorkspaceSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Workspace> getWorkspace(String id) async {
+    final resp = await http.get(_u("/workspaces/$id")).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    return Workspace.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
+  }
+
+  Future<Workspace> updateWorkspaceFields(String id, Map<String, String> fields) async {
+    final resp = await http
+        .patch(
+          _u("/workspaces/$id"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"fields": fields}),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    return Workspace.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
+  }
+
+  Future<Workspace> createSection(String wid, SectionDraft d) async {
+    final resp = await http
+        .post(
+          _u("/workspaces/$wid/sections"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(d.toJson()),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    return Workspace.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
+  }
+
+  Future<Workspace> importStudents({
+    required String workspaceId,
+    required Uint8List bytes,
+    required String filename,
   }) async {
-    final d = docId.trim();
-    if (d.isEmpty) throw Exception("docId is empty.");
+    final req = http.MultipartRequest(
+      "POST",
+      _u("/workspaces/$workspaceId/students/import"),
+    )..files.add(
+        http.MultipartFile.fromBytes(
+          "file",
+          bytes,
+          filename: filename,
+          contentType: MediaType("text", "csv"),
+        ),
+      );
 
-    final k = kind.trim().isEmpty ? "single_row" : kind.trim();
+    final streamed = await req.send().timeout(const Duration(seconds: 30));
+    final resp = await http.Response.fromStream(streamed);
 
-    final uri = _u("/csv-text", q: {"doc_id": d, "kind": k});
-
-    final usedTimeout = requestTimeout ?? timeout;
-
-    http.Response resp;
-    try {
-      resp = await http.get(uri).timeout(usedTimeout);
-    } catch (_) {
-      throw Exception("Request timed out while loading CSV text.");
-    }
-
-    if (resp.statusCode != 200) {
-      throw Exception(_extractBackendDetail(resp));
-    }
-    return resp.body;
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    return Workspace.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
   }
 
-  // ----------------------------
-  // CSV download link
-  // ----------------------------
-  Uri csvDownloadByDocIdUri({
-    required String docId,
-    String kind = "single_row",
-  }) {
-    final d = docId.trim();
-    final k = kind.trim().isEmpty ? "single_row" : kind.trim();
-    return _u("/csv-download", q: {"doc_id": d, "kind": k});
+  Future<String> ask(String wid, String question) async {
+    final resp = await http
+        .post(
+          _u("/workspaces/$wid/ask"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"question": question}),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (resp.statusCode == 504) throw Exception("Ask timed out. Try again.");
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    return (map["answer"] ?? "").toString();
   }
 
-  // ----------------------------
-  // Ask question
-  // ----------------------------
-  Future<String> ask({
-    required String question,
-    required String docId,
-    Duration? requestTimeout,
-  }) async {
-    final q = question.trim();
-    final d = docId.trim();
-
-    if (d.isEmpty) throw Exception("docId is empty.");
-    if (q.isEmpty) throw Exception("Question is empty.");
-
-    final uri = _u("/ask");
-    final usedTimeout = requestTimeout ?? askDefaultTimeout;
-
-    http.Response resp;
-    try {
-      resp = await http
-          .post(
-            uri,
-            headers: {
-              "Content-Type": "application/json",
-              // Optional: add a client request-id header for debugging (server echoes x-request-id back)
-              // "x-request-id": DateTime.now().millisecondsSinceEpoch.toString(),
-            },
-            body: jsonEncode({"question": q, "doc_id": d}),
-          )
-          .timeout(usedTimeout);
-    } catch (_) {
-      // Client-side timeout (different from server 504)
-      throw Exception("Answer took too long. Please try again.");
-    }
-
-    // Server-side timeout handling (your FastAPI returns 504 now)
-    if (resp.statusCode == 504) {
-      // Prefer backend detail if present
-      final msg = _extractBackendDetail(resp);
-      throw Exception(msg.isNotEmpty ? msg : "Server timed out while answering. Try again.");
-    }
-
-    if (resp.statusCode != 200) {
-      throw Exception(_extractBackendDetail(resp));
-    }
-
-    final j = _decodeJsonMap(resp.body, fallbackMessage: "Invalid JSON from backend.");
-    return (j["answer"] ?? "").toString();
-  }
-
-  // ----------------------------
+  // ---------------------------
   // Helpers
-  // ----------------------------
-  Map<String, dynamic> _decodeJsonMap(String body, {required String fallbackMessage}) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic>) return decoded;
-      throw Exception(fallbackMessage);
-    } catch (_) {
-      throw Exception(fallbackMessage);
+  // ---------------------------
+  MediaType _contentTypeFor(String filename) {
+    final f = filename.toLowerCase();
+    if (f.endsWith(".pdf")) return MediaType("application", "pdf");
+    if (f.endsWith(".docx")) {
+      return MediaType("application", "vnd.openxmlformats-officedocument.wordprocessingml.document");
     }
+    return MediaType("text", "plain");
   }
 
-  String _extractBackendDetail(http.Response resp) {
-    // Default (always includes status)
-    var msg = "Request failed (${resp.statusCode}).";
-
-    // Try JSON detail (FastAPI style)
+  String _extractDetail(http.Response resp) {
     try {
-      final decoded = jsonDecode(resp.body);
-      if (decoded is Map && decoded['detail'] != null) {
-        final d = decoded['detail'].toString().trim();
-        if (d.isNotEmpty) return d;
-      }
-    } catch (_) {
-      // ignore
-    }
-
-    // Fallback to short body snippet (avoid dumping huge HTML into UI)
-    final raw = resp.body.trim();
-    if (raw.isNotEmpty) {
-      final snippet = raw.length > 300 ? "${raw.substring(0, 300)}…" : raw;
-      msg = "$msg $snippet";
-    }
-    return msg;
+      final m = jsonDecode(resp.body);
+      if (m is Map && m["detail"] != null) return m["detail"].toString();
+    } catch (_) {}
+    return "Request failed (${resp.statusCode}).";
   }
 }

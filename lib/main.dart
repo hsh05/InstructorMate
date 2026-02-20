@@ -1,30 +1,39 @@
-// lib/main.dart // file path comment
-import 'package:flutter/material.dart'; // Flutter UI
+// lib/main.dart
+import 'package:flutter/material.dart';
 
-import 'config/app_config.dart'; // AppConfig settings
-import 'app/api_client.dart'; // ApiClient
-import 'app/state/syllabus_vm.dart'; // SyllabusViewModel
-import 'ui/syllabus_home.dart'; // UI screen
+import 'app/api_client.dart';
+import 'app/state/workspaces_vm.dart';
+import 'ui/workspaces_home.dart';
+import 'ui/workspace_detail.dart';
 
-void main() => runApp(const SyllabusApp()); // app entry point
+void main() => runApp(const _Bootstrap());
 
-class SyllabusApp extends StatelessWidget { // root widget
-  const SyllabusApp({super.key}); // const constructor
+class _Bootstrap extends StatefulWidget {
+  const _Bootstrap({super.key});
 
   @override
-  Widget build(BuildContext context) { // build UI tree
-    final api = ApiClient( // create API client
-      baseUrl: AppConfig.baseUrl, // base URL from config
-      timeout: AppConfig.httpTimeout, // timeout from config
-    ); // end api
+  State<_Bootstrap> createState() => _BootstrapState();
+}
 
-    final vm = SyllabusViewModel(api: api); // create ViewModel
+class _BootstrapState extends State<_Bootstrap> {
+  late final WorkspacesViewModel vm;
 
-    return MaterialApp( // app wrapper
-      title: 'Syllabus Q&A', // title
-      debugShowCheckedModeBanner: false, // hide debug
-      theme: ThemeData(useMaterial3: true), // use Material 3
-      home: SyllabusHome(vm: vm), // show home screen
-    ); // end MaterialApp
-  } // end build
-} // end class
+  @override
+  void initState() {
+    super.initState();
+    final api = ApiClient(baseUrl:"http://127.0.0.1:8000");
+    vm = WorkspacesViewModel(api: api);
+    vm.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      routes: {
+        "/": (_) => WorkspacesHome(vm: vm),
+        "/workspace": (_) => WorkspaceDetailPage(vm: vm),
+      },
+    );
+  }
+}
