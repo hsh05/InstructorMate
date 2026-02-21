@@ -3,9 +3,9 @@ from api.workspace_routes import router as workspace_router
 from api.section_routes import router as section_router
 from api.student_routes import router as student_router
 
-app = FastAPI()
+app = FastAPI() 
 
-app.include_router(workspace_router)
+app.include_router(workspace_router) #That connects this file’s endpoints (in api files in front end) to the server backend.
 app.include_router(section_router)
 app.include_router(student_router)
 

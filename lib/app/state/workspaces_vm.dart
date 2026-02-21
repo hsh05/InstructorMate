@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../api_client.dart';
 import '../workspace_models.dart';
 
-class WorkspacesViewModel extends ChangeNotifier {
+class WorkspacesViewModel extends ChangeNotifier {  //This is the “brain” that UI screens listen to.
   WorkspacesViewModel({required this.api});
 
   final ApiClient api;

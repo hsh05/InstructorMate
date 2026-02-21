@@ -36,7 +36,7 @@ class UpdateFieldsRequest(BaseModel):
 
 
 # -----------------------------
-# Workspace CRUD
+# Workspace CRUD -> create, read, update, delete 
 # -----------------------------
 
 @router.get("/workspaces")

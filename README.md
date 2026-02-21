@@ -50,7 +50,7 @@ git branch
 git switch merna-syllabus-ui
 git add .
 git status
-git commit -m "backend+frontend"
+git commit -m "backend+frontend oragizing"
 git push origin merna-syllabus-ui
 git push deploy merna-syllabus-ui
 

@@ -1,5 +1,5 @@
 // lib/app/api_client.dart
-import 'dart:async';
+import 'dart:async';                    //(all HTTP calls to backend)
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -13,7 +13,7 @@ class ApiClient {
 
   final Uri baseUri;
 
-  static Uri _normalizeBaseUri(String raw) {
+  static Uri _normalizeBaseUri(String raw) {  
     var s = raw.trim();
     if (s.isEmpty) throw Exception("BASE_URL is empty. Example: http://127.0.0.1:8000");
     if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s";
@@ -31,12 +31,12 @@ class ApiClient {
   // ---------------------------
   // Workspaces
   // ---------------------------
-  Future<Workspace> importWorkspace({
+  Future<Workspace> importWorkspace({ //(endpoint methods )These are the backend calls my UI/viewmodel relies on:
     required Uint8List bytes,
     required String filename,
     String preferredId = "",
   }) async {
-    // ✅ FIX: backend endpoint is /workspaces/upload
+    // FIX: backend endpoint is /workspaces/upload
     final req = http.MultipartRequest("POST", _u("/workspaces/upload"))
       ..fields["preferred_id"] = preferredId
       ..files.add(

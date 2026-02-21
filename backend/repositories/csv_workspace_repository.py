@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
 
-
+                                                  # (repositories )They DO NOT contain logic. They ONLY read/write data.
 DATA_DIR = Path("data")
 WS_DIR = DATA_DIR / "workspaces"
 INDEX_PATH = DATA_DIR / "index.json"
