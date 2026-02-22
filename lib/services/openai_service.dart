@@ -4,7 +4,7 @@ import '../models/config_model.dart';
 import '../models/question_model.dart';
 
 class OpenAIService {
-  static final String _baseUrl = "https://instructormateassessment.onrender.com";
+  static final String _baseUrl = "https://instructormate.onrender.com/";
 
   // ADDED selectedMaterialIds parameter
   Future<List<QuizQuestion>> generateQuiz(int courseId, List<QuestionTypeConfig> configs, List<int> selectedMaterialIds) async {
@@ -68,7 +68,6 @@ class OpenAIService {
                            
         throw Exception(errorMessage);
       }
-    throw Exception("Failed to generate quiz: ${response.body}");
   }
 
   Future<QuizQuestion> editQuestionWithAI(QuizQuestion oldQuestion, String instruction) async {
