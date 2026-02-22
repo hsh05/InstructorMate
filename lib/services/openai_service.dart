@@ -4,7 +4,7 @@ import '../models/config_model.dart';
 import '../models/question_model.dart';
 
 class OpenAIService {
-  static final String _baseUrl = "https://unsent-jermaine-semiluminously.ngrok-free.dev";
+  static final String _baseUrl = "https://instructormateassessment.onrender.com/";
 
   // ADDED selectedMaterialIds parameter
   Future<List<QuizQuestion>> generateQuiz(int courseId, List<QuestionTypeConfig> configs, List<int> selectedMaterialIds) async {

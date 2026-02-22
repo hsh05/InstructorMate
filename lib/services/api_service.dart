@@ -5,7 +5,7 @@ import '../models/course_model.dart';
 
 class ApiService {
   // Windows desktop uses localhost. Android Emulators require 10.0.2.2.
-  static final String _baseUrl = "https://unsent-jermaine-semiluminously.ngrok-free.dev";
+  static final String _baseUrl = "https://instructormateassessment.onrender.com/";
 
   Future<List<Course>> fetchCourses() async {
     var response = await http.get(Uri.parse('$_baseUrl/courses/'));
