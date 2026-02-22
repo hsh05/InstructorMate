@@ -12,6 +12,8 @@ from database import engine, get_db
 from schemas import QuizGenerateRequest
 from openai import OpenAI
 from dotenv import load_dotenv
+import docx
+from pptx import Presentation
 
 # Load the .env file
 load_dotenv()
@@ -175,31 +177,49 @@ async def edit_question(request: dict):
 @app.post("/generate-direct")
 async def generate_direct(
     file: UploadFile = File(...),
-    configs: str = Form(...)  # <--- NEW: Tells FastAPI to expect a form field named 'configs'
+    configs: str = Form(...)
 ):
     try:
-        # 1. Parse the settings string from Flutter back into a Python list/dictionary
         config_data = json.loads(configs)
-        
-        # 2. Read the physical file directly into RAM
         contents = await file.read()
         extracted_text = ""
         
-        if file.filename.endswith(".pdf"):
+        # Make it lowercase just to be safe
+        filename = file.filename.lower()
+        
+        # 1. Handle PDFs
+        if filename.endswith(".pdf"):
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
             for page in pdf_reader.pages:
-                if page.extract_text():
-                    extracted_text += page.extract_text() + "\n"
-        elif file.filename.endswith(".txt"):
+                text = page.extract_text()
+                if text:
+                    extracted_text += text + "\n"
+                    
+        # 2. Handle Word Documents (.docx)
+        elif filename.endswith(".docx"):
+            doc = docx.Document(io.BytesIO(contents))
+            for para in doc.paragraphs:
+                extracted_text += para.text + "\n"
+                
+        # 3. Handle PowerPoint (.pptx)
+        elif filename.endswith(".pptx"):
+            ppt = Presentation(io.BytesIO(contents))
+            for slide in ppt.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        extracted_text += shape.text + "\n"
+                        
+        # 4. Handle plain text
+        elif filename.endswith(".txt"):
             extracted_text = contents.decode("utf-8")
+            
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file type.")
+            raise HTTPException(status_code=400, detail="Unsupported file. Please upload PDF, DOCX, PPTX, or TXT.")
 
         if not extracted_text.strip():
-            raise HTTPException(status_code=400, detail="Could not extract text.")
+            raise HTTPException(status_code=400, detail="Could not extract text from the file.")
 
-        # 3. Pass BOTH the extracted text AND the configuration data to your AI function.
-        # (Make sure your internal AI function actually accepts this config_data!)
+        # Pass to OpenAI
         questions = await generate_questions_with_ai(extracted_text, config_data)
         
         return {"questions": questions}

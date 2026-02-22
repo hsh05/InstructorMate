@@ -100,7 +100,8 @@ class _GenerateScreenState extends State<GenerateScreen> {
   Future<void> _pickFiles() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'pptx', 'txt'],
+      // ADDED 'docx' here!
+      allowedExtensions: ['pdf', 'pptx', 'docx', 'txt'],
       allowMultiple: true,
     );
     if (result != null) {
