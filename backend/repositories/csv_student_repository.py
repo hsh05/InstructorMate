@@ -1,31 +1,51 @@
-from __future__ import annotations
+from pathlib import Path
 import csv
-import io
-import uuid
-from typing import Dict, Any
-
+from domain.student import Student
 from repositories.csv_workspace_repository import CsvWorkspaceRepository
 
 
 class CsvStudentRepository:
-    def __init__(self, ws_repo: CsvWorkspaceRepository) -> None:
+
+    # FIX #4a: Accept ws_repo (not a raw file path) — consistent with how student_routes instantiates this
+    def __init__(self, ws_repo: CsvWorkspaceRepository):
         self.ws_repo = ws_repo
 
-    def import_csv(self, workspace_id: str, csv_bytes: bytes) -> Dict[str, Any]:
-        ws = self.ws_repo.load(workspace_id)
-        students = ws.get("students", [])
+    def _file_path(self, workspace_id: str) -> Path:
+        ws_dir = self.ws_repo.workspace_dir(workspace_id)
+        ws_dir.mkdir(parents=True, exist_ok=True)
+        return ws_dir / "students.csv"
 
-        text = csv_bytes.decode("utf-8", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
+    def save(self, student: Student) -> None:
+        file_path = self._file_path(student.workspace_id)
+        file_exists = file_path.exists()
 
-        for row in reader:
-            students.append({
-                "id": f"stu_{uuid.uuid4().hex[:8]}",
-                "student_no": (row.get("student_no") or "").strip(),
-                "name": (row.get("name") or "").strip(),
-                "email": (row.get("email") or "").strip(),
+        with open(file_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=["student_id", "workspace_id", "student_no", "name", "email"],
+            )
+            if not file_exists:
+                writer.writeheader()
+
+            # FIX #4b: Include student_no so all 5 columns are written correctly
+            writer.writerow({
+                "student_id": student.student_id,
+                "workspace_id": student.workspace_id,
+                "student_no": getattr(student, "student_no", ""),
+                "name": student.name,
+                "email": student.email,
             })
 
-        ws["students"] = students
-        self.ws_repo.save(workspace_id, ws)
-        return ws
+    def list_by_workspace(self, workspace_id: str):
+        file_path = self._file_path(workspace_id)
+        results = []
+        if not file_path.exists():
+            return results
+
+        with open(file_path, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["workspace_id"] == workspace_id:
+                    results.append(row)
+
+        return results

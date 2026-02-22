@@ -4,24 +4,36 @@ class WorkspaceSummary {
   final String id;
   final String createdAt;
   final String originalFilename;
-  final String syllabusHash;
+  final String pdfHash; // FIX #6: was syllabusHash, backend sends pdf_hash
   final String title;
 
   WorkspaceSummary({
     required this.id,
     required this.createdAt,
     required this.originalFilename,
-    required this.syllabusHash,
+    required this.pdfHash,
     required this.title,
   });
 
   factory WorkspaceSummary.fromJson(Map<String, dynamic> j) {
+    // Derive title from fields if present, fallback to course_name/course_title
+    final fields = (j["fields"] as Map?) ?? {};
+    String title = "";
+    for (final key in ["course_name", "course_title"]) {
+      final v = (fields[key] ?? "").toString().trim();
+      if (v.isNotEmpty) {
+        title = v;
+        break;
+      }
+    }
+
     return WorkspaceSummary(
       id: (j["id"] ?? "").toString(),
       createdAt: (j["created_at"] ?? "").toString(),
       originalFilename: (j["original_filename"] ?? "").toString(),
-      syllabusHash: (j["syllabus_hash"] ?? "").toString(),
-      title: (j["title"] ?? "").toString(),
+      // FIX #6: backend key is pdf_hash, not syllabus_hash
+      pdfHash: (j["pdf_hash"] ?? "").toString(),
+      title: title.isEmpty ? "Untitled Course" : title,
     );
   }
 }
@@ -30,7 +42,7 @@ class Workspace {
   final String id;
   final String createdAt;
   final String originalFilename;
-  final String syllabusHash;
+  final String pdfHash; // FIX #6: was syllabusHash
 
   final Map<String, String> fields;
   final List<Section> sections;
@@ -40,7 +52,7 @@ class Workspace {
     required this.id,
     required this.createdAt,
     required this.originalFilename,
-    required this.syllabusHash,
+    required this.pdfHash,
     required this.fields,
     required this.sections,
     required this.studentsCount,
@@ -54,15 +66,26 @@ class Workspace {
       id: (j["id"] ?? "").toString(),
       createdAt: (j["created_at"] ?? "").toString(),
       originalFilename: (j["original_filename"] ?? "").toString(),
-      syllabusHash: (j["syllabus_hash"] ?? "").toString(),
-      fields: fieldsRaw.map((k, v) => MapEntry(k.toString(), (v ?? "").toString())),
-      sections: sectionsRaw.map((e) => Section.fromJson(e as Map<String, dynamic>)).toList(),
+      // FIX #6: backend key is pdf_hash
+      pdfHash: (j["pdf_hash"] ?? "").toString(),
+      fields: fieldsRaw.map(
+        (k, v) => MapEntry(k.toString(), (v ?? "").toString()),
+      ),
+      sections: sectionsRaw
+          .map((e) => Section.fromJson(e as Map<String, dynamic>))
+          .toList(),
       studentsCount: int.tryParse((j["students_count"] ?? 0).toString()) ?? 0,
     );
   }
 
   String get title {
-    for (final key in ["course_name", "course_title", "course", "Course Name", "Course Title"]) {
+    for (final key in [
+      "course_name",
+      "course_title",
+      "course",
+      "Course Name",
+      "Course Title",
+    ]) {
       final v = (fields[key] ?? "").trim();
       if (v.isNotEmpty) return v;
     }
@@ -88,7 +111,8 @@ class Section {
   factory Section.fromJson(Map<String, dynamic> j) {
     final sch = (j["schedule"] as Map?)?.cast<String, dynamic>() ?? {};
     return Section(
-      id: (j["id"] ?? "").toString(),
+      // FIX #7: backend returns "section_id", not "id"
+      id: (j["section_id"] ?? j["id"] ?? "").toString(),
       name: (j["name"] ?? "").toString(),
       instructorName: (j["instructor_name"] ?? "").toString(),
       location: (j["location"] ?? "").toString(),
@@ -119,7 +143,8 @@ class SectionSchedule {
       startTime: (j["start_time"] ?? "").toString(),
       endTime: (j["end_time"] ?? "").toString(),
       timezone: (j["timezone"] ?? "UTC").toString(),
-      reminderMinutes: int.tryParse((j["reminder_minutes"] ?? 10).toString()) ?? 10,
+      reminderMinutes:
+          int.tryParse((j["reminder_minutes"] ?? 10).toString()) ?? 10,
     );
   }
 }
@@ -136,13 +161,15 @@ class SectionDraft {
   int reminderMinutes = 10;
 
   Map<String, dynamic> toJson() => {
-        "name": name,
-        "instructor_name": instructorName,
-        "location": location,
-        "days": days,
-        "start_time": startTime,
-        "end_time": endTime,
-        "timezone": timezone,
-        "reminder_minutes": reminderMinutes,
-      };
+    "name": name,
+    "instructor_name": instructorName,
+    "location": location,
+    "schedule": {
+      "days": days,
+      "start_time": startTime,
+      "end_time": endTime,
+      "timezone": timezone,
+      "reminder_minutes": reminderMinutes,
+    },
+  };
 }

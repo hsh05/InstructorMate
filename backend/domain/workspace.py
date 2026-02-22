@@ -5,15 +5,15 @@ REQUIRED_FIELDS = [
     "course_title",
     "semester",
     "office_hours"
-]                                # defines what workspace is 
+]
 
 
-class Workspace: #this is my core object
+class Workspace:
     def __init__(self, workspace_id: str, pdf_hash: str, fields: Dict[str, str], status: WorkspaceStatus):
         self._workspace_id = workspace_id
-        self._pdf_hash = pdf_hash #to detect any duplicate pdf uploads
-        self._fields = fields #these are the extracted syllabus fields
-        self._status = status #ready/draft
+        self._pdf_hash = pdf_hash
+        self._fields = fields
+        self._status = status
 
     @property
     def workspace_id(self):
@@ -31,25 +31,26 @@ class Workspace: #this is my core object
     def status(self):
         return self._status
 
-    def update_fields(self, updates: Dict[str, str]): #when thw user updates the missing values 
+    def update_fields(self, updates: Dict[str, str]):
         self._fields.update(updates)
         self._recalculate_status()
 
-    def get_missing_fields(self) -> List[str]: #checks the required fields up, if all filled workspace is ready, otherwise draft
+    def get_missing_fields(self) -> List[str]:
         return [f for f in REQUIRED_FIELDS if not self._fields.get(f)]
 
-    def _recalculate_status(self):# checks if required fields are filled
+    def _recalculate_status(self):
         self._status = WorkspaceStatus.READY if not self.get_missing_fields() else WorkspaceStatus.DRAFT
 
-    def to_dict(self): #converts object into JSON-safe dictionary for API responses.
+    def to_dict(self):
         return {
             "id": self.workspace_id,
-            "pdfHash": self.pdf_hash,
+            "created_at": "",
+            "original_filename": "",
+            # FIX #5: Renamed "syllabus_hash" → "pdf_hash" to match the CSV column and workspace.json
+            "pdf_hash": self.pdf_hash,
             "fields": self.fields,
+            # FIX #6: Added "status" so frontend knows if workspace is draft or ready
             "status": self.status.value,
-            "missing": self.get_missing_fields(),
+            "sections": [],
+            "students_count": 0,
         }
-
-        
-
-        
