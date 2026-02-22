@@ -1,0 +1,2 @@
+// lib/api_key.dart
+const String openAIKey = "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";
