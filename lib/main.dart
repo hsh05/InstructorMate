@@ -1,21 +1,4 @@
 import 'package:flutter/material.dart';
-<<<<<<< Updated upstream
-import 'package:instructor_mate/screens/workspace.dart';
-void main() {
-  runApp(const InstructorMateApp());
-}
-
-class InstructorMateApp extends StatelessWidget {
-  const InstructorMateApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-home: WorkspacesScreen(),
-    );
-  }
-=======
 import 'screens/generate_screen.dart';
 
 void main() {
@@ -23,5 +6,4 @@ void main() {
     debugShowCheckedModeBanner: false,
     home: GenerateScreen()
   ));
->>>>>>> Stashed changes
 }
