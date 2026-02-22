@@ -17,13 +17,15 @@ class QuizQuestion {
 
   factory QuizQuestion.fromJson(Map<String, dynamic> json) {
     return QuizQuestion(
-      // The ?.toString() ?? '' guarantees it will ALWAYS be a String
       type: json['type']?.toString() ?? 'Unknown',
       question: json['question']?.toString() ?? '',
       
-      // Safely map through the list, converting any null items to empty strings
+      // NEW: The .where() command filters out any empty strings ("") or nulls
       options: json['options'] != null 
-          ? (json['options'] as List).map((e) => e?.toString() ?? '').toList() 
+          ? (json['options'] as List)
+              .map((e) => e?.toString() ?? '')
+              .where((e) => e.isNotEmpty) // <-- This destroys the empty circles!
+              .toList() 
           : null,
           
       answer: json['answer']?.toString() ?? '',

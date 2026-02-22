@@ -52,7 +52,7 @@ async def generate_questions_with_ai(extracted_text: str, config_data: list):
     Each question object MUST have:
     - "type": (e.g., "MCQ", "Essay", or "True/False")
     - "question": The text of the question.
-    - "options": A list of 4 strings (null for Essay).
+    - "options": A list of strings (4 for MCQ, 2 for True/False, null for Essay).
     - "answer": The string text of the correct answer.
     - "explanation": A brief explanation.
     - "general_feedback": A detailed model answer or explanation to be shown to the student after submission.
