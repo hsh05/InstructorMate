@@ -17,12 +17,18 @@ class QuizQuestion {
 
   factory QuizQuestion.fromJson(Map<String, dynamic> json) {
     return QuizQuestion(
-      type: json['type'] ?? 'Unknown',
-      question: json['question'] ?? '',
-      options: json['options'] != null ? List<String>.from(json['options']) : null,
-      answer: json['answer'] ?? '',
-      explanation: json['explanation'],
-      generalFeedback: json['general_feedback'], // <--- CATCH IT FROM JSON
+      // The ?.toString() ?? '' guarantees it will ALWAYS be a String
+      type: json['type']?.toString() ?? 'Unknown',
+      question: json['question']?.toString() ?? '',
+      
+      // Safely map through the list, converting any null items to empty strings
+      options: json['options'] != null 
+          ? (json['options'] as List).map((e) => e?.toString() ?? '').toList() 
+          : null,
+          
+      answer: json['answer']?.toString() ?? '',
+      explanation: json['explanation']?.toString(),
+      generalFeedback: json['general_feedback']?.toString(),
     );
   }
 

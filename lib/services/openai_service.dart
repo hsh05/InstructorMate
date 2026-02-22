@@ -4,7 +4,7 @@ import '../models/config_model.dart';
 import '../models/question_model.dart';
 
 class OpenAIService {
-  static final String _baseUrl = "https://instructormateassessment.onrender.com/";
+  static final String _baseUrl = "https://instructormateassessment.onrender.com";
 
   // ADDED selectedMaterialIds parameter
   Future<List<QuizQuestion>> generateQuiz(int courseId, List<QuestionTypeConfig> configs, List<int> selectedMaterialIds) async {
@@ -24,10 +24,50 @@ class OpenAIService {
     );
 
     if (response.statusCode == 200) {
-      var data = jsonDecode(response.body);
-      // The backend returns {'questions': [...]}. We map it to objects here.
-      return (data['questions'] as List).map((json) => QuizQuestion.fromJson(json)).toList();
-    } 
+        // 1. Get the raw string from the server
+        String rawBody = utf8.decode(response.bodyBytes);
+
+        // 2. Sometimes OpenAI wraps the JSON in markdown backticks. We must strip them.
+        rawBody = rawBody.trim();
+        if (rawBody.startsWith('```json')) {
+          rawBody = rawBody.substring(7);
+        } else if (rawBody.startsWith('```')) {
+          rawBody = rawBody.substring(3);
+        }
+        if (rawBody.endsWith('```')) {
+          rawBody = rawBody.substring(0, rawBody.length - 3);
+        }
+        rawBody = rawBody.trim();
+
+        // 3. Decode the cleaned string
+        final decodedData = jsonDecode(rawBody);
+
+        // 4. Open the "questions" envelope!
+        List<dynamic> questionsList;
+        if (decodedData is Map && decodedData.containsKey('questions')) {
+          questionsList = decodedData['questions'];
+        } else if (decodedData is List) {
+          // Just in case the AI ignored the prompt and sent a flat list anyway
+          questionsList = decodedData;
+        } else {
+          throw Exception("Unexpected AI response format.");
+        }
+
+        // 5. Convert the JSON maps into Dart objects
+        return questionsList.map((q) => QuizQuestion.fromJson(q)).toList();
+        
+      } else {
+        // --- NEW BULLETPROOF ERROR PARSING ---
+        final errorData = jsonDecode(response.body);
+        
+        // Grab whichever key the backend happened to send, or fallback to a default string
+        String errorMessage = errorData['detail']?.toString() 
+                           ?? errorData['message']?.toString() 
+                           ?? errorData['error']?.toString() 
+                           ?? 'Unknown server error from Render';
+                           
+        throw Exception(errorMessage);
+      }
     throw Exception("Failed to generate quiz: ${response.body}");
   }
 

@@ -171,3 +171,38 @@ async def edit_question(request: dict):
         return {"updated_question": json.loads(response.choices[0].message.content)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-direct")
+async def generate_direct(
+    file: UploadFile = File(...),
+    configs: str = Form(...)  # <--- NEW: Tells FastAPI to expect a form field named 'configs'
+):
+    try:
+        # 1. Parse the settings string from Flutter back into a Python list/dictionary
+        config_data = json.loads(configs)
+        
+        # 2. Read the physical file directly into RAM
+        contents = await file.read()
+        extracted_text = ""
+        
+        if file.filename.endswith(".pdf"):
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
+            for page in pdf_reader.pages:
+                if page.extract_text():
+                    extracted_text += page.extract_text() + "\n"
+        elif file.filename.endswith(".txt"):
+            extracted_text = contents.decode("utf-8")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type.")
+
+        if not extracted_text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text.")
+
+        # 3. Pass BOTH the extracted text AND the configuration data to your AI function.
+        # (Make sure your internal AI function actually accepts this config_data!)
+        questions = await generate_questions_with_ai(extracted_text, config_data)
+        
+        return {"questions": questions}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

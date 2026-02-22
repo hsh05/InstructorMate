@@ -23,7 +23,6 @@ class _GenerateScreenState extends State<GenerateScreen> {
   List<Course> _courses = [];
   Course? _selectedCourse;
 
-  // New: Track which database materials are selected for the quiz
   final Set<int> _selectedMaterialIds = {};
 
   String? _statusMessage;
@@ -80,7 +79,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
       }
       setState(() {
         _statusMessage = "Upload complete!";
-        _selectedFiles.clear();
+        _selectedFiles.clear(); // Clears local files so they don't get double generated
       });
       _loadCourses();
     } catch (e) {
@@ -107,14 +106,17 @@ class _GenerateScreenState extends State<GenerateScreen> {
     if (result != null) {
       setState(() {
         _selectedFiles.addAll(result.paths.map((path) => File(path!)).toList());
-        _statusMessage = "Ready to upload.";
+        _statusMessage = "Ready to upload or generate.";
       });
     }
   }
 
   void _generateQuiz() async {
-    // Check if at least one material is selected from the checkboxes
-    if (_selectedCourse == null || _selectedMaterialIds.isEmpty) {
+    // Check if we have SOMETHING to generate from (either local files or DB files)
+    bool hasLocalFiles = _selectedFiles.isNotEmpty;
+    bool hasDbFiles = _selectedMaterialIds.isNotEmpty;
+
+    if (!hasLocalFiles && !hasDbFiles) {
       setState(() => _statusMessage = "Error: Please select at least one material.");
       return;
     }
@@ -125,21 +127,37 @@ class _GenerateScreenState extends State<GenerateScreen> {
     });
 
     try {
+      List<QuizQuestion> allQuestions = [];
       var activeConfigs = _configs.values.where((c) => c.isSelected && c.count > 0).toList();
 
-      // FIXED: Pass selected IDs to the service. 
-      // The Service now returns the List<QuizQuestion> directly.
-      List<QuizQuestion> questions = await _aiService.generateQuiz(
-        _selectedCourse!.id,
-        activeConfigs,
-        _selectedMaterialIds.toList(),
-      );
-
-      if (mounted) {
-        Navigator.push(context, MaterialPageRoute(
-          builder: (context) => ReviewScreen(questions: questions),
-        ));
+      // 1. Generate from Local Files (Direct to RAM)
+      if (hasLocalFiles) {
+        for (var file in _selectedFiles) {
+          // FIXED: Now passing activeConfigs along with the file
+          var questions = await _apiService.generateDirectlyFromFile(file, activeConfigs);
+          allQuestions.addAll(questions);
+        }
       }
+
+      // 2. Generate from Database Materials
+      if (hasDbFiles && _selectedCourse != null) {
+        var questions = await _aiService.generateQuiz(
+          _selectedCourse!.id,
+          activeConfigs,
+          _selectedMaterialIds.toList(),
+        );
+        allQuestions.addAll(questions);
+      }
+
+      // 3. Navigate to Review Screen with combined questions
+      if (mounted && allQuestions.isNotEmpty) {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (context) => ReviewScreen(questions: allQuestions),
+        ));
+      } else if (allQuestions.isEmpty) {
+        setState(() => _statusMessage = "Generation succeeded, but AI returned no questions.");
+      }
+
     } catch (e) {
       setState(() => _statusMessage = "Generation Error: $e");
     } finally {
@@ -176,17 +194,15 @@ class _GenerateScreenState extends State<GenerateScreen> {
                         ),
                         child: Column(
                           children: [
-                            // THE TOGGLE
                             CheckboxListTile(
                               title: Text(config.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                               value: config.isSelected,
                               activeColor: Colors.indigo,
                               onChanged: (val) {
                                 setDialogState(() { config.isSelected = val ?? false; });
-                                setState(() {}); // Update main screen button logic
+                                setState(() {}); 
                               }
                             ),
-                            // THE EXPANDED OPTIONS
                             if (config.isSelected)
                               Padding(
                                 padding: const EdgeInsets.only(left: 15, right: 15, bottom: 15),
@@ -241,7 +257,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
                   onPressed: () {
                     Navigator.pop(ctx);
-                    _generateQuiz(); // Start the generation
+                    _generateQuiz(); 
                   },
                   child: const Text("Confirm & Generate"),
                 )
@@ -255,6 +271,11 @@ class _GenerateScreenState extends State<GenerateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    
+    bool hasLocalSelection = _selectedFiles.isNotEmpty;
+    bool hasDbSelection = _selectedMaterialIds.isNotEmpty;
+    bool isGenerateReady = hasLocalSelection || hasDbSelection;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("InstructorMate"),
@@ -283,7 +304,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
                     onChanged: (val) {
                       setState(() {
                         _selectedCourse = val;
-                        _selectedMaterialIds.clear(); // Reset selections when switching courses
+                        _selectedMaterialIds.clear(); 
                         _statusMessage = "Selected: ${val?.title}";
                       });
                     },
@@ -293,7 +314,6 @@ class _GenerateScreenState extends State<GenerateScreen> {
 
             const SizedBox(height: 15),
 
-            // FILE SELECTION SECTION
             if (_selectedCourse != null && _selectedCourse!.materials.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,12 +348,11 @@ class _GenerateScreenState extends State<GenerateScreen> {
             const SizedBox(height: 10),
             const Divider(),
             
-            // LOCAL FILES SECTION
             const Text("Local Files (Pending Upload):", style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 5),
             Expanded(
               child: _selectedFiles.isEmpty
-                  ? Center(child: Text("Select local files to upload to the DB.", style: TextStyle(color: Colors.grey[600])))
+                  ? Center(child: Text("Select local files to generate directly or upload to DB.", style: TextStyle(color: Colors.grey[600])))
                   : ListView.builder(
                       itemCount: _selectedFiles.length,
                       itemBuilder: (ctx, i) => Card(
@@ -366,16 +385,14 @@ class _GenerateScreenState extends State<GenerateScreen> {
             
             const SizedBox(height: 15),
 
-            // FIXED GENERATE BUTTON
             SizedBox(
               height: 55,
               child: ElevatedButton(
-                onPressed: (_isLoading || _selectedCourse == null || _selectedMaterialIds.isEmpty)
-                  ? null
-                  : _showSettings,
+                // The button is now clickable if ANY files are selected (DB or Local)
+                onPressed: (_isLoading || !isGenerateReady) ? null : _showSettings,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.indigo,
-                  foregroundColor: Colors.white, // Ensures the text/icon is visible (White)
+                  foregroundColor: Colors.white, 
                   disabledBackgroundColor: Colors.grey,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
