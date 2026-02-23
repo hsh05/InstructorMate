@@ -1,43 +1,45 @@
 // lib/ui/workspace_detail.dart
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../app/api_client.dart';
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
 
-// ─────────────────────────────────────────────
-// Design tokens
-// ─────────────────────────────────────────────
+// ─── Design tokens ────────────────────────────────────────────────────────────
 class _DS {
-  static const bg = Color(0xFFF7F5FF);
+  static const bg = Color(0xFFF8F6FF);
   static const surface = Color(0xFFFFFFFF);
-  static const surfaceAlt = Color(0xFFF0ECFF);
-  static const primary = Color.fromARGB(255, 204, 148, 236);
+  static const surfaceAlt = Color(0xFFF3F0FF);
+  static const primary = Color(0xFF7C5CBF);
   static const primarySoft = Color(0xFFEDE8FF);
-  static const accent = Color(0xFF00C9A7);
-  static const warn = Color(0xFFFF9900);
+  static const accent = Color(0xFF00B896);
+  static const accentSoft = Color(0xFFE0FAF5);
+  static const warn = Color(0xFFE8900A);
   static const warnSoft = Color(0xFFFFF4E0);
-  static const ink = Color(0xFF1A1535);
-  static const inkMid = Color(0xFF5A5470);
-  static const inkLight = Color(0xFF9B96B0);
-  static const border = Color(0xFFE5E0F8);
-  static const red = Color(0xFFE53935);
+  static const ink = Color(0xFF2D2640);
+  static const inkMid = Color(0xFF6B6480);
+  static const inkLight = Color(0xFFABA6C0);
+  static const border = Color(0xFFE8E3F8);
+  static const red = Color(0xFFD93025);
 
   static const r8 = BorderRadius.all(Radius.circular(8));
+  static const r10 = BorderRadius.all(Radius.circular(10));
   static const r12 = BorderRadius.all(Radius.circular(12));
   static const r16 = BorderRadius.all(Radius.circular(16));
   static const r20 = BorderRadius.all(Radius.circular(20));
-  static const r24 = BorderRadius.all(Radius.circular(24));
 
   static final shadow = [
     BoxShadow(
-      color: primary.withOpacity(0.08),
-      blurRadius: 16,
+      color: const Color(0xFF7C5CBF).withOpacity(0.07),
+      blurRadius: 14,
       offset: const Offset(0, 4),
     ),
   ];
   static final shadowSm = [
     BoxShadow(
-      color: primary.withOpacity(0.05),
-      blurRadius: 8,
+      color: const Color(0xFF7C5CBF).withOpacity(0.04),
+      blurRadius: 6,
       offset: const Offset(0, 2),
     ),
   ];
@@ -45,25 +47,20 @@ class _DS {
 
 const _fieldLabels = {
   'course_name': 'Course Name',
-  'course_title': 'Course Title',
   'course_code': 'Course Code',
   'semester': 'Semester',
   'office_hours': 'Office Hours',
   'instructor_email': 'Instructor Email',
 };
-
 const _fieldIcons = {
   'course_name': Icons.book_rounded,
-  'course_title': Icons.title_rounded,
   'course_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
   'office_hours': Icons.access_time_rounded,
   'instructor_email': Icons.email_outlined,
 };
 
-// ─────────────────────────────────────────────
-// Main page
-// ─────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 class WorkspaceDetailPage extends StatefulWidget {
   const WorkspaceDetailPage({super.key, required this.vm});
   final WorkspacesViewModel vm;
@@ -107,12 +104,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   TextEditingController _ctrl(String key, String value) =>
       _fieldCtrl.putIfAbsent(key, () => TextEditingController(text: value));
 
-  bool _isReady(Workspace ws) {
-    for (final k in ['course_name', 'semester', 'office_hours']) {
-      if ((ws.fields[k] ?? '').trim().isEmpty) return false;
-    }
-    return true;
-  }
+  bool _isReady(Workspace ws) => [
+    'course_name',
+    'semester',
+    'office_hours',
+  ].every((k) => (ws.fields[k] ?? '').trim().isNotEmpty);
 
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
@@ -123,58 +119,81 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       animation: widget.vm,
       builder: (_, __) {
         final ws = widget.vm.current;
-        if (ws == null) {
+        if (ws == null)
           return const Scaffold(
             backgroundColor: _DS.bg,
             body: Center(child: Text('No workspace selected.')),
           );
-        }
         final ready = _isReady(ws);
         final missing = _missingFields(ws);
 
         return Scaffold(
           backgroundColor: _DS.bg,
           body: NestedScrollView(
-            headerSliverBuilder: (_, __) => [_buildSliverHeader(ws, ready)],
+            headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
             body: Column(
               children: [
-                // Tab bar
+                // ── Pill tab bar ────────────────────────────────────────
                 Container(
                   color: _DS.surface,
-                  child: TabBar(
-                    controller: _tabs,
-                    labelColor: const Color.fromARGB(255, 211, 171, 235),
-                    unselectedLabelColor: _DS.inkLight,
-                    indicatorColor: _DS.primary,
-                    indicatorWeight: 3,
-                    labelStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _DS.surfaceAlt,
+                      borderRadius: _DS.r20,
                     ),
-                    tabs: const [
-                      Tab(
-                        icon: Icon(Icons.info_outline_rounded, size: 18),
-                        text: 'Info',
+                    padding: const EdgeInsets.all(3),
+                    child: TabBar(
+                      controller: _tabs,
+                      indicator: BoxDecoration(
+                        color: _DS.primary,
+                        borderRadius: _DS.r16,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _DS.primary.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      Tab(
-                        icon: Icon(Icons.groups_2_rounded, size: 18),
-                        text: 'Sections',
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      dividerColor: Colors.transparent,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: _DS.inkMid,
+                      labelStyle: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
                       ),
-                      Tab(
-                        icon: Icon(Icons.people_alt_rounded, size: 18),
-                        text: 'Students',
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
                       ),
-                      Tab(
-                        icon: Icon(Icons.auto_awesome_rounded, size: 18),
-                        text: 'Ask AI',
-                      ),
-                    ],
+                      tabs: const [
+                        Tab(
+                          icon: Icon(Icons.info_outline_rounded, size: 16),
+                          text: 'Info',
+                        ),
+                        Tab(
+                          icon: Icon(Icons.groups_2_rounded, size: 16),
+                          text: 'Sections',
+                        ),
+                        Tab(
+                          icon: Icon(Icons.people_alt_rounded, size: 16),
+                          text: 'Students',
+                        ),
+                        Tab(
+                          icon: Icon(Icons.auto_awesome_rounded, size: 16),
+                          text: 'Ask AI',
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                // Missing fields banner
                 if (!ready && missing.isNotEmpty)
                   _MissingBanner(fields: missing),
-                // Content
                 Expanded(
                   child: widget.vm.loading
                       ? const Center(
@@ -205,6 +224,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                               scrollCtrl: _askScroll,
                               asking: _asking,
                               onAsk: _onAsk,
+                              onReupload: () async {
+                                await widget.vm.reuploadSyllabus();
+                                if (widget.vm.error != null)
+                                  _showError(widget.vm.error!);
+                              },
                             ),
                           ],
                         ),
@@ -217,108 +241,126 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     );
   }
 
-  Widget _buildSliverHeader(Workspace ws, bool ready) {
+  // ── Header: title + stat pills ────────────────────────────────────────────
+  Widget _buildHeader(Workspace ws, bool ready) {
+    final totalStudents = widget.vm.totalStudentsCount;
+    final sectionCount = ws.sections.length;
+    final code = ws.fields['course_code'] ?? '';
+    final semester = ws.fields['semester'] ?? '';
+
     return SliverAppBar(
-      expandedHeight: 140,
+      expandedHeight: 165,
       pinned: true,
-      backgroundColor: _DS.primary,
+      backgroundColor: const Color(0xFF5A3DA0),
       foregroundColor: Colors.white,
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Color.fromARGB(255, 199, 189, 233),
-                Color.fromARGB(255, 181, 165, 218),
-              ],
+              colors: [Color(0xFF5A3DA0), Color(0xFF9B78E0)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
           ),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 48, 20, 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              padding: const EdgeInsets.fromLTRB(20, 44, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
                           ws.title,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
+                            letterSpacing: -0.3,
+                            height: 1.2,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          [
-                            ws.fields['course_code'],
-                            ws.fields['semester'],
-                          ].where((v) => v != null && v.isNotEmpty).join(' · '),
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.75),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: (ready ? _DS.accent : _DS.warn).withOpacity(0.2),
-                      borderRadius: _DS.r20,
-                      border: Border.all(
-                        color: ready ? _DS.accent : _DS.warn,
-                        width: 1.5,
                       ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          ready
-                              ? Icons.check_circle_rounded
-                              : Icons.pending_rounded,
-                          color: ready ? _DS.accent : _DS.warn,
-                          size: 14,
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          ready ? 'Ready' : 'Draft',
-                          style: TextStyle(
+                        decoration: BoxDecoration(
+                          color: (ready ? _DS.accent : _DS.warn).withOpacity(
+                            0.2,
+                          ),
+                          borderRadius: _DS.r20,
+                          border: Border.all(
                             color: ready ? _DS.accent : _DS.warn,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                            width: 1.5,
                           ),
                         ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              ready
+                                  ? Icons.check_circle_rounded
+                                  : Icons.pending_rounded,
+                              color: ready ? _DS.accent : _DS.warn,
+                              size: 12,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              ready ? 'Ready' : 'Draft',
+                              style: TextStyle(
+                                color: ready ? _DS.accent : _DS.warn,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Stat pills
+                  Row(
+                    children: [
+                      if (code.isNotEmpty) ...[
+                        _StatPill(icon: Icons.tag_rounded, label: code),
+                        const SizedBox(width: 8),
                       ],
-                    ),
+                      if (semester.isNotEmpty) ...[
+                        _StatPill(
+                          icon: Icons.calendar_today_rounded,
+                          label: semester,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      const Spacer(),
+                      _StatPill(
+                        icon: Icons.groups_2_rounded,
+                        label:
+                            '$sectionCount section${sectionCount == 1 ? "" : "s"}',
+                      ),
+                      const SizedBox(width: 8),
+                      _StatPill(
+                        icon: Icons.people_alt_rounded,
+                        label:
+                            '$totalStudents student${totalStudents == 1 ? "" : "s"}',
+                        highlight: totalStudents > 0,
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
         ),
-        title: Text(
-          ws.title,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        titlePadding: const EdgeInsets.only(left: 56, bottom: 14),
       ),
     );
   }
@@ -355,7 +397,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     setState(() {
       _chat.add(
         _ChatMsg(
-          text: answer ?? "Sorry, I couldn't get an answer.",
+          text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
+              ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
+              : (answer ?? "Sorry, I couldn't get an answer."),
           isUser: false,
         ),
       );
@@ -364,33 +408,69 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     _scrollChat();
   }
 
-  void _scrollChat() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_askScroll.hasClients) {
-        _askScroll.animateTo(
-          _askScroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
+  void _scrollChat() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (_askScroll.hasClients)
+      _askScroll.animateTo(
+        _askScroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+  });
 
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: _DS.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: _DS.r12),
-      ),
-    );
-  }
+  void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg),
+      backgroundColor: _DS.red,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: _DS.r12),
+    ),
+  );
 }
 
-// ─────────────────────────────────────────────
-// Missing banner
-// ─────────────────────────────────────────────
+// ── Stat pill ─────────────────────────────────────────────────────────────────
+class _StatPill extends StatelessWidget {
+  const _StatPill({
+    required this.icon,
+    required this.label,
+    this.highlight = false,
+  });
+  final IconData icon;
+  final String label;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: highlight
+          ? _DS.accent.withOpacity(0.2)
+          : Colors.white.withOpacity(0.15),
+      borderRadius: _DS.r20,
+      border: Border.all(
+        color: highlight
+            ? _DS.accent.withOpacity(0.5)
+            : Colors.white.withOpacity(0.25),
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: highlight ? _DS.accent : Colors.white, size: 11),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: highlight ? _DS.accent : Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ─── Missing banner ───────────────────────────────────────────────────────────
 class _MissingBanner extends StatelessWidget {
   const _MissingBanner({required this.fields});
   final List<String> fields;
@@ -401,14 +481,14 @@ class _MissingBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: _DS.warnSoft,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: _DS.warn, size: 18),
+          const Icon(Icons.warning_amber_rounded, color: _DS.warn, size: 16),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Complete missing fields: $labels',
+              'Complete: $labels',
               style: const TextStyle(
                 color: _DS.warn,
                 fontSize: 12,
@@ -422,10 +502,8 @@ class _MissingBanner extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// TAB 1 — Info
-// ─────────────────────────────────────────────
-class _InfoTab extends StatelessWidget {
+// ─── TAB 1 — Info (tap-to-edit, no form mode) ────────────────────────────────
+class _InfoTab extends StatefulWidget {
   const _InfoTab({
     required this.ws,
     required this.editableKeys,
@@ -438,7 +516,25 @@ class _InfoTab extends StatelessWidget {
   final Future<void> Function() onSave;
 
   @override
+  State<_InfoTab> createState() => _InfoTabState();
+}
+
+class _InfoTabState extends State<_InfoTab> {
+  final Set<String> _editing = {};
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _editing.clear();
+    });
+    await widget.onSave();
+    if (mounted) setState(() => _saving = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final hasEdits = _editing.isNotEmpty;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -453,85 +549,205 @@ class _InfoTab extends StatelessWidget {
             borderRadius: _DS.r16,
             boxShadow: _DS.shadow,
           ),
-          padding: const EdgeInsets.all(16),
+          clipBehavior: Clip.hardEdge,
           child: Column(
             children: [
-              ...editableKeys.map((key) {
-                final value = ws.fields[key] ?? '';
+              ...widget.editableKeys.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final key = entry.value;
+                final value = widget.ws.fields[key] ?? '';
                 final label = _fieldLabels[key] ?? key;
                 final icon = _fieldIcons[key] ?? Icons.edit_rounded;
+                final isEditing = _editing.contains(key);
                 final isEmpty = value.trim().isEmpty;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: TextField(
-                    controller: ctrl(key, value),
-                    style: const TextStyle(
-                      color: _DS.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: label,
-                      labelStyle: TextStyle(
-                        color: isEmpty ? _DS.warn : _DS.inkMid,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                final isLast = idx == widget.editableKeys.length - 1;
+
+                return Column(
+                  children: [
+                    isEditing
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: const TextStyle(
+                                    color: _DS.primary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                TextField(
+                                  controller: widget.ctrl(key, value),
+                                  autofocus: true,
+                                  style: const TextStyle(
+                                    color: _DS.ink,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  decoration: InputDecoration(
+                                    prefixIcon: Icon(
+                                      icon,
+                                      color: _DS.primary,
+                                      size: 17,
+                                    ),
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: _DS.accent,
+                                        size: 22,
+                                      ),
+                                      onPressed: () =>
+                                          setState(() => _editing.remove(key)),
+                                    ),
+                                    filled: true,
+                                    fillColor: _DS.primarySoft,
+                                    border: OutlineInputBorder(
+                                      borderRadius: _DS.r12,
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: _DS.r12,
+                                      borderSide: const BorderSide(
+                                        color: _DS.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 13,
+                                    ),
+                                  ),
+                                  onSubmitted: (_) =>
+                                      setState(() => _editing.remove(key)),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => setState(() => _editing.add(key)),
+                              hoverColor: _DS.primarySoft.withOpacity(0.5),
+                              splashColor: _DS.primary.withOpacity(0.06),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 15,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: isEmpty
+                                            ? _DS.warnSoft
+                                            : _DS.primarySoft,
+                                        borderRadius: _DS.r10,
+                                      ),
+                                      child: Icon(
+                                        icon,
+                                        color: isEmpty ? _DS.warn : _DS.primary,
+                                        size: 17,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 13),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            label,
+                                            style: const TextStyle(
+                                              color: _DS.inkLight,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            value.isEmpty
+                                                ? 'Tap to add…'
+                                                : value,
+                                            style: TextStyle(
+                                              color: value.isEmpty
+                                                  ? _DS.inkLight
+                                                  : _DS.ink,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              fontStyle: value.isEmpty
+                                                  ? FontStyle.italic
+                                                  : FontStyle.normal,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.edit_outlined,
+                                      size: 15,
+                                      color: isEmpty ? _DS.warn : _DS.inkLight,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                    if (!isLast)
+                      const Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: _DS.border,
                       ),
-                      prefixIcon: Icon(icon, color: _DS.primary, size: 18),
-                      suffixIcon: isEmpty
-                          ? const Icon(
-                              Icons.error_outline_rounded,
-                              color: _DS.warn,
-                              size: 18,
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: isEmpty ? _DS.warnSoft : _DS.surfaceAlt,
-                      border: OutlineInputBorder(
-                        borderRadius: _DS.r12,
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: _DS.r12,
-                        borderSide: BorderSide(
-                          color: isEmpty
-                              ? _DS.warn.withOpacity(0.4)
-                              : _DS.border,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: _DS.r12,
-                        borderSide: const BorderSide(
-                          color: _DS.primary,
-                          width: 2,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                    ),
-                  ),
+                  ],
                 );
               }),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _DS.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
-                  ),
-                  onPressed: onSave,
-                  icon: const Icon(Icons.save_rounded, size: 18),
-                  label: const Text(
-                    'Save Changes',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
-                ),
+              // Save button slides in when editing
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                child: (hasEdits || _saving)
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _DS.primary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: _DS.r12,
+                              ),
+                            ),
+                            onPressed: _saving ? null : _save,
+                            icon: _saving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_rounded, size: 17),
+                            label: Text(
+                              _saving ? 'Saving…' : 'Save Changes',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ],
           ),
@@ -541,9 +757,7 @@ class _InfoTab extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// TAB 2 — Sections
-// ─────────────────────────────────────────────
+// ─── TAB 2 — Sections ────────────────────────────────────────────────────────
 class _SectionsTab extends StatefulWidget {
   const _SectionsTab({
     required this.ws,
@@ -560,6 +774,7 @@ class _SectionsTab extends StatefulWidget {
 
 class _SectionsTabState extends State<_SectionsTab> {
   bool _showForm = false;
+  Section? _editingSection;
   final _draft = SectionDraft();
   final _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final _nameCtrl = TextEditingController();
@@ -568,6 +783,30 @@ class _SectionsTabState extends State<_SectionsTab> {
   final _startCtrl = TextEditingController(text: '09:00');
   final _endCtrl = TextEditingController(text: '10:15');
   bool _saving = false;
+
+  void _startEdit(Section s) {
+    _editingSection = s;
+    _nameCtrl.text = s.name;
+    _locationCtrl.text = s.location;
+    _instructorCtrl.text = s.instructorName;
+    _startCtrl.text = s.schedule.startTime;
+    _endCtrl.text = s.schedule.endTime;
+    _draft.days = List<String>.from(s.schedule.days);
+    _draft.timezone = s.schedule.timezone;
+    _draft.reminderMinutes = s.schedule.reminderMinutes;
+    setState(() => _showForm = true);
+  }
+
+  void _cancelForm() {
+    _editingSection = null;
+    _nameCtrl.text = '';
+    _locationCtrl.text = '';
+    _instructorCtrl.text = '';
+    _startCtrl.text = '09:00';
+    _endCtrl.text = '10:15';
+    _draft.days = const [];
+    setState(() => _showForm = false);
+  }
 
   @override
   void dispose() {
@@ -593,29 +832,82 @@ class _SectionsTabState extends State<_SectionsTab> {
           icon: Icons.groups_2_rounded,
           trailing: !_showForm
               ? _PillButton(
-                  label: 'Add Section',
-                  icon: Icons.add_rounded,
+                  label: '+ Add Section',
                   onTap: () => setState(() => _showForm = true),
                 )
               : null,
         ),
         const SizedBox(height: 12),
-        if (_showForm) ...[_buildForm(), const SizedBox(height: 16)],
+        if (_showForm) ...[_buildForm(), const SizedBox(height: 14)],
         if (ws.sections.isEmpty && !_showForm)
           _EmptyState(
             icon: Icons.groups_2_rounded,
             title: 'No sections yet',
-            subtitle: 'Tap "Add Section" to create your first class section.',
+            subtitle: 'Tap "+ Add Section" to create your first class section.',
           )
         else
           ...ws.sections.map(
             (s) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _SectionCard(section: s),
+              child: _SectionCard(
+                section: s,
+                onDelete: () => _confirmDelete(s),
+                onEdit: () => _startEdit(s),
+                vm: widget.vm,
+              ),
             ),
           ),
       ],
     );
+  }
+
+  Future<void> _confirmDelete(Section s) async {
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: const Text(
+              'Delete Section',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
+            content: Text(
+              'Delete "${s.name.isNotEmpty ? s.name : 'this section'}"?',
+              style: const TextStyle(fontSize: 13, color: _DS.inkMid),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: _DS.inkLight),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _DS.red,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (ok) {
+      await widget.vm.deleteSection(s.id);
+      if (widget.vm.error != null) widget.onError(widget.vm.error!);
+    }
   }
 
   Widget _buildForm() {
@@ -623,20 +915,32 @@ class _SectionsTabState extends State<_SectionsTab> {
       decoration: BoxDecoration(
         color: _DS.surface,
         borderRadius: _DS.r16,
-        border: Border.all(color: _DS.primary.withOpacity(0.3)),
         boxShadow: _DS.shadow,
+        border: Border.all(color: _DS.primary.withOpacity(0.2)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'New Section',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-              color: _DS.ink,
-            ),
+          Row(
+            children: [
+              Icon(
+                _editingSection != null
+                    ? Icons.edit_rounded
+                    : Icons.add_circle_rounded,
+                color: _DS.primary,
+                size: 16,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                _editingSection != null ? 'Edit Section' : 'New Section',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: _DS.ink,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           _FormField(
@@ -647,7 +951,7 @@ class _SectionsTabState extends State<_SectionsTab> {
           const SizedBox(height: 10),
           _FormField(
             ctrl: _instructorCtrl,
-            label: 'Instructor Name',
+            label: 'Instructor',
             icon: Icons.person_rounded,
           ),
           const SizedBox(height: 10),
@@ -656,29 +960,9 @@ class _SectionsTabState extends State<_SectionsTab> {
             label: 'Location / Room',
             icon: Icons.location_on_rounded,
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _FormField(
-                  ctrl: _startCtrl,
-                  label: 'Start Time',
-                  icon: Icons.schedule_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _FormField(
-                  ctrl: _endCtrl,
-                  label: 'End Time',
-                  icon: Icons.schedule_outlined,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           const Text(
-            'Days',
+            'Schedule',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
@@ -686,45 +970,60 @@ class _SectionsTabState extends State<_SectionsTab> {
             ),
           ),
           const SizedBox(height: 8),
-          StatefulBuilder(
-            builder: (_, setInner) => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _days.map((d) {
-                final sel = _draft.days.contains(d);
-                return GestureDetector(
-                  onTap: () {
-                    setInner(() {
-                      final list = List<String>.from(_draft.days);
-                      sel ? list.remove(d) : list.add(d);
-                      _draft.days = list;
-                    });
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: sel ? _DS.primary : _DS.surfaceAlt,
-                      borderRadius: _DS.r8,
-                      border: Border.all(color: sel ? _DS.primary : _DS.border),
-                    ),
-                    child: Text(
-                      d,
-                      style: TextStyle(
-                        color: sel ? Colors.white : _DS.inkMid,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
+          Row(
+            children: [
+              Expanded(
+                child: _FormField(
+                  ctrl: _startCtrl,
+                  label: 'Start',
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FormField(
+                  ctrl: _endCtrl,
+                  label: 'End',
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            children: _days.map((d) {
+              final sel = _draft.days.contains(d);
+              return GestureDetector(
+                onTap: () => setState(() {
+                  sel
+                      ? _draft.days = _draft.days.where((x) => x != d).toList()
+                      : _draft.days = [..._draft.days, d];
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: sel ? _DS.primary : _DS.surfaceAlt,
+                    borderRadius: _DS.r8,
+                    border: Border.all(color: sel ? _DS.primary : _DS.border),
+                  ),
+                  child: Text(
+                    d,
+                    style: TextStyle(
+                      color: sel ? Colors.white : _DS.inkMid,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
                     ),
                   ),
-                );
-              }).toList(),
-            ),
+                ),
+              );
+            }).toList(),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -733,16 +1032,16 @@ class _SectionsTabState extends State<_SectionsTab> {
                     foregroundColor: _DS.inkMid,
                     side: const BorderSide(color: _DS.border),
                     shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
-                  onPressed: () => setState(() => _showForm = false),
+                  onPressed: _cancelForm,
                   child: const Text(
                     'Cancel',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 9),
               Expanded(
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -750,21 +1049,21 @@ class _SectionsTabState extends State<_SectionsTab> {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
                   onPressed: _saving ? null : _saveSection,
                   child: _saving
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: 17,
+                          height: 17,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
                           ),
                         )
-                      : const Text(
-                          'Create',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+                      : Text(
+                          _editingSection != null ? 'Save Changes' : 'Create',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                 ),
               ),
@@ -790,15 +1089,34 @@ class _SectionsTabState extends State<_SectionsTab> {
       widget.onError('Select at least one day.');
       return;
     }
+
     setState(() => _saving = true);
+    final isEditing = _editingSection != null;
     try {
-      final updated = await widget.vm.api.createSection(widget.ws.id, _draft);
+      Workspace updated;
+      if (isEditing) {
+        await widget.vm.api.deleteSection(widget.ws.id, _editingSection!.id);
+        updated = await widget.vm.api.createSection(widget.ws.id, _draft);
+      } else {
+        updated = await widget.vm.api.createSection(widget.ws.id, _draft);
+      }
       widget.vm.current = updated;
       widget.vm.notifyListeners();
-      setState(() {
-        _showForm = false;
-        _saving = false;
-      });
+      await widget.vm.rescheduleNotificationsForCurrent();
+      _cancelForm();
+      setState(() => _saving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isEditing ? 'Section updated ✓' : 'Section created ✓',
+            ),
+            backgroundColor: _DS.accent,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _saving = false);
       widget.onError(e.toString());
@@ -806,9 +1124,18 @@ class _SectionsTabState extends State<_SectionsTab> {
   }
 }
 
+// ─── Section card ─────────────────────────────────────────────────────────────
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.section});
+  const _SectionCard({
+    required this.section,
+    required this.onDelete,
+    required this.onEdit,
+    required this.vm,
+  });
   final Section section;
+  final VoidCallback onDelete;
+  final VoidCallback onEdit;
+  final WorkspacesViewModel vm;
 
   @override
   Widget build(BuildContext context) {
@@ -817,97 +1144,155 @@ class _SectionCard extends StatelessWidget {
     final time = (sch.startTime.isNotEmpty && sch.endTime.isNotEmpty)
         ? '${sch.startTime} – ${sch.endTime}'
         : '—';
-    return Container(
-      decoration: BoxDecoration(
-        color: _DS.surface,
+    final count = vm.countForSection(section.id);
+
+    return Material(
+      color: _DS.surface,
+      borderRadius: _DS.r16,
+      child: InkWell(
         borderRadius: _DS.r16,
-        boxShadow: _DS.shadowSm,
-        border: Border.all(color: _DS.border),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              color: _DS.primarySoft,
-              borderRadius: _DS.r12,
-            ),
-            child: const Icon(
-              Icons.groups_2_rounded,
-              color: _DS.primary,
-              size: 22,
-            ),
+        hoverColor: _DS.primarySoft.withOpacity(0.5),
+        splashColor: _DS.primary.withOpacity(0.08),
+        highlightColor: Colors.transparent,
+        onTap: onEdit,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: _DS.r16,
+            boxShadow: _DS.shadowSm,
+            border: Border.all(color: _DS.border),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  section.name.isEmpty ? 'Unnamed Section' : section.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: _DS.ink,
-                  ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: _DS.primarySoft,
+                  borderRadius: _DS.r12,
                 ),
-                const SizedBox(height: 4),
-                Row(
+                child: const Icon(
+                  Icons.groups_2_rounded,
+                  color: _DS.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
-                      Icons.calendar_today_rounded,
-                      size: 12,
-                      color: _DS.inkLight,
-                    ),
-                    const SizedBox(width: 4),
                     Text(
-                      days,
-                      style: const TextStyle(fontSize: 12, color: _DS.inkMid),
+                      section.name.isEmpty ? 'Unnamed Section' : section.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: _DS.ink,
+                      ),
                     ),
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.schedule_rounded,
-                      size: 12,
-                      color: _DS.inkLight,
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 11,
+                          color: _DS.inkLight,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          days,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _DS.inkMid,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.schedule_rounded,
+                          size: 11,
+                          color: _DS.inkLight,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          time,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _DS.inkMid,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      time,
-                      style: const TextStyle(fontSize: 12, color: _DS.inkMid),
+                    if (section.location.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 11,
+                            color: _DS.inkLight,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            section.location,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: _DS.inkMid,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.people_alt_rounded,
+                          size: 11,
+                          color: _DS.inkLight,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '$count student${count == 1 ? "" : "s"}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: count > 0 ? _DS.accent : _DS.inkMid,
+                            fontWeight: count > 0
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                if (section.location.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on_rounded,
-                        size: 12,
-                        color: _DS.inkLight,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        section.location,
-                        style: const TextStyle(fontSize: 12, color: _DS.inkMid),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
+              ),
+              IconButton(
+                tooltip: 'Edit section',
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  color: _DS.primary,
+                  size: 20,
+                ),
+                onPressed: onEdit,
+              ),
+              IconButton(
+                tooltip: 'Delete section',
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: _DS.red,
+                  size: 20,
+                ),
+                onPressed: onDelete,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// TAB 3 — Students
-// ─────────────────────────────────────────────
+// ─── TAB 3 — Students: expandable roster per section ─────────────────────────
 class _StudentsTab extends StatelessWidget {
   const _StudentsTab({
     required this.ws,
@@ -923,154 +1308,619 @@ class _StudentsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SectionHeader(title: 'Students', icon: Icons.people_alt_rounded),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: _DS.surface,
-            borderRadius: _DS.r16,
-            boxShadow: _DS.shadow,
-          ),
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Expanded(
-                child: _StatTile(
-                  value: '${ws.studentsCount}',
-                  label: 'Total Students',
-                  icon: Icons.people_alt_rounded,
-                  color: _DS.primary,
-                ),
-              ),
-              Container(width: 1, height: 50, color: _DS.border),
-              Expanded(
-                child: _StatTile(
-                  value: '${ws.sections.length}',
-                  label: 'Sections',
-                  icon: Icons.groups_2_rounded,
-                  color: _DS.accent,
-                ),
-              ),
-            ],
-          ),
+        _SectionHeader(
+          title: 'Students by Section',
+          icon: Icons.people_alt_rounded,
         ),
-        const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () async {
-            await vm.importStudents();
-            if (vm.error != null) onError(vm.error!);
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color.fromARGB(255, 191, 176, 231), Color(0xFF9B6EFF)],
-              ),
-              borderRadius: _DS.r16,
-              boxShadow: _DS.shadow,
-            ),
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: _DS.r12,
-                  ),
-                  child: const Icon(
-                    Icons.upload_file_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Import Student List',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                      SizedBox(height: 3),
-                      Text(
-                        'Supports .csv and .xlsx files',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: Colors.white70,
-                  size: 16,
-                ),
-              ],
-            ),
-          ),
+        const SizedBox(height: 6),
+        const Text(
+          'Tap a section to view or import students.',
+          style: TextStyle(fontSize: 12, color: _DS.inkMid),
         ),
-        if (ws.studentsCount == 0) ...[
-          const SizedBox(height: 24),
+        const SizedBox(height: 14),
+        if (ws.sections.isEmpty)
           _EmptyState(
             icon: Icons.people_alt_rounded,
-            title: 'No students imported',
+            title: 'No sections yet',
             subtitle:
-                'Import a CSV or Excel file with name, email, and student number columns.',
+                'Create sections first, then import students for each one.',
+          )
+        else
+          ...ws.sections.map(
+            (s) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _SectionRosterCard(
+                section: s,
+                ws: ws,
+                vm: vm,
+                onError: onError,
+              ),
+            ),
           ),
-        ],
       ],
     );
   }
 }
 
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.value,
-    required this.label,
-    required this.icon,
-    required this.color,
+// Expandable card — import + live searchable roster
+class _SectionRosterCard extends StatefulWidget {
+  const _SectionRosterCard({
+    required this.section,
+    required this.ws,
+    required this.vm,
+    required this.onError,
   });
-  final String value;
-  final String label;
-  final IconData icon;
-  final Color color;
+  final Section section;
+  final Workspace ws;
+  final WorkspacesViewModel vm;
+  final void Function(String) onError;
+
+  @override
+  State<_SectionRosterCard> createState() => _SectionRosterCardState();
+}
+
+class _SectionRosterCardState extends State<_SectionRosterCard> {
+  bool _expanded = false;
+  bool _importing = false;
+  bool _loadingRoster = false;
+  List<Student> _students = [];
+  String _search = '';
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRoster() async {
+    setState(() => _loadingRoster = true);
+    try {
+      final list = await widget.vm.api.listSectionStudents(
+        widget.ws.id,
+        widget.section.id,
+      );
+      if (mounted)
+        setState(() {
+          _students = list;
+          _loadingRoster = false;
+        });
+    } catch (_) {
+      if (mounted) setState(() => _loadingRoster = false);
+    }
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded && _students.isEmpty) _loadRoster();
+  }
+
+  Future<void> _import(BuildContext ctx) async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv'],
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return;
+    final f = res.files.first;
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      widget.onError('File has no data.');
+      return;
+    }
+
+    setState(() => _importing = true);
+    try {
+      final result = await widget.vm.api.importStudents(
+        workspaceId: widget.ws.id,
+        sectionId: widget.section.id,
+        bytes: bytes,
+        filename: f.name,
+      );
+      widget.vm.recordImport(widget.section.id, result.imported);
+      await _loadRoster();
+      if (mounted) {
+        setState(() => _importing = false);
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.imported > 0
+                  ? 'Saved ✓ — ${result.imported} student${result.imported == 1 ? "" : "s"} imported'
+                  : 'No students found — check your CSV has name/email columns',
+            ),
+            backgroundColor: result.imported > 0 ? _DS.accent : _DS.warn,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _importing = false);
+      widget.onError(e.toString());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-          ),
+    final count = widget.vm.countForSection(widget.section.id);
+    final sch = widget.section.schedule;
+    final timeStr = '${sch.days.join(", ")} · ${sch.startTime}';
+
+    final filtered = _search.isEmpty
+        ? _students
+        : _students
+              .where(
+                (s) =>
+                    s.name.toLowerCase().contains(_search.toLowerCase()) ||
+                    s.email.toLowerCase().contains(_search.toLowerCase()) ||
+                    s.studentNo.toLowerCase().contains(_search.toLowerCase()),
+              )
+              .toList();
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: _DS.surface,
+        borderRadius: _DS.r16,
+        boxShadow: _DS.shadowSm,
+        border: Border.all(
+          color: _expanded ? _DS.primary.withOpacity(0.4) : _DS.border,
+          width: _expanded ? 1.5 : 1,
         ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            color: _DS.inkLight,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+      ),
+      child: Column(
+        children: [
+          // ── Header: always visible, tap to expand ──────────────────
+          Material(
+            color: Colors.transparent,
+            borderRadius: _expanded
+                ? const BorderRadius.vertical(top: Radius.circular(16))
+                : _DS.r16,
+            child: InkWell(
+              onTap: _toggle,
+              borderRadius: _expanded
+                  ? const BorderRadius.vertical(top: Radius.circular(16))
+                  : _DS.r16,
+              hoverColor: _DS.primarySoft.withOpacity(0.4),
+              splashColor: _DS.primary.withOpacity(0.07),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: count > 0 ? _DS.accentSoft : _DS.primarySoft,
+                        borderRadius: _DS.r12,
+                      ),
+                      child: Icon(
+                        Icons.groups_2_rounded,
+                        color: count > 0 ? _DS.accent : _DS.primary,
+                        size: 19,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.section.name.isEmpty
+                                ? 'Unnamed Section'
+                                : widget.section.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: _DS.ink,
+                            ),
+                          ),
+                          Text(
+                            timeStr,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: _DS.inkMid,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Count badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: count > 0 ? _DS.accentSoft : _DS.surfaceAlt,
+                        borderRadius: _DS.r20,
+                      ),
+                      child: _importing
+                          ? const SizedBox(
+                              width: 36,
+                              height: 12,
+                              child: LinearProgressIndicator(
+                                color: _DS.accent,
+                                backgroundColor: _DS.accentSoft,
+                              ),
+                            )
+                          : Text(
+                              '$count student${count == 1 ? "" : "s"}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: count > 0 ? _DS.accent : _DS.inkLight,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: _DS.inkLight,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-      ],
+
+          // ── Expandable body ───────────────────────────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            child: _expanded
+                ? Column(
+                    children: [
+                      const Divider(height: 1, color: _DS.border),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            // Import button
+                            Material(
+                              color: _importing
+                                  ? _DS.surfaceAlt
+                                  : _DS.primarySoft,
+                              borderRadius: _DS.r12,
+                              child: InkWell(
+                                onTap: _importing
+                                    ? null
+                                    : () => _import(context),
+                                borderRadius: _DS.r12,
+                                hoverColor: _DS.primary.withOpacity(0.12),
+                                splashColor: _DS.primary.withOpacity(0.18),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 11,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: _DS.r12,
+                                    border: Border.all(
+                                      color: _importing
+                                          ? _DS.border
+                                          : _DS.primary.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.upload_file_rounded,
+                                        color: _importing
+                                            ? _DS.inkLight
+                                            : _DS.primary,
+                                        size: 17,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          _importing
+                                              ? 'Importing…'
+                                              : 'Import student list (.csv)',
+                                          style: TextStyle(
+                                            color: _importing
+                                                ? _DS.inkLight
+                                                : _DS.primary,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      if (_importing)
+                                        const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: _DS.primary,
+                                          ),
+                                        )
+                                      else
+                                        const Icon(
+                                          Icons.arrow_forward_ios_rounded,
+                                          color: _DS.primary,
+                                          size: 12,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // ── Student roster ──────────────────────────
+                            if (_loadingRoster)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 24),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: _DS.primary,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            else if (_students.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 20,
+                                ),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: const BoxDecoration(
+                                        color: _DS.surfaceAlt,
+                                        borderRadius: _DS.r12,
+                                      ),
+                                      child: const Icon(
+                                        Icons.people_outline_rounded,
+                                        color: _DS.inkLight,
+                                        size: 24,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    const Text(
+                                      'No students imported yet',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                        color: _DS.inkMid,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'Upload a CSV with name, email, student_no columns.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: _DS.inkLight,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else ...[
+                              const SizedBox(height: 10),
+                              // Search bar
+                              TextField(
+                                controller: _searchCtrl,
+                                onChanged: (v) => setState(() => _search = v),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: _DS.ink,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Search students…',
+                                  hintStyle: const TextStyle(
+                                    color: _DS.inkLight,
+                                    fontSize: 12,
+                                  ),
+                                  prefixIcon: const Icon(
+                                    Icons.search_rounded,
+                                    color: _DS.inkLight,
+                                    size: 18,
+                                  ),
+                                  suffixIcon: _search.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(
+                                            Icons.clear_rounded,
+                                            color: _DS.inkLight,
+                                            size: 16,
+                                          ),
+                                          onPressed: () {
+                                            _searchCtrl.clear();
+                                            setState(() => _search = '');
+                                          },
+                                        )
+                                      : null,
+                                  filled: true,
+                                  fillColor: _DS.surfaceAlt,
+                                  border: OutlineInputBorder(
+                                    borderRadius: _DS.r12,
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              // Table header
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 6,
+                                ),
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(color: _DS.border),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: const [
+                                    SizedBox(
+                                      width: 28,
+                                      child: Text(
+                                        '#',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: _DS.inkLight,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Name',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: _DS.inkLight,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Email',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: _DS.inkLight,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 56,
+                                      child: Text(
+                                        'Student ID',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: _DS.inkLight,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Rows
+                              ...filtered.asMap().entries.map((e) {
+                                final i = e.key;
+                                final s = e.value;
+                                return Container(
+                                  color: i.isEven
+                                      ? Colors.transparent
+                                      : _DS.surfaceAlt.withOpacity(0.45),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 9,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 28,
+                                        child: Text(
+                                          '${i + 1}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: _DS.inkLight,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          s.name.isEmpty ? '—' : s.name,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: _DS.ink,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          s.email.isEmpty ? '—' : s.email,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: _DS.inkMid,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 56,
+                                        child: Text(
+                                          s.studentNo.isEmpty
+                                              ? '—'
+                                              : s.studentNo,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: _DS.inkLight,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              if (filtered.isEmpty && _search.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  child: Text(
+                                    'No students match "$_search"',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _DS.inkLight,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(height: 6),
+                              // Footer
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  _search.isNotEmpty
+                                      ? '${filtered.length} of ${_students.length} shown'
+                                      : '${_students.length} student${_students.length == 1 ? "" : "s"} total',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: _DS.inkLight,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// TAB 4 — Ask AI
-// ─────────────────────────────────────────────
+// ─── TAB 4 — Ask AI ──────────────────────────────────────────────────────────
 class _AskTab extends StatelessWidget {
   const _AskTab({
     required this.chat,
@@ -1078,23 +1928,66 @@ class _AskTab extends StatelessWidget {
     required this.scrollCtrl,
     required this.asking,
     required this.onAsk,
+    required this.onReupload,
   });
   final List<_ChatMsg> chat;
   final TextEditingController ctrl;
   final ScrollController scrollCtrl;
   final bool asking;
   final Future<void> Function(String) onAsk;
+  final VoidCallback onReupload;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        Container(
+          width: double.infinity,
+          color: _DS.surfaceAlt,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.picture_as_pdf_rounded,
+                color: _DS.primary,
+                size: 15,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  "If AI isn't answering, re-upload the PDF.",
+                  style: TextStyle(fontSize: 11, color: _DS.inkMid),
+                ),
+              ),
+              Material(
+                color: _DS.primary,
+                borderRadius: _DS.r8,
+                child: InkWell(
+                  onTap: onReupload,
+                  borderRadius: _DS.r8,
+                  hoverColor: Colors.white.withOpacity(0.15),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    child: Text(
+                      'Re-upload',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: chat.isEmpty
-              ? _AskEmptyState(ctrl: ctrl, onAsk: onAsk)
+              ? _AskEmptyState(onAsk: onAsk)
               : ListView.builder(
                   controller: scrollCtrl,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
                   itemCount: chat.length + (asking ? 1 : 0),
                   itemBuilder: (_, i) {
                     if (i == chat.length) return const _TypingIndicator();
@@ -1107,13 +2000,13 @@ class _AskTab extends StatelessWidget {
             color: _DS.surface,
             border: Border(top: BorderSide(color: _DS.border)),
           ),
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
           child: Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: ctrl,
-                  style: const TextStyle(color: _DS.ink, fontSize: 14),
+                  style: const TextStyle(color: _DS.ink, fontSize: 13),
                   decoration: InputDecoration(
                     hintText: 'Ask about the syllabus…',
                     hintStyle: const TextStyle(color: _DS.inkLight),
@@ -1124,21 +2017,21 @@ class _AskTab extends StatelessWidget {
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                      horizontal: 14,
+                      vertical: 11,
                     ),
                   ),
                   onSubmitted: onAsk,
                   textInputAction: TextInputAction.send,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: asking ? null : () => onAsk(ctrl.text),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  width: 46,
-                  height: 46,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: asking ? _DS.inkLight : _DS.primary,
                     borderRadius: _DS.r20,
@@ -1146,8 +2039,8 @@ class _AskTab extends StatelessWidget {
                   child: asking
                       ? const Center(
                           child: SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
@@ -1157,7 +2050,7 @@ class _AskTab extends StatelessWidget {
                       : const Icon(
                           Icons.send_rounded,
                           color: Colors.white,
-                          size: 20,
+                          size: 18,
                         ),
                 ),
               ),
@@ -1170,8 +2063,7 @@ class _AskTab extends StatelessWidget {
 }
 
 class _AskEmptyState extends StatelessWidget {
-  const _AskEmptyState({required this.ctrl, required this.onAsk});
-  final TextEditingController ctrl;
+  const _AskEmptyState({required this.onAsk});
   final Future<void> Function(String) onAsk;
 
   @override
@@ -1183,14 +2075,13 @@ class _AskEmptyState extends StatelessWidget {
       'What textbooks are required?',
     ];
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       children: [
-        const SizedBox(height: 16),
         Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(22),
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF6C47D4), Color(0xFF9B6EFF)],
+              colors: [Color(0xFF6747B0), Color(0xFF9B78E0)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -1198,72 +2089,105 @@ class _AskEmptyState extends StatelessWidget {
           ),
           child: Column(
             children: [
-              const Icon(
-                Icons.auto_awesome_rounded,
-                color: Colors.white,
-                size: 36,
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: _DS.r16,
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               const Text(
                 'Ask Your Syllabus',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 5),
               Text(
-                'Get instant answers from your uploaded syllabus. Try one of these:',
-                textAlign: TextAlign.center,
+                'Get instant answers from your course syllabus.',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.8),
-                  fontSize: 13,
+                  fontSize: 12,
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
+            'Try asking…',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _DS.inkMid,
+            ),
+          ),
+        ),
         ...suggestions.map(
           (q) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: GestureDetector(
-              onTap: () => onAsk(q),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: _DS.surface,
-                  borderRadius: _DS.r12,
-                  border: Border.all(color: _DS.border),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.lightbulb_outline_rounded,
-                      color: _DS.primary,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        q,
-                        style: const TextStyle(
-                          color: _DS.inkMid,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+            child: Material(
+              color: _DS.surface,
+              borderRadius: _DS.r12,
+              child: InkWell(
+                onTap: () => onAsk(q),
+                borderRadius: _DS.r12,
+                hoverColor: _DS.primarySoft,
+                splashColor: _DS.primary.withOpacity(0.1),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 13,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: _DS.r12,
+                    border: Border.all(color: _DS.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: const BoxDecoration(
+                          color: _DS.primarySoft,
+                          borderRadius: _DS.r8,
+                        ),
+                        child: const Icon(
+                          Icons.lightbulb_outline_rounded,
+                          color: _DS.primary,
+                          size: 15,
                         ),
                       ),
-                    ),
-                    const Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 12,
-                      color: _DS.inkLight,
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          q,
+                          style: const TextStyle(
+                            color: _DS.ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 11,
+                        color: _DS.inkLight,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1279,86 +2203,76 @@ class _ChatBubble extends StatelessWidget {
   final _ChatMsg msg;
 
   @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.78,
+  Widget build(BuildContext context) => Align(
+    alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.76,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      decoration: BoxDecoration(
+        color: msg.isUser ? _DS.primary : _DS.surface,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(14),
+          topRight: const Radius.circular(14),
+          bottomLeft: Radius.circular(msg.isUser ? 14 : 3),
+          bottomRight: Radius.circular(msg.isUser ? 3 : 14),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: msg.isUser ? _DS.primary : _DS.surface,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(msg.isUser ? 16 : 4),
-            bottomRight: Radius.circular(msg.isUser ? 4 : 16),
-          ),
-          boxShadow: _DS.shadowSm,
-          border: msg.isUser ? null : Border.all(color: _DS.border),
-        ),
-        child: Text(
-          msg.text,
-          style: TextStyle(
-            color: msg.isUser ? Colors.white : _DS.ink,
-            fontSize: 14,
-            height: 1.5,
-          ),
+        boxShadow: _DS.shadowSm,
+        border: msg.isUser ? null : Border.all(color: _DS.border),
+      ),
+      child: Text(
+        msg.text,
+        style: TextStyle(
+          color: msg.isUser ? Colors.white : _DS.ink,
+          fontSize: 13,
+          height: 1.5,
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 
   @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: _DS.surface,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(16),
-            bottomLeft: Radius.circular(4),
-          ),
-          border: Border.all(color: _DS.border),
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+      decoration: BoxDecoration(
+        color: _DS.surface,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(14),
+          topRight: Radius.circular(14),
+          bottomRight: Radius.circular(14),
+          bottomLeft: Radius.circular(3),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.auto_awesome_rounded,
-              size: 14,
-              color: _DS.primary,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Thinking…',
-              style: TextStyle(
-                color: _DS.inkLight,
-                fontSize: 13,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
-        ),
+        border: Border.all(color: _DS.border),
       ),
-    );
-  }
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.auto_awesome_rounded, size: 13, color: _DS.primary),
+          const SizedBox(width: 5),
+          const Text(
+            'Thinking…',
+            style: TextStyle(
+              color: _DS.inkLight,
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
-// ─────────────────────────────────────────────
-// Shared small widgets
-// ─────────────────────────────────────────────
+// ─── Shared widgets ───────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
@@ -1370,64 +2284,50 @@ class _SectionHeader extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: _DS.primary, size: 18),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: _DS.ink,
-          ),
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, color: _DS.primary, size: 17),
+      const SizedBox(width: 7),
+      Text(
+        title,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+          color: _DS.ink,
         ),
-        const Spacer(),
-        if (trailing != null) trailing!,
-      ],
-    );
-  }
+      ),
+      const Spacer(),
+      if (trailing != null) trailing!,
+    ],
+  );
 }
 
 class _PillButton extends StatelessWidget {
-  const _PillButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
+  const _PillButton({required this.label, required this.onTap});
   final String label;
-  final IconData icon;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
+  Widget build(BuildContext context) => Material(
+    color: _DS.primary,
+    borderRadius: _DS.r20,
+    child: InkWell(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: const BoxDecoration(
-          color: _DS.primary,
-          borderRadius: _DS.r20,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white, size: 14),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-          ],
+      borderRadius: _DS.r20,
+      hoverColor: Colors.white.withOpacity(0.15),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _FormField extends StatelessWidget {
@@ -1441,35 +2341,30 @@ class _FormField extends StatelessWidget {
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: ctrl,
-      style: const TextStyle(color: _DS.ink, fontSize: 14),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: _DS.inkMid, fontSize: 12),
-        prefixIcon: Icon(icon, color: _DS.primary, size: 16),
-        filled: true,
-        fillColor: _DS.surfaceAlt,
-        border: OutlineInputBorder(
-          borderRadius: _DS.r12,
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: _DS.r12,
-          borderSide: const BorderSide(color: _DS.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: _DS.r12,
-          borderSide: const BorderSide(color: _DS.primary, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
+  Widget build(BuildContext context) => TextField(
+    controller: ctrl,
+    style: const TextStyle(color: _DS.ink, fontSize: 13),
+    decoration: InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: _DS.inkMid, fontSize: 12),
+      prefixIcon: Icon(icon, color: _DS.primary, size: 15),
+      filled: true,
+      fillColor: _DS.surfaceAlt,
+      border: OutlineInputBorder(
+        borderRadius: _DS.r12,
+        borderSide: BorderSide.none,
       ),
-    );
-  }
+      enabledBorder: OutlineInputBorder(
+        borderRadius: _DS.r12,
+        borderSide: const BorderSide(color: _DS.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: _DS.r12,
+        borderSide: const BorderSide(color: _DS.primary, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    ),
+  );
 }
 
 class _EmptyState extends StatelessWidget {
@@ -1483,45 +2378,43 @@ class _EmptyState extends StatelessWidget {
   final String subtitle;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: const BoxDecoration(
-                color: _DS.primarySoft,
-                borderRadius: _DS.r20,
-              ),
-              child: Icon(icon, color: _DS.primary, size: 34),
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(
+              color: _DS.primarySoft,
+              borderRadius: _DS.r20,
             ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-                color: _DS.ink,
-              ),
+            child: Icon(icon, color: _DS.primary, size: 34),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: _DS.ink,
             ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _DS.inkLight,
-                fontSize: 13,
-                height: 1.5,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: _DS.inkLight,
+              fontSize: 13,
+              height: 1.5,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _ChatMsg {

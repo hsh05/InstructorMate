@@ -76,3 +76,25 @@ class CsvSectionRepository:
                         },
                     })
         return results
+
+    def delete(self, workspace_id: str, section_id: str) -> bool:
+        file_path = self._file_path(workspace_id)
+        if not file_path.exists():
+            return False
+
+        rows = []
+        with open(file_path, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        filtered = [r for r in rows if r.get("section_id") != section_id]
+        if len(filtered) == len(rows):
+            return False  # not found
+
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            if rows:
+                writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+                writer.writeheader()
+                writer.writerows(filtered)
+
+        return True

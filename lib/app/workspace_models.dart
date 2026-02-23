@@ -99,6 +99,7 @@ class Section {
   final String instructorName;
   final String location;
   final SectionSchedule schedule;
+  final int studentsCount;
 
   Section({
     required this.id,
@@ -106,17 +107,18 @@ class Section {
     required this.instructorName,
     required this.location,
     required this.schedule,
+    this.studentsCount = 0,
   });
 
   factory Section.fromJson(Map<String, dynamic> j) {
     final sch = (j["schedule"] as Map?)?.cast<String, dynamic>() ?? {};
     return Section(
-      // FIX #7: backend returns "section_id", not "id"
       id: (j["section_id"] ?? j["id"] ?? "").toString(),
       name: (j["name"] ?? "").toString(),
       instructorName: (j["instructor_name"] ?? "").toString(),
       location: (j["location"] ?? "").toString(),
       schedule: SectionSchedule.fromJson(sch),
+      studentsCount: int.tryParse((j["students_count"] ?? 0).toString()) ?? 0,
     );
   }
 }

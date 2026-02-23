@@ -8,6 +8,31 @@ import 'package:http_parser/http_parser.dart';
 
 import '../app/workspace_models.dart';
 
+class ImportResult {
+  final int imported;
+  final String sectionId;
+  const ImportResult({required this.imported, required this.sectionId});
+}
+
+class Student {
+  final String studentId;
+  final String name;
+  final String email;
+  final String studentNo;
+  const Student({
+    required this.studentId,
+    required this.name,
+    required this.email,
+    required this.studentNo,
+  });
+  factory Student.fromJson(Map<String, dynamic> j) => Student(
+    studentId: (j['student_id'] ?? j['id'] ?? '').toString(),
+    name: (j['name'] ?? '').toString(),
+    email: (j['email'] ?? '').toString(),
+    studentNo: (j['student_no'] ?? '').toString(),
+  );
+}
+
 class ApiClient {
   ApiClient({required String baseUrl}) : baseUri = _normalizeBaseUri(baseUrl);
 
@@ -125,16 +150,18 @@ class ApiClient {
     return await getWorkspace(wid);
   }
 
-  Future<Workspace> importStudents({
+  Future<ImportResult> importStudents({
     required String workspaceId,
     required Uint8List bytes,
     required String filename,
+    String sectionId = "",
   }) async {
     final req =
         http.MultipartRequest(
             "POST",
             _u("/workspaces/$workspaceId/students/import"),
           )
+          ..fields["section_id"] = sectionId
           ..files.add(
             http.MultipartFile.fromBytes(
               "file",
@@ -148,9 +175,68 @@ class ApiClient {
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
 
-    // FIX #5: backend returns {"workspaceId": ..., "imported": N}, NOT a Workspace.
-    // Re-fetch the workspace so studentsCount and data stay fresh.
-    return await getWorkspace(workspaceId);
+    // Backend returns {"workspaceId": ..., "section_id": ..., "imported": N}
+    // Use this count directly — do NOT rely on count_by_section in a re-fetch
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    return ImportResult(
+      imported: int.tryParse((map["imported"] ?? 0).toString()) ?? 0,
+      sectionId: (map["section_id"] ?? sectionId).toString(),
+    );
+  }
+
+  Future<void> deleteWorkspace(String workspaceId) async {
+    final resp = await http
+        .delete(_u('/workspaces/$workspaceId'))
+        .timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+  }
+
+  Future<List<Student>> listSectionStudents(
+    String workspaceId,
+    String sectionId,
+  ) async {
+    final resp = await http
+        .get(_u('/workspaces/$workspaceId/sections/$sectionId/students'))
+        .timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    final list = (map['students'] as List?) ?? [];
+    return list
+        .map((e) => Student.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Workspace> deleteSection(String workspaceId, String sectionId) async {
+    final resp = await http
+        .delete(_u('/workspaces/$workspaceId/sections/$sectionId'))
+        .timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
+  }
+
+  Future<Workspace> reuploadSyllabus({
+    required String workspaceId,
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final req =
+        http.MultipartRequest("POST", _u("/workspaces/$workspaceId/reupload"))
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              "file",
+              bytes,
+              filename: filename,
+              contentType: _contentTypeFor(filename),
+            ),
+          );
+
+    final streamed = await req.send().timeout(const Duration(seconds: 120));
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    return Workspace.fromJson(map["workspace"] as Map<String, dynamic>);
   }
 
   Future<String> ask(String wid, String question) async {
@@ -190,5 +276,36 @@ class ApiClient {
       if (m is Map && m["detail"] != null) return m["detail"].toString();
     } catch (_) {}
     return "Request failed (${resp.statusCode}).";
+  }
+
+  Future<Workspace> importSectionStudents({
+    required String workspaceId,
+    required String sectionId,
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final req =
+        http.MultipartRequest(
+            "POST",
+            _u("/workspaces/$workspaceId/sections/$sectionId/students/import"),
+          )
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              "file",
+              bytes,
+              filename: filename,
+              contentType: MediaType("text", "csv"),
+            ),
+          );
+
+    final streamed = await req.send().timeout(const Duration(seconds: 30));
+    final resp = await http.Response.fromStream(streamed);
+
+    if (resp.statusCode != 200) {
+      throw Exception(_extractDetail(resp));
+    }
+
+    // Re-fetch workspace to keep UI consistent
+    return await getWorkspace(workspaceId);
   }
 }

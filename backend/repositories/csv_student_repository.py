@@ -6,7 +6,6 @@ from repositories.csv_workspace_repository import CsvWorkspaceRepository
 
 class CsvStudentRepository:
 
-    # FIX #4a: Accept ws_repo (not a raw file path) — consistent with how student_routes instantiates this
     def __init__(self, ws_repo: CsvWorkspaceRepository):
         self.ws_repo = ws_repo
 
@@ -22,30 +21,33 @@ class CsvStudentRepository:
         with open(file_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
                 f,
-                fieldnames=["student_id", "workspace_id", "student_no", "name", "email"],
+                fieldnames=["student_id", "workspace_id", "section_id", "student_no", "name", "email"],
             )
             if not file_exists:
                 writer.writeheader()
 
-            # FIX #4b: Include student_no so all 5 columns are written correctly
             writer.writerow({
-                "student_id": student.student_id,
+                "student_id":   student.student_id,
                 "workspace_id": student.workspace_id,
-                "student_no": getattr(student, "student_no", ""),
-                "name": student.name,
-                "email": student.email,
+                "section_id":   getattr(student, "section_id", ""),
+                "student_no":   getattr(student, "student_no", ""),
+                "name":         student.name,
+                "email":        student.email,
             })
 
     def list_by_workspace(self, workspace_id: str):
         file_path = self._file_path(workspace_id)
-        results = []
         if not file_path.exists():
-            return results
-
+            return []
         with open(file_path, "r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                if row["workspace_id"] == workspace_id:
-                    results.append(row)
+            return [row for row in reader if row.get("workspace_id") == workspace_id]
 
-        return results
+    def list_by_section(self, workspace_id: str, section_id: str):
+        return [
+            r for r in self.list_by_workspace(workspace_id)
+            if r.get("section_id") == section_id
+        ]
+
+    def count_by_section(self, workspace_id: str, section_id: str) -> int:
+        return len(self.list_by_section(workspace_id, section_id))

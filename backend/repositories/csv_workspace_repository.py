@@ -126,3 +126,31 @@ class CsvWorkspaceRepository:
             writer = csv.DictWriter(f, fieldnames=rows[0].keys())
             writer.writeheader()
             writer.writerows(rows)
+
+    def delete(self, workspace_id: str) -> bool:
+        rows = []
+        with open(self.file_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        filtered = [r for r in rows if r["workspace_id"] != workspace_id]
+        if len(filtered) == len(rows):
+            return False  # not found
+
+        with open(self.file_path, "w", newline="", encoding="utf-8") as f:
+            if filtered:
+                writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+                writer.writeheader()
+                writer.writerows(filtered)
+            else:
+                # All rows deleted — rewrite just the header
+                writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+                writer.writeheader()
+
+        # Delete the workspace folder (sections.csv, students.csv, chunks.csv, syllabus.pdf)
+        ws_dir = self.workspace_dir(workspace_id)
+        if ws_dir.exists():
+            import shutil
+            shutil.rmtree(ws_dir)
+
+        return True
