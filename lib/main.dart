@@ -5,6 +5,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'app/api_client.dart';
+import '../config/app_config.dart';
 import 'services/notification_service.dart';
 import 'app/state/workspaces_vm.dart';
 import 'ui/workspaces_home.dart';
@@ -38,9 +39,10 @@ class _BootstrapState extends State<_Bootstrap> {
   @override
   void initState() {
     super.initState();
-    final api = ApiClient(baseUrl: 'http://192.168.1.202:8000');
+    // FIX: read base URL from AppConfig instead of hardcoding it here
+    final api = ApiClient(baseUrl: AppConfig.baseUrl);
     vm = WorkspacesViewModel(api: api);
-    vm.load(); // triggers both mobile scheduling + web notification init
+    vm.load();
   }
 
   @override

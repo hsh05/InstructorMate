@@ -1,10 +1,13 @@
 // lib/ui/workspace_detail.dart
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../app/api_client.dart';
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
+import '../services/notification_service.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 class _DS {
@@ -45,18 +48,23 @@ class _DS {
   ];
 }
 
+// FIX: field labels and icons aligned with the editable keys actually used.
+// 'office_hours' (old backend key) is split UI-side into start/end;
+// the backend still stores it as 'office_hours' — see workspaces_vm.updateFields.
 const _fieldLabels = {
   'course_name': 'Course Name',
   'course_code': 'Course Code',
   'semester': 'Semester',
-  'office_hours': 'Office Hours',
+  'office_hours_start': 'Office Hours Start',
+  'office_hours_end': 'Office Hours End',
   'instructor_email': 'Instructor Email',
 };
 const _fieldIcons = {
   'course_name': Icons.book_rounded,
   'course_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
-  'office_hours': Icons.access_time_rounded,
+  'office_hours_start': Icons.access_time_rounded,
+  'office_hours_end': Icons.access_time_filled_rounded,
   'instructor_email': Icons.email_outlined,
 };
 
@@ -82,7 +90,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     'course_name',
     'course_code',
     'semester',
-    'office_hours',
+    'office_hours_start',
+    'office_hours_end',
     'instructor_email',
   ];
 
@@ -104,11 +113,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   TextEditingController _ctrl(String key, String value) =>
       _fieldCtrl.putIfAbsent(key, () => TextEditingController(text: value));
 
-  bool _isReady(Workspace ws) => [
-    'course_name',
-    'semester',
-    'office_hours',
-  ].every((k) => (ws.fields[k] ?? '').trim().isNotEmpty);
+  // FIX: was computing readiness from local field values — now delegates to the
+  // backend status field ('ready' | 'draft') which is the authoritative source.
+  bool _isReady(Workspace ws) => ws.isReady;
 
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
@@ -119,11 +126,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       animation: widget.vm,
       builder: (_, __) {
         final ws = widget.vm.current;
-        if (ws == null)
+        if (ws == null) {
           return const Scaffold(
             backgroundColor: _DS.bg,
             body: Center(child: Text('No workspace selected.')),
           );
+        }
         final ready = _isReady(ws);
         final missing = _missingFields(ws);
 
@@ -133,7 +141,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
             body: Column(
               children: [
-                // ── Pill tab bar ────────────────────────────────────────
+                // ── Pill tab bar ───────────────────────────────────────
                 Container(
                   color: _DS.surface,
                   padding: const EdgeInsets.symmetric(
@@ -226,8 +234,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                               onAsk: _onAsk,
                               onReupload: () async {
                                 await widget.vm.reuploadSyllabus();
-                                if (widget.vm.error != null)
+                                if (widget.vm.error != null) {
                                   _showError(widget.vm.error!);
+                                }
                               },
                             ),
                           ],
@@ -241,7 +250,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     );
   }
 
-  // ── Header: title + stat pills ────────────────────────────────────────────
+  // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader(Workspace ws, bool ready) {
     final totalStudents = widget.vm.totalStudentsCount;
     final sectionCount = ws.sections.length;
@@ -327,7 +336,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     ],
                   ),
                   const SizedBox(height: 10),
-                  // Stat pills
                   Row(
                     children: [
                       if (code.isNotEmpty) ...[
@@ -409,12 +417,13 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   }
 
   void _scrollChat() => WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (_askScroll.hasClients)
+    if (_askScroll.hasClients) {
       _askScroll.animateTo(
         _askScroll.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
+    }
   });
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -427,7 +436,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   );
 }
 
-// ── Stat pill ─────────────────────────────────────────────────────────────────
+// ── Stat pill ──────────────────────────────────────────────────────────────────
 class _StatPill extends StatelessWidget {
   const _StatPill({
     required this.icon,
@@ -502,7 +511,7 @@ class _MissingBanner extends StatelessWidget {
   }
 }
 
-// ─── TAB 1 — Info (tap-to-edit, no form mode) ────────────────────────────────
+// ─── TAB 1 — Info ────────────────────────────────────────────────────────────
 class _InfoTab extends StatefulWidget {
   const _InfoTab({
     required this.ws,
@@ -519,28 +528,126 @@ class _InfoTab extends StatefulWidget {
   State<_InfoTab> createState() => _InfoTabState();
 }
 
+String? _validateField(String key, String value) {
+  final v = value.trim();
+  if (v.isEmpty) return '${_fieldLabels[key] ?? key} is required';
+  switch (key) {
+    case 'instructor_email':
+      final emailRe = RegExp(
+        r'^[\w.+-]+@[\w-]+\.[a-z]{2,}$',
+        caseSensitive: false,
+      );
+      if (!emailRe.hasMatch(v)) return 'Enter a valid email address';
+      break;
+    case 'office_hours_start':
+    case 'office_hours_end':
+      final timeRe = RegExp(r'^\d{1,2}:\d{2}$');
+      if (!timeRe.hasMatch(v)) return 'Use format HH:MM (e.g. 09:00)';
+      break;
+  }
+  return null;
+}
+
+const _numericKeys = {'allow_validation', 'capacity', 'max_students'};
+const _officeHoursPair = {'office_hours_start', 'office_hours_end'};
+
 class _InfoTabState extends State<_InfoTab> {
   final Set<String> _editing = {};
+  final Map<String, String?> _errors = {};
   bool _saving = false;
+  bool _triedSave = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _migrateOfficeHours();
+  }
+
+  // FIX: migrate old 'office_hours' single field → split start/end fields
+  // so users who already have data don't see blank time pickers.
+  void _migrateOfficeHours() {
+    final old = widget.ws.fields['office_hours'] ?? '';
+    final startVal = widget.ws.fields['office_hours_start'] ?? '';
+    if (old.isNotEmpty && startVal.isEmpty) {
+      final parts = old.split(RegExp(r'\s*[-–to]+\s*', caseSensitive: false));
+      if (parts.length >= 2) {
+        widget.ctrl('office_hours_start', parts[0].trim());
+        widget.ctrl('office_hours_end', parts[1].trim());
+      } else {
+        widget.ctrl('office_hours_start', old.trim());
+        widget.ctrl('office_hours_end', '');
+      }
+    }
+  }
+
+  bool _validateAll() {
+    _errors.clear();
+    for (final key in widget.editableKeys) {
+      final val = widget.ctrl(key, widget.ws.fields[key] ?? '').text;
+      final err = _validateField(key, val);
+      if (err != null) _errors[key] = err;
+    }
+    return _errors.isEmpty;
+  }
 
   Future<void> _save() async {
+    setState(() => _triedSave = true);
+    if (!_validateAll()) {
+      setState(() {});
+      return;
+    }
     setState(() {
       _saving = true;
       _editing.clear();
     });
     await widget.onSave();
-    if (mounted) setState(() => _saving = false);
+    if (mounted) {
+      setState(() {
+        _saving = false;
+        _triedSave = false;
+      });
+    }
+  }
+
+  TextInputType _keyboardType(String key) {
+    if (_numericKeys.contains(key)) return TextInputType.number;
+    if (key == 'instructor_email') return TextInputType.emailAddress;
+    if (_officeHoursPair.contains(key)) return TextInputType.datetime;
+    return TextInputType.text;
   }
 
   @override
   Widget build(BuildContext context) {
     final hasEdits = _editing.isNotEmpty;
+
+    final List<_FieldGroup> groups = [];
+    bool ohStartAdded = false;
+    for (final key in widget.editableKeys) {
+      if (key == 'office_hours_start') {
+        ohStartAdded = true;
+        continue;
+      }
+      if (key == 'office_hours_end') {
+        groups.add(_FieldGroup.pair('office_hours_start', 'office_hours_end'));
+        continue;
+      }
+      groups.add(_FieldGroup.single(key));
+    }
+    if (ohStartAdded && !groups.any((g) => g.isPair)) {
+      groups.add(_FieldGroup.single('office_hours_start'));
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _SectionHeader(
           title: 'Course Details',
           icon: Icons.info_outline_rounded,
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Tap any field to edit. All fields are required.',
+          style: TextStyle(fontSize: 12, color: _DS.inkMid),
         ),
         const SizedBox(height: 12),
         Container(
@@ -552,151 +659,49 @@ class _InfoTabState extends State<_InfoTab> {
           clipBehavior: Clip.hardEdge,
           child: Column(
             children: [
-              ...widget.editableKeys.asMap().entries.map((entry) {
+              ...groups.asMap().entries.map((entry) {
                 final idx = entry.key;
-                final key = entry.value;
-                final value = widget.ws.fields[key] ?? '';
-                final label = _fieldLabels[key] ?? key;
-                final icon = _fieldIcons[key] ?? Icons.edit_rounded;
-                final isEditing = _editing.contains(key);
-                final isEmpty = value.trim().isEmpty;
-                final isLast = idx == widget.editableKeys.length - 1;
-
+                final group = entry.value;
+                final isLast = idx == groups.length - 1;
                 return Column(
                   children: [
-                    isEditing
-                        ? Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  label,
-                                  style: const TextStyle(
-                                    color: _DS.primary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                TextField(
-                                  controller: widget.ctrl(key, value),
-                                  autofocus: true,
-                                  style: const TextStyle(
-                                    color: _DS.ink,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  decoration: InputDecoration(
-                                    prefixIcon: Icon(
-                                      icon,
-                                      color: _DS.primary,
-                                      size: 17,
-                                    ),
-                                    suffixIcon: IconButton(
-                                      icon: const Icon(
-                                        Icons.check_circle_rounded,
-                                        color: _DS.accent,
-                                        size: 22,
-                                      ),
-                                      onPressed: () =>
-                                          setState(() => _editing.remove(key)),
-                                    ),
-                                    filled: true,
-                                    fillColor: _DS.primarySoft,
-                                    border: OutlineInputBorder(
-                                      borderRadius: _DS.r12,
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: _DS.r12,
-                                      borderSide: const BorderSide(
-                                        color: _DS.primary,
-                                        width: 2,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 13,
-                                    ),
-                                  ),
-                                  onSubmitted: (_) =>
-                                      setState(() => _editing.remove(key)),
-                                ),
-                              ],
-                            ),
-                          )
-                        : Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => setState(() => _editing.add(key)),
-                              hoverColor: _DS.primarySoft.withOpacity(0.5),
-                              splashColor: _DS.primary.withOpacity(0.06),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 15,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: isEmpty
-                                            ? _DS.warnSoft
-                                            : _DS.primarySoft,
-                                        borderRadius: _DS.r10,
-                                      ),
-                                      child: Icon(
-                                        icon,
-                                        color: isEmpty ? _DS.warn : _DS.primary,
-                                        size: 17,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 13),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            label,
-                                            style: const TextStyle(
-                                              color: _DS.inkLight,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            value.isEmpty
-                                                ? 'Tap to add…'
-                                                : value,
-                                            style: TextStyle(
-                                              color: value.isEmpty
-                                                  ? _DS.inkLight
-                                                  : _DS.ink,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w500,
-                                              fontStyle: value.isEmpty
-                                                  ? FontStyle.italic
-                                                  : FontStyle.normal,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.edit_outlined,
-                                      size: 15,
-                                      color: isEmpty ? _DS.warn : _DS.inkLight,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+                    if (group.isPair)
+                      _OfficeHoursPairRow(
+                        wsFields: widget.ws.fields,
+                        ctrl: widget.ctrl,
+                        editing: _editing,
+                        errors: _errors,
+                        triedSave: _triedSave,
+                        onEditStart: (k) => setState(() => _editing.add(k)),
+                        onEditDone: (k) => setState(() {
+                          _editing.remove(k);
+                          if (_triedSave) {
+                            _errors[k] = _validateField(
+                              k,
+                              widget.ctrl(k, '').text,
+                            );
+                          }
+                        }),
+                      )
+                    else
+                      _InfoFieldRow(
+                        fieldKey: group.key,
+                        value: widget.ws.fields[group.key] ?? '',
+                        ctrl: widget.ctrl,
+                        isEditing: _editing.contains(group.key),
+                        error: _errors[group.key],
+                        keyboardType: _keyboardType(group.key),
+                        onTap: () => setState(() => _editing.add(group.key)),
+                        onDone: () => setState(() {
+                          _editing.remove(group.key);
+                          if (_triedSave) {
+                            _errors[group.key] = _validateField(
+                              group.key,
+                              widget.ctrl(group.key, '').text,
+                            );
+                          }
+                        }),
+                      ),
                     if (!isLast)
                       const Divider(
                         height: 1,
@@ -707,11 +712,10 @@ class _InfoTabState extends State<_InfoTab> {
                   ],
                 );
               }),
-              // Save button slides in when editing
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
-                child: (hasEdits || _saving)
+                child: (hasEdits || _saving || _triedSave)
                     ? Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         child: SizedBox(
@@ -752,12 +756,513 @@ class _InfoTabState extends State<_InfoTab> {
             ],
           ),
         ),
+        if (_triedSave && _errors.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _DS.warnSoft,
+              borderRadius: _DS.r12,
+              border: Border.all(color: _DS.warn.withOpacity(0.4)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: _DS.warn,
+                      size: 15,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Please fix the following:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: _DS.warn,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ..._errors.entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '• ${e.value}',
+                      style: const TextStyle(fontSize: 12, color: _DS.warn),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
 }
 
-// ─── TAB 2 — Sections ────────────────────────────────────────────────────────
+// ── Field group model ──────────────────────────────────────────────────────────
+class _FieldGroup {
+  final String key;
+  final String? secondKey;
+  bool get isPair => secondKey != null;
+  const _FieldGroup.single(this.key) : secondKey = null;
+  const _FieldGroup.pair(this.key, this.secondKey);
+}
+
+// ── Single field row ───────────────────────────────────────────────────────────
+class _InfoFieldRow extends StatelessWidget {
+  const _InfoFieldRow({
+    required this.fieldKey,
+    required this.value,
+    required this.ctrl,
+    required this.isEditing,
+    required this.error,
+    required this.keyboardType,
+    required this.onTap,
+    required this.onDone,
+  });
+  final String fieldKey;
+  final String value;
+  final TextEditingController Function(String, String) ctrl;
+  final bool isEditing;
+  final String? error;
+  final TextInputType keyboardType;
+  final VoidCallback onTap;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _fieldLabels[fieldKey] ?? fieldKey;
+    final icon = _fieldIcons[fieldKey] ?? Icons.edit_rounded;
+    final isEmpty = value.trim().isEmpty;
+    final hasError = error != null;
+
+    if (isEditing) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: hasError ? _DS.warn : _DS.primary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: ctrl(fieldKey, value),
+              autofocus: true,
+              keyboardType: keyboardType,
+              style: const TextStyle(
+                color: _DS.ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: InputDecoration(
+                prefixIcon: Icon(
+                  icon,
+                  color: hasError ? _DS.warn : _DS.primary,
+                  size: 17,
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    Icons.check_circle_rounded,
+                    color: hasError ? _DS.warn : _DS.accent,
+                  ),
+                  onPressed: onDone,
+                ),
+                hintText: _hintFor(fieldKey),
+                hintStyle: const TextStyle(color: _DS.inkLight, fontSize: 13),
+                filled: true,
+                fillColor: hasError ? _DS.warnSoft : _DS.primarySoft,
+                border: OutlineInputBorder(
+                  borderRadius: _DS.r12,
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: _DS.r12,
+                  borderSide: BorderSide(
+                    color: hasError ? _DS.warn : _DS.primary,
+                    width: 2,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 13,
+                ),
+                errorText: error,
+                errorStyle: const TextStyle(fontSize: 11),
+              ),
+              onSubmitted: (_) => onDone(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: _DS.primarySoft.withOpacity(0.5),
+        splashColor: _DS.primary.withOpacity(0.06),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: hasError
+                      ? _DS.warnSoft
+                      : (isEmpty ? _DS.warnSoft : _DS.primarySoft),
+                  borderRadius: _DS.r10,
+                ),
+                child: Icon(
+                  icon,
+                  color: hasError
+                      ? _DS.warn
+                      : (isEmpty ? _DS.warn : _DS.primary),
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: _DS.inkLight,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value.isEmpty ? 'Tap to add…' : value,
+                      style: TextStyle(
+                        color: value.isEmpty ? _DS.inkLight : _DS.ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        fontStyle: value.isEmpty
+                            ? FontStyle.italic
+                            : FontStyle.normal,
+                      ),
+                    ),
+                    if (hasError) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        error!,
+                        style: const TextStyle(
+                          color: _DS.warn,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                isEmpty || hasError
+                    ? Icons.error_outline_rounded
+                    : Icons.edit_outlined,
+                size: 15,
+                color: hasError
+                    ? _DS.warn
+                    : (isEmpty ? _DS.warn : _DS.inkLight),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Office hours pair row ──────────────────────────────────────────────────────
+class _OfficeHoursPairRow extends StatelessWidget {
+  const _OfficeHoursPairRow({
+    required this.wsFields,
+    required this.ctrl,
+    required this.editing,
+    required this.errors,
+    required this.triedSave,
+    required this.onEditStart,
+    required this.onEditDone,
+  });
+  final Map<String, String> wsFields;
+  final TextEditingController Function(String, String) ctrl;
+  final Set<String> editing;
+  final Map<String, String?> errors;
+  final bool triedSave;
+  final void Function(String) onEditStart;
+  final void Function(String) onEditDone;
+
+  @override
+  Widget build(BuildContext context) {
+    const startKey = 'office_hours_start';
+    const endKey = 'office_hours_end';
+    final startVal = wsFields[startKey] ?? '';
+    final endVal = wsFields[endKey] ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.access_time_rounded, color: _DS.primary, size: 15),
+              SizedBox(width: 6),
+              Text(
+                'Office Hours',
+                style: TextStyle(
+                  color: _DS.inkLight,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _TimePickerField(
+                  label: 'Start time',
+                  fieldKey: startKey,
+                  value: startVal,
+                  ctrl: ctrl,
+                  isEditing: editing.contains(startKey),
+                  error: errors[startKey],
+                  onTap: () => onEditStart(startKey),
+                  onDone: () => onEditDone(startKey),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  '—',
+                  style: const TextStyle(
+                    color: _DS.inkMid,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _TimePickerField(
+                  label: 'End time',
+                  fieldKey: endKey,
+                  value: endVal,
+                  ctrl: ctrl,
+                  isEditing: editing.contains(endKey),
+                  error: errors[endKey],
+                  onTap: () => onEditStart(endKey),
+                  onDone: () => onEditDone(endKey),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Time picker mini field ─────────────────────────────────────────────────────
+// Stateful so the displayed value updates immediately after the OS picker
+// closes — without needing the parent to rebuild first.
+class _TimePickerField extends StatefulWidget {
+  const _TimePickerField({
+    required this.label,
+    required this.fieldKey,
+    required this.value,
+    required this.ctrl,
+    required this.isEditing,
+    required this.error,
+    required this.onTap,
+    required this.onDone,
+  });
+  final String label;
+  final String fieldKey;
+  final String value;
+  final TextEditingController Function(String, String) ctrl;
+  final bool isEditing;
+  final String? error;
+  final VoidCallback onTap;
+  final VoidCallback onDone;
+
+  @override
+  State<_TimePickerField> createState() => _TimePickerFieldState();
+}
+
+class _TimePickerFieldState extends State<_TimePickerField> {
+  // Local display value — initialised from the prop and updated on pick.
+  // This is what the chip shows, independent of whether the parent rebuilt.
+  late String _displayValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayValue = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(_TimePickerField old) {
+    super.didUpdateWidget(old);
+    // If the parent provides a new value (e.g. on form reset) keep in sync.
+    if (old.value != widget.value && widget.value != _displayValue) {
+      _displayValue = widget.value;
+    }
+  }
+
+  Future<void> _pickTime() async {
+    // Parse current display value for the picker's initial position.
+    TimeOfDay initial = TimeOfDay.now();
+    final parts = _displayValue.split(':');
+    if (parts.length == 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h != null && m != null) initial = TimeOfDay(hour: h, minute: m);
+    }
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      // Use input (keyboard) mode on web/desktop — the clock dial is fiddly
+      // with a mouse and doesn't let you type directly.
+      initialEntryMode: kIsWeb
+          ? TimePickerEntryMode.input
+          : TimePickerEntryMode.dial,
+    );
+
+    if (picked != null) {
+      final h = picked.hour.toString().padLeft(2, '0');
+      final m = picked.minute.toString().padLeft(2, '0');
+      final formatted = '$h:$m';
+      // Write into the shared controller so the parent's save logic picks it up.
+      widget.ctrl(widget.fieldKey, widget.value).text = formatted;
+      // Update local display immediately — no parent rebuild needed.
+      setState(() => _displayValue = formatted);
+    }
+    // Always call onDone to clear editing state and run validation.
+    widget.onDone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = widget.error != null;
+    final isEmpty = _displayValue.trim().isEmpty;
+
+    return GestureDetector(
+      onTap: () {
+        widget.onTap();
+        _pickTime();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: hasError
+              ? _DS.warnSoft
+              : (isEmpty ? _DS.warnSoft : _DS.primarySoft),
+          borderRadius: _DS.r12,
+          border: Border.all(
+            color: hasError
+                ? _DS.warn.withOpacity(0.5)
+                : (isEmpty
+                      ? _DS.warn.withOpacity(0.3)
+                      : _DS.primary.withOpacity(0.25)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.label,
+              style: TextStyle(
+                color: hasError ? _DS.warn : _DS.inkMid,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 14,
+                  color: hasError
+                      ? _DS.warn
+                      : (isEmpty ? _DS.warn : _DS.primary),
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    isEmpty ? 'Tap to set…' : _displayValue,
+                    style: TextStyle(
+                      color: isEmpty
+                          ? _DS.inkLight
+                          : (hasError ? _DS.warn : _DS.ink),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.edit_outlined,
+                  size: 13,
+                  color: hasError ? _DS.warn : _DS.inkLight,
+                ),
+              ],
+            ),
+            if (hasError) ...[
+              const SizedBox(height: 3),
+              Text(
+                widget.error!,
+                style: const TextStyle(
+                  color: _DS.warn,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _hintFor(String key) {
+  switch (key) {
+    case 'course_name':
+      return 'e.g. Introduction to Computer Science';
+    case 'course_code':
+      return 'e.g. CS101';
+    case 'semester':
+      return 'e.g. Fall 2025';
+    case 'instructor_email':
+      return 'e.g. prof@university.edu';
+    default:
+      return '';
+  }
+}
+
+// ─── TAB 2 — Sections ─────────────────────────────────────────────────────────
 class _SectionsTab extends StatefulWidget {
   const _SectionsTab({
     required this.ws,
@@ -830,17 +1335,23 @@ class _SectionsTabState extends State<_SectionsTab> {
         _SectionHeader(
           title: 'Sections (${ws.sections.length})',
           icon: Icons.groups_2_rounded,
-          trailing: !_showForm
-              ? _PillButton(
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!kIsWeb && ws.sections.isNotEmpty) _TestNotifButton(ws: ws),
+              const SizedBox(width: 8),
+              if (!_showForm)
+                _PillButton(
                   label: '+ Add Section',
                   onTap: () => setState(() => _showForm = true),
-                )
-              : null,
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         if (_showForm) ...[_buildForm(), const SizedBox(height: 14)],
         if (ws.sections.isEmpty && !_showForm)
-          _EmptyState(
+          const _EmptyState(
             icon: Icons.groups_2_rounded,
             title: 'No sections yet',
             subtitle: 'Tap "+ Add Section" to create your first class section.',
@@ -973,19 +1484,14 @@ class _SectionsTabState extends State<_SectionsTab> {
           Row(
             children: [
               Expanded(
-                child: _FormField(
+                child: _SectionTimePicker(
+                  label: 'Start time',
                   ctrl: _startCtrl,
-                  label: 'Start',
-                  icon: Icons.schedule_rounded,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _FormField(
-                  ctrl: _endCtrl,
-                  label: 'End',
-                  icon: Icons.schedule_rounded,
-                ),
+                child: _SectionTimePicker(label: 'End time', ctrl: _endCtrl),
               ),
             ],
           ),
@@ -996,9 +1502,9 @@ class _SectionsTabState extends State<_SectionsTab> {
               final sel = _draft.days.contains(d);
               return GestureDetector(
                 onTap: () => setState(() {
-                  sel
-                      ? _draft.days = _draft.days.where((x) => x != d).toList()
-                      : _draft.days = [..._draft.days, d];
+                  _draft.days = sel
+                      ? _draft.days.where((x) => x != d).toList()
+                      : [..._draft.days, d];
                 }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
@@ -1081,6 +1587,7 @@ class _SectionsTabState extends State<_SectionsTab> {
       ..instructorName = _instructorCtrl.text.trim()
       ..startTime = _startCtrl.text.trim()
       ..endTime = _endCtrl.text.trim();
+
     if (_draft.name.isEmpty) {
       widget.onError('Section name is required.');
       return;
@@ -1095,11 +1602,15 @@ class _SectionsTabState extends State<_SectionsTab> {
     try {
       Workspace updated;
       if (isEditing) {
+        // Delete old then create new (backend has no PATCH section endpoint)
         await widget.vm.api.deleteSection(widget.ws.id, _editingSection!.id);
         updated = await widget.vm.api.createSection(widget.ws.id, _draft);
       } else {
         updated = await widget.vm.api.createSection(widget.ws.id, _draft);
       }
+      // FIX: assign via the setter and call notifyListeners explicitly once
+      // (previously set current then called notifyListeners() separately,
+      // which works but is fragile; now consistent)
       widget.vm.current = updated;
       widget.vm.notifyListeners();
       await widget.vm.rescheduleNotificationsForCurrent();
@@ -1124,7 +1635,7 @@ class _SectionsTabState extends State<_SectionsTab> {
   }
 }
 
-// ─── Section card ─────────────────────────────────────────────────────────────
+// ─── Section card ──────────────────────────────────────────────────────────────
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.section,
@@ -1292,7 +1803,7 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// ─── TAB 3 — Students: expandable roster per section ─────────────────────────
+// ─── TAB 3 — Students ─────────────────────────────────────────────────────────
 class _StudentsTab extends StatelessWidget {
   const _StudentsTab({
     required this.ws,
@@ -1319,7 +1830,7 @@ class _StudentsTab extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         if (ws.sections.isEmpty)
-          _EmptyState(
+          const _EmptyState(
             icon: Icons.people_alt_rounded,
             title: 'No sections yet',
             subtitle:
@@ -1342,7 +1853,7 @@ class _StudentsTab extends StatelessWidget {
   }
 }
 
-// Expandable card — import + live searchable roster
+// Expandable roster card with import + live search
 class _SectionRosterCard extends StatefulWidget {
   const _SectionRosterCard({
     required this.section,
@@ -1380,11 +1891,12 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
         widget.ws.id,
         widget.section.id,
       );
-      if (mounted)
+      if (mounted) {
         setState(() {
           _students = list;
           _loadingRoster = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingRoster = false);
     }
@@ -1398,7 +1910,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   Future<void> _import(BuildContext ctx) async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['csv'],
+      // FIX: allow xlsx as well as csv (backend StudentService handles both)
+      allowedExtensions: const ['csv', 'xlsx'],
       withData: true,
     );
     if (res == null || res.files.isEmpty) return;
@@ -1411,6 +1924,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
 
     setState(() => _importing = true);
     try {
+      // FIX: use api.importStudents (correct route) not importSectionStudents (dead route)
       final result = await widget.vm.api.importStudents(
         workspaceId: widget.ws.id,
         sectionId: widget.section.id,
@@ -1471,7 +1985,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       ),
       child: Column(
         children: [
-          // ── Header: always visible, tap to expand ──────────────────
+          // ── Header ──────────────────────────────────────────────────
           Material(
             color: Colors.transparent,
             borderRadius: _expanded
@@ -1526,7 +2040,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                         ],
                       ),
                     ),
-                    // Count badge
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -1622,7 +2135,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                         child: Text(
                                           _importing
                                               ? 'Importing…'
-                                              : 'Import student list (.csv)',
+                                              // FIX: label now mentions xlsx too
+                                              : 'Import student list (.csv / .xlsx)',
                                           style: TextStyle(
                                             color: _importing
                                                 ? _DS.inkLight
@@ -1653,7 +2167,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                               ),
                             ),
 
-                            // ── Student roster ──────────────────────────
+                            // ── Roster ──────────────────────────────
                             if (_loadingRoster)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 24),
@@ -1695,7 +2209,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                     ),
                                     const SizedBox(height: 4),
                                     const Text(
-                                      'Upload a CSV with name, email, student_no columns.',
+                                      'Upload a CSV/XLSX with name, email, student_no columns.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 11,
@@ -1893,7 +2407,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                   ),
                                 ),
                               const SizedBox(height: 6),
-                              // Footer
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: Text(
@@ -1920,7 +2433,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   }
 }
 
-// ─── TAB 4 — Ask AI ──────────────────────────────────────────────────────────
+// ─── TAB 4 — Ask AI ───────────────────────────────────────────────────────────
 class _AskTab extends StatelessWidget {
   const _AskTab({
     required this.chat,
@@ -1998,7 +2511,7 @@ class _AskTab extends StatelessWidget {
         Container(
           decoration: BoxDecoration(
             color: _DS.surface,
-            border: Border(top: BorderSide(color: _DS.border)),
+            border: const Border(top: BorderSide(color: _DS.border)),
           ),
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
           child: Row(
@@ -2255,10 +2768,10 @@ class _TypingIndicator extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.auto_awesome_rounded, size: 13, color: _DS.primary),
-          const SizedBox(width: 5),
-          const Text(
+        children: const [
+          Icon(Icons.auto_awesome_rounded, size: 13, color: _DS.primary),
+          SizedBox(width: 5),
+          Text(
             'Thinking…',
             style: TextStyle(
               color: _DS.inkLight,
@@ -2272,7 +2785,205 @@ class _TypingIndicator extends StatelessWidget {
   );
 }
 
-// ─── Shared widgets ───────────────────────────────────────────────────────────
+// ─── Test notification button ──────────────────────────────────────────────────
+class _TestNotifButton extends StatefulWidget {
+  const _TestNotifButton({required this.ws});
+  final Workspace ws;
+
+  @override
+  State<_TestNotifButton> createState() => _TestNotifButtonState();
+}
+
+class _TestNotifButtonState extends State<_TestNotifButton> {
+  bool _sending = false;
+
+  Future<void> _sendTest() async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      await NotificationService.instance.scheduleClassReminder(
+        id: 99999,
+        title: '⏰ Test — ${widget.ws.title}',
+        body: 'Notifications are working correctly!',
+        when: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 5)),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Test notification in 5 seconds 🔔'),
+            backgroundColor: _DS.accent,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Notification failed: $e'),
+            backgroundColor: _DS.red,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: _DS.accentSoft,
+    borderRadius: _DS.r20,
+    child: InkWell(
+      onTap: _sendTest,
+      borderRadius: _DS.r20,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _sending
+                  ? Icons.hourglass_top_rounded
+                  : Icons.notifications_active_rounded,
+              color: _DS.accent,
+              size: 13,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _sending ? 'Sending…' : 'Test',
+              style: const TextStyle(
+                color: _DS.accent,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Section schedule time picker chip ─────────────────────────────────────────
+// Wraps a TextEditingController and shows the OS/web time picker on tap.
+// Stateful so the chip label refreshes immediately after a pick without
+// needing the parent form to call setState().
+class _SectionTimePicker extends StatefulWidget {
+  const _SectionTimePicker({required this.label, required this.ctrl});
+  final String label;
+  final TextEditingController ctrl;
+
+  @override
+  State<_SectionTimePicker> createState() => _SectionTimePickerState();
+}
+
+class _SectionTimePickerState extends State<_SectionTimePicker> {
+  @override
+  void initState() {
+    super.initState();
+    widget.ctrl.addListener(_onCtrlChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.ctrl.removeListener(_onCtrlChanged);
+    super.dispose();
+  }
+
+  void _onCtrlChanged() => setState(() {});
+
+  Future<void> _pick() async {
+    final current = widget.ctrl.text.trim();
+    TimeOfDay initial = TimeOfDay.now();
+    if (current.isNotEmpty) {
+      final parts = current.split(':');
+      if (parts.length == 2) {
+        final h = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        if (h != null && m != null) initial = TimeOfDay(hour: h, minute: m);
+      }
+    }
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      initialEntryMode: kIsWeb
+          ? TimePickerEntryMode.input
+          : TimePickerEntryMode.dial,
+    );
+    if (picked != null) {
+      widget.ctrl.text =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = widget.ctrl.text.trim();
+    final isEmpty = text.isEmpty;
+
+    return GestureDetector(
+      onTap: _pick,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: isEmpty ? _DS.warnSoft : _DS.primarySoft,
+          borderRadius: _DS.r12,
+          border: Border.all(
+            color: isEmpty
+                ? _DS.warn.withOpacity(0.3)
+                : _DS.primary.withOpacity(0.25),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.label,
+              style: TextStyle(
+                color: isEmpty ? _DS.warn : _DS.inkMid,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 14,
+                  color: isEmpty ? _DS.warn : _DS.primary,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    isEmpty ? 'Tap to set…' : text,
+                    style: TextStyle(
+                      color: isEmpty ? _DS.inkLight : _DS.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.edit_outlined,
+                  size: 13,
+                  color: isEmpty ? _DS.warn : _DS.inkLight,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Shared widgets ────────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,

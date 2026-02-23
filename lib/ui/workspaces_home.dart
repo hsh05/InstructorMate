@@ -14,39 +14,58 @@ class WorkspacesHome extends StatefulWidget {
 }
 
 class _WorkspacesHomeState extends State<WorkspacesHome> {
-  // Lighter palette
-  static const bg = Color(0xFFF5F2FF);
-  static const bgTop = Color(0xFFEDE8FF);
-  static const cardSoft = Color(0xFFFFFFFF);
-  static const primary = Color(0xFF7C5CBF);
-  static const textPrimary = Color(0xFF2D2640);
-  static const textSecondary = Color(0xFF7B748F);
-  static const red = Color(0xFFD93025);
+  static const _bg = Color(0xFFF5F2FF);
+  static const _bgTop = Color(0xFFEDE8FF);
+  static const _cardSoft = Color(0xFFFFFFFF);
+  static const _primary = Color(0xFF7C5CBF);
+  static const _accent = Color(0xFF00B896);
+  static const _textPrimary = Color(0xFF2D2640);
+  static const _textSecondary = Color(0xFF7B748F);
+  static const _red = Color(0xFFD93025);
+  static const _warn = Color(0xFFE8900A);
+
+  bool _dragOver = false;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: widget.vm,
       builder: (_, __) => Scaffold(
-        backgroundColor: bg,
+        backgroundColor: _bg,
         appBar: AppBar(
           elevation: 0,
-          backgroundColor: bgTop,
+          backgroundColor: _primary,
           title: const Text(
-            'Workspaces',
+            'InstructorMate',
             style: TextStyle(
               fontWeight: FontWeight.w800,
-              color: textPrimary,
+              color: Colors.white,
               fontSize: 18,
             ),
           ),
           centerTitle: true,
-          actions: [const NotificationBell()],
+          actions: [
+            const NotificationBell(),
+            IconButton(
+              tooltip: 'Import syllabus',
+              icon: widget.vm.importing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.upload_file_rounded, color: Colors.white),
+              onPressed: widget.vm.importing ? null : _pickFile,
+            ),
+          ],
         ),
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [bgTop, bg],
+              colors: [_bgTop, _bg],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -58,8 +77,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (widget.vm.loading)
-      return const Center(child: CircularProgressIndicator(color: primary));
+    if (widget.vm.loading) {
+      return const Center(child: CircularProgressIndicator(color: _primary));
+    }
 
     if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
       return Center(
@@ -76,9 +96,12 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
     return Column(
       children: [
-        // Upload info banner
-        _UploadBanner(onTap: _pickFile, importing: widget.vm.importing),
-        // List
+        _DropZone(
+          dragOver: _dragOver,
+          onDragOver: (v) => setState(() => _dragOver = v),
+          onPickFile: _pickFile,
+          onDropBytes: _importBytes,
+        ),
         if (widget.vm.workspaces.isNotEmpty)
           Expanded(
             child: ListView.separated(
@@ -95,9 +118,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Tap "Upload Syllabus" above to import your first course.',
+                  'Drop a PDF above or tap the upload button to get started.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: textSecondary, fontSize: 14),
+                  style: TextStyle(color: _textSecondary, fontSize: 14),
                 ),
               ),
             ),
@@ -108,7 +131,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   Widget _workspaceCard(BuildContext context, dynamic workspace) {
     return Material(
-      color: cardSoft,
+      color: _cardSoft,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -135,7 +158,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 ),
                 child: const Icon(
                   Icons.school_rounded,
-                  color: primary,
+                  color: _primary,
                   size: 22,
                 ),
               ),
@@ -149,7 +172,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
-                        color: textPrimary,
+                        color: _textPrimary,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -157,25 +180,24 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       'Imported: ${workspace.createdAt}',
                       style: const TextStyle(
                         fontSize: 11,
-                        color: textSecondary,
+                        color: _textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
-              // Delete
               IconButton(
                 tooltip: 'Delete workspace',
                 icon: const Icon(
                   Icons.delete_outline_rounded,
-                  color: red,
+                  color: _red,
                   size: 20,
                 ),
                 onPressed: () => _confirmDelete(context, workspace),
               ),
               const Icon(
                 Icons.chevron_right_rounded,
-                color: textSecondary,
+                color: _textSecondary,
                 size: 20,
               ),
             ],
@@ -200,12 +222,49 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   Future<void> _importBytes(Uint8List bytes, String filename) async {
     await widget.vm.importSyllabusBytes(bytes: bytes, filename: filename);
-    if (widget.vm.error != null && mounted) {
+    if (!mounted) return;
+
+    // ── Duplicate upload detection ──────────────────────────────────────────
+    // Show a friendly info banner instead of silently opening the same
+    // workspace again with no feedback.
+    if (widget.vm.lastImportWasDuplicate) {
+      // Reset the flag so subsequent uploads start clean.
+      widget.vm.lastImportWasDuplicate = false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'This syllabus was already uploaded — opening existing workspace.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: _warn,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return; // Don't also show the error snackbar below.
+    }
+
+    // ── Generic error ───────────────────────────────────────────────────────
+    if (widget.vm.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(widget.vm.error!),
-          backgroundColor: red,
+          backgroundColor: _red,
           behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -222,16 +281,19 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         ),
         content: Text(
           'Delete "${workspace.title}"?\nThis permanently removes all sections, students, and files.',
-          style: const TextStyle(fontSize: 13, color: textSecondary),
+          style: const TextStyle(fontSize: 13, color: _textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: textSecondary)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: _textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: red,
+              backgroundColor: _red,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -245,7 +307,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(widget.vm.error ?? 'Delete failed'),
-                    backgroundColor: red,
+                    backgroundColor: _red,
                   ),
                 );
               }
@@ -261,95 +323,83 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 }
 
-// ─── Upload Banner ────────────────────────────────────────────────────────────
-class _UploadBanner extends StatelessWidget {
-  const _UploadBanner({required this.onTap, required this.importing});
-  final VoidCallback onTap;
-  final bool importing;
+// ─── Drag and Drop Zone ───────────────────────────────────────────────────────
+class _DropZone extends StatelessWidget {
+  const _DropZone({
+    required this.dragOver,
+    required this.onDragOver,
+    required this.onPickFile,
+    required this.onDropBytes,
+  });
+  final bool dragOver;
+  final void Function(bool) onDragOver;
+  final VoidCallback onPickFile;
+  final Future<void> Function(Uint8List, String) onDropBytes;
 
-  static const primary = Color(0xFF7C5CBF);
+  static const _primary = Color(0xFF7C5CBF);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F0FF),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFBFB0E8), width: 1.5),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDDD8F5)),
-              ),
-              child: const Icon(
-                Icons.upload_file_rounded,
-                color: primary,
-                size: 22,
+      child: DragTarget<Object>(
+        onWillAcceptWithDetails: (_) {
+          onDragOver(true);
+          return true;
+        },
+        onLeave: (_) => onDragOver(false),
+        onAcceptWithDetails: (_) async {
+          onDragOver(false);
+          onPickFile();
+        },
+        builder: (_, __, ___) => GestureDetector(
+          onTap: onPickFile,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: dragOver
+                  ? const Color(0xFFEDE8FF)
+                  : const Color(0xFFF3F0FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: dragOver ? _primary : const Color(0xFFBFB0E8),
+                width: dragOver ? 2 : 1.5,
+                style: BorderStyle.solid,
               ),
             ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Import a syllabus',
-                    style: TextStyle(
-                      color: primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedScale(
+                  scale: dragOver ? 1.15 : 1.0,
+                  duration: const Duration(milliseconds: 180),
+                  child: Icon(
+                    dragOver
+                        ? Icons.file_download_rounded
+                        : Icons.upload_file_rounded,
+                    color: _primary,
+                    size: 34,
                   ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Supported formats: PDF, DOCX, TXT',
-                    style: TextStyle(color: Color(0xFF9B96B0), fontSize: 11),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  dragOver ? 'Drop to upload' : 'Drag & drop a PDF here',
+                  style: const TextStyle(
+                    color: _primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 3),
+                const Text(
+                  'or tap to browse — PDF, DOCX, TXT',
+                  style: TextStyle(color: Color(0xFF9B96B0), fontSize: 12),
                 ),
-              ),
-              onPressed: importing ? null : onTap,
-              child: importing
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Upload',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

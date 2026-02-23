@@ -1,0 +1,206 @@
+chunk_id,page,text
+1,1,"College of Engineering
+COURSE SYLLABUS
+1. COURSE INFORMATION
+Course Code Course Title Academic Year
+0103441 Software Evolution and Maintenance
+2. CREDIT HOURS
+CR.H
+3-1-3
+3. PRE-REQUISITE & CO-REQUISITE
+Pre-Requisite Co-Requisite
+Software Measurement & Testing
+(0103440)
+N/A
+4. INSTRUCTOR INFORMATION
+Instructor Name Email Phone
+Office Hours Office Location Extension
+5. BRIEF COURSE DESCRIPTION
+This course provides concepts and advanced technologies in software evolution: Program comprehension;
+construction of reusable software; separation of concerns; techniques for reverse engineering and re-
+engineering software; design for change layered design and incremental; and also analyze an existing system,
+explore possible change strategies, and construct a plan for evolving each of the systems major components.
+Approved By:
+Program Director (AD) - 28-AUG-25
+Program Director (AA) - 03-SEP-25
+Deputy Dean (AD) - 09-SEP-25
+Dean (AA) - 09-SEP-25
+2025-2026 (V1)
+Page 1 of 5"
+2,2,"6. COURSE LEARNING OUTCOMES
+CLO# Course Learning Outcome
+1 Describe the basic concepts of software evolution.
+2 Explain software maintenance standards.
+3 Construct a plan for evolving a software system.
+4 Use software reverse engineering tools.
+5 Modify software constructed by other developers.
+7. CONTRIBUTION OF COURSE LEARNING OUTCOMES TO PROGRAM OUTCOMES
+QFE Program Learning Outcomes
+7K1,7K2,7K3,7K4,7SK1,7S
+K2,7SK3
+1 an ability to identify, formulate, and solve complex engineering problems by applying principles of
+engineering, science, and mathematics
+1 a an ability to identify and formulate engineering problems by applying principles of engineering, science,
+and mathematics
+1 b an ability to solve engineering problems by applying principles of engineering, science, and mathematics
+7K1,7K3,7SK1,7SK3,
+7AR1,7SD3
+2 an ability to apply engineering design to produce solutions that meet specified needs with consideration of
+public health, safety, and welfare, as well as global, cultural, social, environmental, and economic factors
+2 a an ability to apply engineering design to produce solutions that meet specified needs with consideration of
+public health, safety, and welfare
+2 b an ability to apply engineering design to produce solutions that meet specified needs with consideration of
+global, cultural, social, environmental, and economic factors.
+7SK4, 7AR3,7AR4 , 7RC3 3 an ability to communicate effectively with a range of audiences
+7K2,7K5,7AR4,7RC1,7RC2
+, 7RC4,7SD1,7SD2,7SD3
+4 an ability to recognize ethical and professional responsibilities in engineering situations and make
+informed judgments, which must consider the impact of engineering solutions in global, economic,
+environmental, and societal contexts
+7AR2,7AR3,7RC1,7RC2,7R
+C3,7RC4
+5 an ability to function effectively on a team whose members together provide leadership, create a
+collaborative and inclusive environment, establish goals, plan tasks, and meet objectives
+7K1,7K3,7K4,7SK1,7SK2,7
+SK4, 7AR1
+6 an ability to develop and conduct appropriate experimentation, analyze and interpret data, and use
+engineering judgment to draw conclusions
+6 a an ability to develop and conduct appropriate experimentation
+6 b an ability to analyze and interpret data, and use engineering judgment to draw conclusions
+7K5,7SK3, 7AR1,
+7AR2,7RC1, 7SD1,7SD2
+7 an ability to acquire and apply new knowledge as needed, using appropriate learning strategies.
+7 a an ability to acquire new knowledge as needed using appropriate learning strategies
+7 b an ability to apply acquired knowledge as needed
+AT1 AT2 AT3 AT4 AT5 AT6 AT7 AT8 AT9 AT10 AT11 AT12
+Quizzes Assignments Midterm Lab
+Assessment
+Project /
+Research
+Field Visit Case Studies Presentation Student
+Portfolio
+Final Exam Exit Exam Group
+Assignments
+CLO# PLOs & PIs Assessment Tools
+1 2 3 4 5 6 7
+1a 1b 2a 2b 3a 4a 5a 6a 6b 7a 7b AT1 AT2 AT3 AT4 AT5 AT6 AT7 AT8 AT9 AT10 AT11 AT12
+1 X X X X X X
+2 X X X X X
+3 X X X
+4 X X X X X X X
+5 X X X X
+Approved By:
+Program Director (AD) - 28-AUG-25
+Program Director (AA) - 03-SEP-25
+Deputy Dean (AD) - 09-SEP-25
+Dean (AA) - 09-SEP-25
+2025-2026 (V1)
+Page 2 of 5"
+3,3,"8. COURSE CONTENTS AND TOPICS (Week by Week)
+Week# Course Topic
+1 Basic Concepts and Preliminaries
+2 Taxonomy of Software Maintenance and Evolution
+3 Categories of Maintenance Concepts
+4 Evolution of software systems and Maintenance cost
+5 Evolution and Maintenance Models.
+Quiz 1
+6 Reengineering: General Models and Process
+7 Techniques Used for reverse Engineering
+Practical part: Using any of the Reverse Engineering Tools 
+8 Continue Practical part and Midterm Exam
+9 Data Reverse Engineering: Practical part: Using the Reverse Engineering Tools
+Midterm Exam
+10 Legacy Information Systems: Wrapping
+11 Legacy Information Systems: Migration
+12 Impact Analysis
+Quiz 2
+13 Refactoring
+14 Programming Comprehension
+15 Reuse and domain Engineering: Practical part: Using the Reverse Engineering Tools
+16 Final Exam
+9. SCHEDULE OF LABORATORY, STUDIO, EXTERNAL VISITS AND OTHER NON-LECTURE SESSIONS
+Two-hours weekly Lab covering the week by week topics mentioned in Section #8.
+10. OUT-OF-CLASS ASSIGNMENTS
+Assessment Tool Week# Weight
+ Assignment 1 4 5 %
+ Assignment 2 11 5 %
+11. ASSESSMENT METHODS & STUDENT EVALUATION
+Assessment Tool Week# Weight
+ Quiz 1 5 10 %
+ Quiz 2 12 10 %
+ Lab Assessment During Labs 10 %
+ Midterm Exam 9 20 %
+Approved By:
+Program Director (AD) - 28-AUG-25
+Program Director (AA) - 03-SEP-25
+Deputy Dean (AD) - 09-SEP-25
+Dean (AA) - 09-SEP-25
+2025-2026 (V1)
+Page 3 of 5"
+4,4,"Final Exam 16 40 %
+12. TEACHING METHODS
+ ✓  Critical Thinking  ✓  General lectures using electronic tools
+13. COURSE TEXTBOOK, RECOMMENDED READINGS AND RESOURSES
+I. Textbooks
+(1) Title: Software Evolution and Maintenance
+Author(s): P. Tripathy, K. Naik
+Year: 2014 Edition : 2nd ISBN: 978-0470603413 Publisher: Willey
+Link: https://www.amazon.com/Software-Evolution-Maintenance-Priyadarshi-Tripathy/dp/0470603410/re
+f=sr_1_1?s=books&ie=UTF8&qid=1497262270&sr=1-1&keywords=Software+Evolution+and+Maintenanc
+e 
+II. References
+(1) Title: Software Engineering: modern approaches
+Author(s): E. BRAUDE
+Year: 2016 Edition : 2nd ISBN: 1478632305 Publisher: Long Grove: Waveland
+Press
+Link: 
+----------------------------------------------------------------------------------------------------
+(2) Title: Software engineering
+Author(s): I. Sommerville
+Year: 2016 Edition : 10th ISBN: 0133943038 Publisher: Harlow: Pearson
+Education
+Link: 
+III. Other Readings and Resources
+Software Resources
+1. IBM Rational Rose Software, an ""eXtended Development Environment"" for software developers,
+integrates with Microsoft Visual Studio .NET and Rational Application Developer. The Rational Software
+division of IBM developed this software.
+2.    Sniff Software
+3.    UnderstandFotCee++  Software
+4.    TogetherJava Software
+ 
+14. LEARNING STRATEGIES, ATTENDANCE POLICY & PLAGIARISM
+I. Learning Strategies
+Active learning strategies are employed in this course to encourage students' participation in class and to
+foster their abilities to discuss a solution to a problem in group. Students will be guided to understand the
+nature of problem and analyze it. Active learning strategies include assignments where students work
+individually and in teams to solve various problems.
+Approved By:
+Program Director (AD) - 28-AUG-25
+Program Director (AA) - 03-SEP-25
+Deputy Dean (AD) - 09-SEP-25
+Dean (AA) - 09-SEP-25
+2025-2026 (V1)
+Page 4 of 5"
+5,5,"II. Attendance Policy
+Students are expected to attend their classes. Absence never exempts a student from the work required for
+satisfactory completion of the courses. Excessive absences of any course will result in: 1. First warning for
+absence of 10% of the class hours 2. Second warning for absence of 20% of the class hours 3. A failing grade
+in the course for an absence of 25% of the class hours 4. Exception to (3) may be made in the case of serious
+illness or death to an immediate family member if approved by the dean of the college. In such case, the
+student will receive a W grade in the course.
+III. Plagiarism
+PLAGIARISM is to use someone else's idea, words, projects, artwork, phrasing, sentence structure, or other
+work without properly acknowledging the ownership (source) of the property. Plagiarism is dishonest because
+it misrepresents the work of someone else as one's own. Students who are suspected of plagiarism will
+answer to an investigation. Those found guilty will face a disciplinary action as per the university rules.
+15. Syllabus vs. SDGs
+N/A
+Powered by TCPDF (www.tcpdf.org)
+Approved By:
+Program Director (AD) - 28-AUG-25
+Program Director (AA) - 03-SEP-25
+Deputy Dean (AD) - 09-SEP-25
+Dean (AA) - 09-SEP-25
+2025-2026 (V1)
+Page 5 of 5"

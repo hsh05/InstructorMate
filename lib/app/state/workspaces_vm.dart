@@ -18,29 +18,35 @@ class WorkspacesViewModel extends ChangeNotifier {
   bool importing = false;
   String? error;
 
-  List<WorkspaceSummary> workspaces = [];
-  Workspace? current;
+  /// Set to true after [importSyllabusBytes] when the backend recognised the
+  /// file as a duplicate (same PDF hash). The home screen reads this once and
+  /// resets it so the message only appears once per upload attempt.
+  bool lastImportWasDuplicate = false;
 
-  // Authoritative student counts per section — keyed by sectionId.
-  // Updated immediately on import. Survives tab switches.
-  // Backend count_by_section is unreliable so we own this in the VM.
+  List<WorkspaceSummary> workspaces = [];
+
+  Workspace? _current;
+  Workspace? get current => _current;
+  set current(Workspace? ws) {
+    _current = ws;
+    // Callers call notifyListeners() themselves to avoid redundant rebuilds.
+  }
+
+  // Authoritative student counts keyed by sectionId.
   final Map<String, int> sectionStudentCounts = {};
 
-  /// Record imported students for a section, accumulating on repeated imports.
   void recordImport(String sectionId, int count) {
-    sectionStudentCounts[sectionId] =
-        (sectionStudentCounts[sectionId] ?? 0) + count;
+    sectionStudentCounts[sectionId] = count;
     notifyListeners();
   }
 
-  /// Total students across all sections in the current workspace.
   int get totalStudentsCount =>
       sectionStudentCounts.values.fold(0, (a, b) => a + b);
 
-  /// Student count for a specific section (VM-authoritative).
   int countForSection(String sectionId) => sectionStudentCounts[sectionId] ?? 0;
 
-  // ── Load ─────────────────────────────────────────────────────────────
+  // ── Load ────────────────────────────────────────────────────────────────────
+
   Future<void> load() async {
     loading = true;
     error = null;
@@ -51,26 +57,33 @@ class WorkspacesViewModel extends ChangeNotifier {
       error = e.toString();
     } finally {
       loading = false;
-      notifyListeners(); // UI renders immediately — don't block on notifications
+      notifyListeners();
     }
-    // Init notifications AFTER UI is unblocked — fire and forget
+    // Fire and forget — notifications init after UI unblocks.
     // ignore: unawaited_futures
     _initNotifications();
   }
 
-  // ── Open workspace ────────────────────────────────────────────────────
+  // ── Open workspace ───────────────────────────────────────────────────────────
+
   Future<void> openWorkspace(String id) async {
     loading = true;
     error = null;
     notifyListeners();
     try {
-      current = await api.getWorkspace(id);
-      // Seed counts from backend (may be 0 if count_by_section is broken,
-      // but keeps things consistent when backend works correctly)
-      sectionStudentCounts.clear();
-      for (final s in current?.sections ?? []) {
-        if (s.studentsCount > 0) {
-          sectionStudentCounts[s.id] = s.studentsCount;
+      _current = await api.getWorkspace(id);
+      for (final s in _current?.sections ?? []) {
+        try {
+          final students = await api.listSectionStudents(id, s.id);
+          if (students.isNotEmpty) {
+            sectionStudentCounts[s.id] = students.length;
+          } else if (!sectionStudentCounts.containsKey(s.id)) {
+            sectionStudentCounts[s.id] = 0;
+          }
+        } catch (_) {
+          if (!sectionStudentCounts.containsKey(s.id)) {
+            sectionStudentCounts[s.id] = s.studentsCount;
+          }
         }
       }
     } catch (e) {
@@ -81,7 +94,8 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import syllabus (from bytes — called by drag-drop and file picker) ───────
+  // ── Import syllabus (bytes) ──────────────────────────────────────────────────
+
   Future<void> importSyllabusBytes({
     required Uint8List bytes,
     required String filename,
@@ -89,9 +103,15 @@ class WorkspacesViewModel extends ChangeNotifier {
     if (importing) return;
     importing = true;
     error = null;
+    lastImportWasDuplicate = false;
     notifyListeners();
     try {
-      current = await api.importWorkspace(bytes: bytes, filename: filename);
+      final result = await api.importWorkspace(
+        bytes: bytes,
+        filename: filename,
+      );
+      _current = result.workspace;
+      lastImportWasDuplicate = result.alreadyUploaded;
       await load();
     } catch (e) {
       error = e.toString();
@@ -101,11 +121,13 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import syllabus ───────────────────────────────────────────────────
+  // ── Import syllabus (file picker, no-bytes path) ─────────────────────────────
+
   Future<void> importSyllabus() async {
     if (importing) return;
     importing = true;
     error = null;
+    lastImportWasDuplicate = false;
     notifyListeners();
     try {
       final res = await FilePicker.platform.pickFiles(
@@ -116,9 +138,12 @@ class WorkspacesViewModel extends ChangeNotifier {
       if (res == null || res.files.isEmpty) return;
       final f = res.files.first;
       final bytes = f.bytes;
-      if (bytes == null || bytes.isEmpty)
+      if (bytes == null || bytes.isEmpty) {
         throw Exception('Selected file has no data.');
-      current = await api.importWorkspace(bytes: bytes, filename: f.name);
+      }
+      final result = await api.importWorkspace(bytes: bytes, filename: f.name);
+      _current = result.workspace;
+      lastImportWasDuplicate = result.alreadyUploaded;
       await load();
     } catch (e) {
       error = e.toString();
@@ -128,15 +153,26 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Update fields ─────────────────────────────────────────────────────
+  // ── Update fields ────────────────────────────────────────────────────────────
+
   Future<void> updateFields(Map<String, String> fields) async {
-    final ws = current;
+    final ws = _current;
     if (ws == null) return;
+
+    // office_hours_start / office_hours_end are UI-only.
+    // Merge back into the single 'office_hours' key the backend expects.
+    final payload = Map<String, String>.from(fields);
+    final start = payload.remove('office_hours_start') ?? '';
+    final end = payload.remove('office_hours_end') ?? '';
+    if (start.isNotEmpty || end.isNotEmpty) {
+      payload['office_hours'] = end.isNotEmpty ? '$start – $end' : start;
+    }
+
     loading = true;
     error = null;
     notifyListeners();
     try {
-      current = await api.updateWorkspaceFields(ws.id, fields);
+      _current = await api.updateWorkspaceFields(ws.id, payload);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -145,9 +181,10 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import students ───────────────────────────────────────────────────
+  // ── Import students ──────────────────────────────────────────────────────────
+
   Future<void> importStudents() async {
-    final ws = current;
+    final ws = _current;
     if (ws == null) return;
     loading = true;
     error = null;
@@ -161,17 +198,15 @@ class WorkspacesViewModel extends ChangeNotifier {
       if (res == null || res.files.isEmpty) return;
       final f = res.files.first;
       final bytes = f.bytes;
-      if (bytes == null || bytes.isEmpty)
+      if (bytes == null || bytes.isEmpty) {
         throw Exception('Selected file has no data.');
-      // importStudents now returns ImportResult (count only).
-      // Per-section import is handled in workspace_detail.dart directly.
+      }
       await api.importStudents(
         workspaceId: ws.id,
         bytes: bytes,
         filename: f.name,
       );
-      // Re-fetch to refresh workspace state
-      current = await api.getWorkspace(ws.id);
+      _current = await api.getWorkspace(ws.id);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -180,7 +215,8 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Delete workspace ──────────────────────────────────────────────────
+  // ── Delete workspace ─────────────────────────────────────────────────────────
+
   Future<bool> deleteWorkspace(String workspaceId) async {
     loading = true;
     error = null;
@@ -188,7 +224,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     try {
       await api.deleteWorkspace(workspaceId);
       workspaces.removeWhere((w) => w.id == workspaceId);
-      if (current?.id == workspaceId) current = null;
+      if (_current?.id == workspaceId) _current = null;
       return true;
     } catch (e) {
       error = e.toString();
@@ -199,15 +235,17 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Delete section ────────────────────────────────────────────────────
+  // ── Delete section ───────────────────────────────────────────────────────────
+
   Future<void> deleteSection(String sectionId) async {
-    final ws = current;
+    final ws = _current;
     if (ws == null) return;
     loading = true;
     error = null;
     notifyListeners();
     try {
-      current = await api.deleteSection(ws.id, sectionId);
+      _current = await api.deleteSection(ws.id, sectionId);
+      sectionStudentCounts.remove(sectionId);
       await rescheduleNotificationsForCurrent();
     } catch (e) {
       error = e.toString();
@@ -217,9 +255,10 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Re-upload PDF ─────────────────────────────────────────────────────
+  // ── Re-upload PDF ────────────────────────────────────────────────────────────
+
   Future<void> reuploadSyllabus() async {
-    final ws = current;
+    final ws = _current;
     if (ws == null) return;
     loading = true;
     error = null;
@@ -234,7 +273,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       final f = res.files.first;
       final bytes = f.bytes;
       if (bytes == null || bytes.isEmpty) throw Exception('File has no data.');
-      current = await api.reuploadSyllabus(
+      _current = await api.reuploadSyllabus(
         workspaceId: ws.id,
         bytes: bytes,
         filename: f.name,
@@ -247,9 +286,10 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Ask AI ────────────────────────────────────────────────────────────
+  // ── Ask AI ───────────────────────────────────────────────────────────────────
+
   Future<String?> askInWorkspace(String question) async {
-    final ws = current;
+    final ws = _current;
     if (ws == null) return null;
     try {
       return await api.ask(ws.id, question);
@@ -260,38 +300,40 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Notifications ─────────────────────────────────────────────────────
+  // ── Notifications ────────────────────────────────────────────────────────────
+
   Future<void> _initNotifications() async {
-    // Fetch full workspaces (with sections) for scheduling
-    // workspaces list only has WorkspaceSummary — need full objects for section data
-    final fullWorkspaces = <Workspace>[];
-    for (final summary in workspaces) {
+    final full = <Workspace>[];
+    for (final s in workspaces) {
       try {
-        fullWorkspaces.add(await api.getWorkspace(summary.id));
+        full.add(await api.getWorkspace(s.id));
       } catch (_) {}
     }
-    if (fullWorkspaces.isEmpty) return;
-
+    if (full.isEmpty) return;
     if (kIsWeb) {
-      WebNotificationService.instance.init(
-        fullWorkspaces,
-      ); // not awaited — non-blocking
+      WebNotificationService.instance.init(full);
     } else {
-      await NotificationScheduler.rescheduleAll(fullWorkspaces);
+      await NotificationScheduler.rescheduleAll(full);
     }
   }
 
-  /// Called after a new section is created so notifications update immediately
   Future<void> rescheduleNotificationsForCurrent() async {
-    final ws = current;
+    final ws = _current;
     if (ws == null) return;
     try {
       if (kIsWeb) {
-        // Refresh the web ticker with updated workspace data
         final full = await api.getWorkspace(ws.id);
         WebNotificationService.instance.updateWorkspaces([full]);
       } else {
-        await NotificationScheduler.rescheduleAll([ws]);
+        final allFull = <Workspace>[];
+        for (final s in workspaces) {
+          try {
+            allFull.add(s.id == ws.id ? ws : await api.getWorkspace(s.id));
+          } catch (_) {}
+        }
+        await NotificationScheduler.rescheduleAll(
+          allFull.isEmpty ? [ws] : allFull,
+        );
       }
     } catch (e) {
       debugPrint('[Notifications] reschedule failed: $e');
