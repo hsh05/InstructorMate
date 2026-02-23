@@ -6,6 +6,7 @@ pydantic
 pypdf
 openai
 pandas
+python-docx
 
 
 
