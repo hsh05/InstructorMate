@@ -18,6 +18,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Health check — keeps Render from returning 404 on "/" ─────────────────────
+@app.get("/")
+def health():
+    return {"status": "ok", "service": "InstructorMate API"}
+
 # ---- Register Routers ----
 app.include_router(workspace_router)
 app.include_router(section_router)

@@ -17,9 +17,6 @@ class ImportResult {
   const ImportResult({required this.imported, required this.sectionId});
 }
 
-/// Returned by [ApiClient.importWorkspace].
-/// [alreadyUploaded] is true when the backend detected an identical PDF hash
-/// and returned the existing workspace instead of creating a new one.
 class ImportWorkspaceResult {
   final Workspace workspace;
   final bool alreadyUploaded;
@@ -70,6 +67,31 @@ class ApiClient {
     return baseUri.resolve(p);
   }
 
+  // ── Wake-up ping — Render free tier sleeps after inactivity ─────────────────
+  // Call this on app start. Retries up to 6 times (≈ 60 seconds) to wait for
+  // the instance to cold-start. Throws a friendly error if it never comes up.
+  Future<void> pingUntilAlive({void Function(int attempt)? onRetry}) async {
+    const maxAttempts = 6;
+    for (var i = 1; i <= maxAttempts; i++) {
+      try {
+        final resp = await http
+            .get(_u('/'))
+            .timeout(const Duration(seconds: 12));
+        if (resp.statusCode == 200) return; // server is awake
+      } catch (_) {
+        // DNS failure or timeout — server still waking up
+      }
+      if (i < maxAttempts) {
+        onRetry?.call(i);
+        await Future.delayed(const Duration(seconds: 10));
+      }
+    }
+    throw Exception(
+      'Could not reach the server after ${maxAttempts * 10} seconds.\n'
+      'Check your internet connection or try again in a moment.',
+    );
+  }
+
   // ── Workspaces ──────────────────────────────────────────────────────────────
 
   Future<ImportWorkspaceResult> importWorkspace({
@@ -92,22 +114,16 @@ class ApiClient {
     try {
       streamed = await req.send().timeout(AppConfig.uploadTimeout);
     } on TimeoutException {
-      throw Exception(
-        'Upload timed out — your file may be large or slow connection. Try again on Wi-Fi.',
-      );
+      throw Exception('Upload timed out — try again on Wi-Fi.');
     } catch (e) {
       throw Exception('Network/CORS error while uploading. ($e)');
     }
 
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
-
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return ImportWorkspaceResult(
       workspace: Workspace.fromJson(map['workspace'] as Map<String, dynamic>),
-      // Backend sends {"already_uploaded": true} when the PDF hash matches an
-      // existing workspace. Fall back to false if the key is absent (older
-      // backend versions).
       alreadyUploaded: (map['already_uploaded'] as bool?) ?? false,
     );
   }
@@ -148,8 +164,6 @@ class ApiClient {
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
   }
 
-  /// Backend returns {"section": {...}} — we re-fetch the full workspace so
-  /// the caller always has a consistent Workspace object.
   Future<Workspace> createSection(String wid, SectionDraft d) async {
     final resp = await http
         .post(
@@ -178,7 +192,6 @@ class ApiClient {
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
   }
 
-  /// POST /workspaces/{wid}/students/import with section_id as a form field.
   Future<ImportResult> importStudents({
     required String workspaceId,
     required Uint8List bytes,
@@ -204,11 +217,9 @@ class ApiClient {
                   : MediaType('text', 'csv'),
             ),
           );
-
     final streamed = await req.send().timeout(AppConfig.standardTimeout);
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
-
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return ImportResult(
       imported: int.tryParse((map['imported'] ?? 0).toString()) ?? 0,
@@ -266,17 +277,16 @@ class ApiClient {
     return (map['answer'] ?? '').toString();
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   MediaType _contentTypeFor(String filename) {
     final f = filename.toLowerCase();
     if (f.endsWith('.pdf')) return MediaType('application', 'pdf');
-    if (f.endsWith('.docx')) {
+    if (f.endsWith('.docx'))
       return MediaType(
         'application',
         'vnd.openxmlformats-officedocument.wordprocessingml.document',
       );
-    }
     return MediaType('text', 'plain');
   }
 

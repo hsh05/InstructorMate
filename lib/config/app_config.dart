@@ -5,8 +5,9 @@
 // and api_client.dart hardcoded timeouts. Both now read from here.
 
 class AppConfig {
+  //https://instructormate1.onrender.com
   // FIX: Change this to your server IP/hostname before deploying.
-  static const String baseUrl = 'https://instructormate1.onrender.com';
+  static const String baseUrl = "https://instructormate1.onrender.com";
 
   // Per-request timeouts (formerly hardcoded inline in api_client.dart)
   static const Duration shortTimeout = Duration(seconds: 20);
