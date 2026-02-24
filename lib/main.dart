@@ -5,7 +5,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'app/api_client.dart';
-import 'services//notification_service.dart';
+import 'services/notification_service.dart';
 import 'app/state/workspaces_vm.dart';
 import 'config/app_config.dart';
 import 'ui/workspaces_home.dart';
@@ -124,7 +124,7 @@ class _WakeScreen extends StatelessWidget {
               Text(
                 attempt == 0
                     ? 'Connecting to server…'
-                    : 'Server is waking up, please wait… (${attempt * 10}s)',
+                    : 'Server is waking up, please wait… (${attempt * 12}s)',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 13, color: Color(0xFF7B748F)),
               ),
@@ -133,7 +133,7 @@ class _WakeScreen extends StatelessWidget {
               if (attempt > 0) ...[
                 const SizedBox(height: 16),
                 Text(
-                  'Attempt $attempt of 6',
+                  'Attempt $attempt of 10',
                   style: const TextStyle(
                     fontSize: 11,
                     color: Color(0xFFABA6C0),

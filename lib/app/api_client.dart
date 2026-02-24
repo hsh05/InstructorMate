@@ -71,23 +71,21 @@ class ApiClient {
   // Call this on app start. Retries up to 6 times (≈ 60 seconds) to wait for
   // the instance to cold-start. Throws a friendly error if it never comes up.
   Future<void> pingUntilAlive({void Function(int attempt)? onRetry}) async {
-    const maxAttempts = 6;
+    const maxAttempts = 10; // 10 × 12s = 120 seconds total
     for (var i = 1; i <= maxAttempts; i++) {
       try {
         final resp = await http
             .get(_u('/'))
-            .timeout(const Duration(seconds: 12));
-        if (resp.statusCode == 200) return; // server is awake
-      } catch (_) {
-        // DNS failure or timeout — server still waking up
-      }
+            .timeout(const Duration(seconds: 15));
+        if (resp.statusCode == 200) return;
+      } catch (_) {}
       if (i < maxAttempts) {
         onRetry?.call(i);
-        await Future.delayed(const Duration(seconds: 10));
+        await Future.delayed(const Duration(seconds: 12));
       }
     }
     throw Exception(
-      'Could not reach the server after ${maxAttempts * 10} seconds.\n'
+      'Could not reach the server after ${maxAttempts * 12} seconds.\n'
       'Check your internet connection or try again in a moment.',
     );
   }
