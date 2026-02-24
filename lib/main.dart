@@ -52,10 +52,8 @@ class _BootstrapState extends State<_Bootstrap> {
       _attempt = 0;
     });
     try {
-      await _api.pingUntilAlive(
-        onRetry: (attempt) => setState(() => _attempt = attempt),
-      );
-      // Server is up — load workspaces
+      // Skip ping — just try to load workspaces directly.
+      // If it fails we show the error screen with Try Again.
       setState(() => _waking = false);
       _vm.load();
     } catch (e) {
@@ -149,11 +147,17 @@ class _WakeScreen extends StatelessWidget {
 }
 
 // ─── Fatal error screen ───────────────────────────────────────────────────────
-class _ErrorScreen extends StatelessWidget {
+class _ErrorScreen extends StatefulWidget {
   const _ErrorScreen({required this.error, required this.onRetry});
   final String error;
   final VoidCallback onRetry;
 
+  @override
+  State<_ErrorScreen> createState() => _ErrorScreenState();
+}
+
+class _ErrorScreenState extends State<_ErrorScreen> {
+  bool _showDebug = false;
   static const _primary = Color(0xFF7C5CBF);
 
   @override
@@ -182,7 +186,17 @@ class _ErrorScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                error,
+                'URL: ${AppConfig.baseUrl}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: _primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                widget.error,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 12, color: Color(0xFF7B748F)),
               ),
@@ -199,13 +213,44 @@ class _ErrorScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                onPressed: onRetry,
+                onPressed: widget.onRetry,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text(
                   'Try Again',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
+              const SizedBox(height: 12),
+              // Debug toggle — tap to see raw error
+              GestureDetector(
+                onTap: () => setState(() => _showDebug = !_showDebug),
+                child: Text(
+                  _showDebug ? 'Hide details' : 'Show details',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: _primary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+              if (_showDebug) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1535),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    'Target: ${AppConfig.baseUrl}\n\n${widget.error}',
+                    style: const TextStyle(
+                      color: Color(0xFF00C9A7),
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
