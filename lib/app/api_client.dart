@@ -71,13 +71,15 @@ class ApiClient {
   // Call this on app start. Retries up to 6 times (≈ 60 seconds) to wait for
   // the instance to cold-start. Throws a friendly error if it never comes up.
   Future<void> pingUntilAlive({void Function(int attempt)? onRetry}) async {
-    const maxAttempts = 10; // 10 × 12s = 120 seconds total
+    const maxAttempts = 10;
     for (var i = 1; i <= maxAttempts; i++) {
       try {
         final resp = await http
-            .get(_u('/'))
+            .get(
+              _u('/workspaces'),
+            ) // ping /workspaces — we know this route exists
             .timeout(const Duration(seconds: 15));
-        if (resp.statusCode == 200) return;
+        if (resp.statusCode == 200) return; // server is awake
       } catch (_) {}
       if (i < maxAttempts) {
         onRetry?.call(i);
