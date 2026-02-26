@@ -2,17 +2,21 @@
 //
 // Works on ALL platforms (web + Android + iOS).
 // Browser JS calls are only made when kIsWeb is true at runtime.
-// No dart:js_interop imports — those break APK builds.
+//
+// FIX: Removed duplicated _dayMap — now uses shared ScheduleUtils.dayMap.
+// FIX: Notification body uses ScheduleUtils.formatTime for 12-h AM/PM display.
 
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback;
-import '../app/workspace_models.dart';
 
-// ─── Model ───────────────────────────────────────────────────────────────────
+import '../app/workspace_models.dart';
+import '../utils/schedule_utils.dart';
+
+// ─── Model ────────────────────────────────────────────────────────────────────
 class PendingNotification {
   final String sectionName;
   final String courseName;
-  final String startTime;
+  final String startTime; // raw HH:mm stored for dedup
   final String location;
   final int minutesUntil;
   final DateTime fireAt;
@@ -27,13 +31,16 @@ class PendingNotification {
   });
 
   String get title => '⏰ $courseName starts in ${minutesUntil}min';
+
   String get body {
     final loc = location.isNotEmpty ? ' @ $location' : '';
-    return '$sectionName$loc — $startTime';
+    // FIX: show 12-h AM/PM time
+    final friendlyTime = ScheduleUtils.formatTime(startTime);
+    return '$sectionName$loc — $friendlyTime';
   }
 }
 
-// ─── Service ─────────────────────────────────────────────────────────────────
+// ─── Service ──────────────────────────────────────────────────────────────────
 class WebNotificationService {
   WebNotificationService._();
   static final WebNotificationService instance = WebNotificationService._();
@@ -42,16 +49,6 @@ class WebNotificationService {
   final List<PendingNotification> activeNotifications = [];
   int get unreadCount => activeNotifications.length;
   VoidCallback? onChanged;
-
-  static const _dayMap = {
-    'mon': DateTime.monday,
-    'tue': DateTime.tuesday,
-    'wed': DateTime.wednesday,
-    'thu': DateTime.thursday,
-    'fri': DateTime.friday,
-    'sat': DateTime.saturday,
-    'sun': DateTime.sunday,
-  };
 
   Future<void> init(List<Workspace> workspaces) async {
     if (!kIsWeb) return;
@@ -91,7 +88,8 @@ class WebNotificationService {
         if (hour == null || minute == null) continue;
 
         for (final day in sch.days) {
-          final weekday = _dayMap[day.toLowerCase().substring(0, 3)];
+          // FIX: use shared ScheduleUtils instead of local _dayMap
+          final weekday = ScheduleUtils.weekdayFor(day);
           if (weekday == null || now.weekday != weekday) continue;
 
           final classTime = DateTime(
@@ -104,6 +102,7 @@ class WebNotificationService {
           final remind = sch.reminderMinutes > 0 ? sch.reminderMinutes : 15;
           final fireAt = classTime.subtract(Duration(minutes: remind));
           final diff = now.difference(fireAt).inSeconds;
+
           if (diff >= 0 && diff < 60) {
             _fire(
               PendingNotification(

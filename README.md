@@ -55,5 +55,9 @@ git commit -m "backend+frontend oragizing"
 git push origin merna-syllabus-ui
 git push deploy merna-syllabus-ui
 
+flutter clean
+flutter pub get
+flutter build apk --release
+
 
 

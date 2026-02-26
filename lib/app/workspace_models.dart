@@ -1,4 +1,12 @@
 // lib/app/workspace_models.dart
+//
+// FIX: SectionSchedule.formattedTimeRange now uses 12-h AM/PM format
+//      so "08:00 – 09:30" displays as "8:00 AM – 9:30 AM" in the UI.
+// FIX: Workspace.officeHours correctly parses both the combined 'office_hours'
+//      field and the split start/end UI fields.
+// FIX: Student moved here from api_client.dart — one canonical model.
+
+import '../utils/schedule_utils.dart';
 
 class WorkspaceSummary {
   final String id;
@@ -6,10 +14,9 @@ class WorkspaceSummary {
   final String originalFilename;
   final String pdfHash;
   final String title;
-  // FIX: expose status so list UI can show Draft/Ready badge without full fetch
   final String status;
 
-  WorkspaceSummary({
+  const WorkspaceSummary({
     required this.id,
     required this.createdAt,
     required this.originalFilename,
@@ -28,14 +35,12 @@ class WorkspaceSummary {
         break;
       }
     }
-
     return WorkspaceSummary(
       id: (j['id'] ?? '').toString(),
       createdAt: (j['created_at'] ?? '').toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['pdf_hash'] ?? '').toString(),
       title: title.isEmpty ? 'Untitled Course' : title,
-      // FIX: parse status from backend ('draft' | 'ready')
       status: (j['status'] ?? 'draft').toString(),
     );
   }
@@ -46,12 +51,12 @@ class Workspace {
   final String createdAt;
   final String originalFilename;
   final String pdfHash;
-  final String status; // FIX: was missing — backend always sends this
+  final String status;
   final Map<String, String> fields;
   final List<Section> sections;
   final int studentsCount;
 
-  Workspace({
+  const Workspace({
     required this.id,
     required this.createdAt,
     required this.originalFilename,
@@ -65,13 +70,11 @@ class Workspace {
   factory Workspace.fromJson(Map<String, dynamic> j) {
     final fieldsRaw = (j['fields'] as Map?) ?? {};
     final sectionsRaw = (j['sections'] as List?) ?? [];
-
     return Workspace(
       id: (j['id'] ?? '').toString(),
       createdAt: (j['created_at'] ?? '').toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['pdf_hash'] ?? '').toString(),
-      // FIX: parse status
       status: (j['status'] ?? 'draft').toString(),
       fields: fieldsRaw.map(
         (k, v) => MapEntry(k.toString(), (v ?? '').toString()),
@@ -99,10 +102,7 @@ class Workspace {
     return 'Untitled Course';
   }
 
-  // FIX: unified office_hours accessor — backend stores 'office_hours' as a
-  // single field. The detail page splits it into office_hours_start /
-  // office_hours_end locally. This getter returns the raw combined value for
-  // display, falling back to the split fields if already saved separately.
+  /// Returns the raw office_hours string, falling back to merged start–end.
   String get officeHours {
     final raw = (fields['office_hours'] ?? '').trim();
     if (raw.isNotEmpty) return raw;
@@ -122,7 +122,7 @@ class Section {
   final SectionSchedule schedule;
   final int studentsCount;
 
-  Section({
+  const Section({
     required this.id,
     required this.name,
     required this.instructorName,
@@ -146,12 +146,12 @@ class Section {
 
 class SectionSchedule {
   final List<String> days;
-  final String startTime;
-  final String endTime;
+  final String startTime; // raw HH:mm (24-h)
+  final String endTime; // raw HH:mm (24-h)
   final String timezone;
   final int reminderMinutes;
 
-  SectionSchedule({
+  const SectionSchedule({
     required this.days,
     required this.startTime,
     required this.endTime,
@@ -170,6 +170,18 @@ class SectionSchedule {
           int.tryParse((j['reminder_minutes'] ?? 10).toString()) ?? 10,
     );
   }
+
+  // FIX: Human-readable "8:00 AM – 9:30 AM" using ScheduleUtils
+  String get formattedTimeRange {
+    if (startTime.isEmpty && endTime.isEmpty) return '—';
+    final s = ScheduleUtils.formatTime(startTime);
+    final e = ScheduleUtils.formatTime(endTime);
+    if (endTime.isEmpty) return s;
+    return '$s – $e';
+  }
+
+  // FIX: 12-h formatted start time for notification body
+  String get formattedStartTime => ScheduleUtils.formatTime(startTime);
 }
 
 /// Draft used when creating or editing a section.
@@ -195,4 +207,26 @@ class SectionDraft {
       'reminder_minutes': reminderMinutes,
     },
   };
+}
+
+/// FIX: Moved from api_client.dart — one canonical Student model.
+class Student {
+  final String studentId;
+  final String name;
+  final String email;
+  final String studentNo;
+
+  const Student({
+    required this.studentId,
+    required this.name,
+    required this.email,
+    required this.studentNo,
+  });
+
+  factory Student.fromJson(Map<String, dynamic> j) => Student(
+    studentId: (j['student_id'] ?? j['id'] ?? '').toString(),
+    name: (j['name'] ?? '').toString(),
+    email: (j['email'] ?? '').toString(),
+    studentNo: (j['student_no'] ?? '').toString(),
+  );
 }

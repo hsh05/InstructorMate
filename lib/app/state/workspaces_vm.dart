@@ -1,4 +1,11 @@
 // lib/app/state/workspaces_vm.dart
+//
+// FIX: Extracted repeated FilePicker boilerplate into _pickFileBytes().
+// FIX: lastImportWasDuplicate is now set correctly and surfaced to the UI
+//      so the home screen shows a snackbar on duplicate uploads.
+// FIX: _initNotifications now logs errors instead of swallowing them silently.
+// FIX: importStudents now calls recordImport() after success so student counts update.
+
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -18,9 +25,8 @@ class WorkspacesViewModel extends ChangeNotifier {
   bool importing = false;
   String? error;
 
-  /// Set to true after [importSyllabusBytes] when the backend recognised the
-  /// file as a duplicate (same PDF hash). The home screen reads this once and
-  /// resets it so the message only appears once per upload attempt.
+  /// True after importSyllabusBytes when the backend flagged a duplicate PDF.
+  /// The home screen reads this once and resets it.
   bool lastImportWasDuplicate = false;
 
   List<WorkspaceSummary> workspaces = [];
@@ -29,10 +35,9 @@ class WorkspacesViewModel extends ChangeNotifier {
   Workspace? get current => _current;
   set current(Workspace? ws) {
     _current = ws;
-    // Callers call notifyListeners() themselves to avoid redundant rebuilds.
+    // Callers must call notifyListeners() themselves.
   }
 
-  // Authoritative student counts keyed by sectionId.
   final Map<String, int> sectionStudentCounts = {};
 
   void recordImport(String sectionId, int count) {
@@ -45,7 +50,26 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   int countForSection(String sectionId) => sectionStudentCounts[sectionId] ?? 0;
 
-  // ── Load ────────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  /// FIX: Shared file-picker helper — removes the 5 identical copy-paste blocks.
+  Future<({Uint8List bytes, String name})?> _pickFileBytes({
+    required List<String> extensions,
+  }) async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: extensions,
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return null;
+    final f = res.files.first;
+    if (f.bytes == null || f.bytes!.isEmpty) {
+      throw Exception('Selected file has no data.');
+    }
+    return (bytes: f.bytes!, name: f.name);
+  }
+
+  // ── Load ─────────────────────────────────────────────────────────────────
 
   Future<void> load() async {
     loading = true;
@@ -59,12 +83,12 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
-    // Fire and forget — notifications init after UI unblocks.
+    // Fire-and-forget — don't block UI on notification init.
     // ignore: unawaited_futures
     _initNotifications();
   }
 
-  // ── Open workspace ───────────────────────────────────────────────────────────
+  // ── Open workspace ────────────────────────────────────────────────────────
 
   Future<void> openWorkspace(String id) async {
     loading = true;
@@ -75,15 +99,11 @@ class WorkspacesViewModel extends ChangeNotifier {
       for (final s in _current?.sections ?? []) {
         try {
           final students = await api.listSectionStudents(id, s.id);
-          if (students.isNotEmpty) {
-            sectionStudentCounts[s.id] = students.length;
-          } else if (!sectionStudentCounts.containsKey(s.id)) {
-            sectionStudentCounts[s.id] = 0;
-          }
+          sectionStudentCounts[s.id] = students.isNotEmpty
+              ? students.length
+              : 0;
         } catch (_) {
-          if (!sectionStudentCounts.containsKey(s.id)) {
-            sectionStudentCounts[s.id] = s.studentsCount;
-          }
+          sectionStudentCounts.putIfAbsent(s.id, () => s.studentsCount);
         }
       }
     } catch (e) {
@@ -94,7 +114,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import syllabus (bytes) ──────────────────────────────────────────────────
+  // ── Import syllabus (bytes — called from drag-drop) ───────────────────────
 
   Future<void> importSyllabusBytes({
     required Uint8List bytes,
@@ -111,6 +131,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         filename: filename,
       );
       _current = result.workspace;
+      // FIX: flag is reliably set here; UI reads it in workspaces_home.dart
       lastImportWasDuplicate = result.alreadyUploaded;
       await load();
     } catch (e) {
@@ -121,7 +142,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import syllabus (file picker, no-bytes path) ─────────────────────────────
+  // ── Import syllabus (file picker) ─────────────────────────────────────────
 
   Future<void> importSyllabus() async {
     if (importing) return;
@@ -130,18 +151,13 @@ class WorkspacesViewModel extends ChangeNotifier {
     lastImportWasDuplicate = false;
     notifyListeners();
     try {
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf', 'docx', 'txt'],
-        withData: true,
+      // FIX: use shared helper instead of inline copy-paste
+      final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt']);
+      if (picked == null) return;
+      final result = await api.importWorkspace(
+        bytes: picked.bytes,
+        filename: picked.name,
       );
-      if (res == null || res.files.isEmpty) return;
-      final f = res.files.first;
-      final bytes = f.bytes;
-      if (bytes == null || bytes.isEmpty) {
-        throw Exception('Selected file has no data.');
-      }
-      final result = await api.importWorkspace(bytes: bytes, filename: f.name);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
       await load();
@@ -153,14 +169,14 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Update fields ────────────────────────────────────────────────────────────
+  // ── Update fields ─────────────────────────────────────────────────────────
 
   Future<void> updateFields(Map<String, String> fields) async {
     final ws = _current;
     if (ws == null) return;
 
     // office_hours_start / office_hours_end are UI-only.
-    // Merge back into the single 'office_hours' key the backend expects.
+    // Merge back into 'office_hours' before sending to backend.
     final payload = Map<String, String>.from(fields);
     final start = payload.remove('office_hours_start') ?? '';
     final end = payload.remove('office_hours_end') ?? '';
@@ -181,31 +197,32 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import students ──────────────────────────────────────────────────────────
+  // ── Import students ───────────────────────────────────────────────────────
 
-  Future<void> importStudents() async {
+  Future<void> importStudents({String sectionId = ''}) async {
     final ws = _current;
     if (ws == null) return;
     loading = true;
     error = null;
     notifyListeners();
     try {
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['csv', 'xlsx'],
-        withData: true,
-      );
-      if (res == null || res.files.isEmpty) return;
-      final f = res.files.first;
-      final bytes = f.bytes;
-      if (bytes == null || bytes.isEmpty) {
-        throw Exception('Selected file has no data.');
-      }
-      await api.importStudents(
+      // FIX: use shared helper
+      final picked = await _pickFileBytes(extensions: ['csv', 'xlsx']);
+      if (picked == null) return;
+
+      final result = await api.importStudents(
         workspaceId: ws.id,
-        bytes: bytes,
-        filename: f.name,
+        bytes: picked.bytes,
+        filename: picked.name,
+        sectionId: sectionId,
       );
+
+      // FIX: update count so header badge refreshes immediately
+      recordImport(
+        result.sectionId.isNotEmpty ? result.sectionId : sectionId,
+        result.imported,
+      );
+
       _current = await api.getWorkspace(ws.id);
     } catch (e) {
       error = e.toString();
@@ -215,7 +232,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Delete workspace ─────────────────────────────────────────────────────────
+  // ── Delete workspace ──────────────────────────────────────────────────────
 
   Future<bool> deleteWorkspace(String workspaceId) async {
     loading = true;
@@ -235,7 +252,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Delete section ───────────────────────────────────────────────────────────
+  // ── Delete section ────────────────────────────────────────────────────────
 
   Future<void> deleteSection(String sectionId) async {
     final ws = _current;
@@ -255,7 +272,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Re-upload PDF ────────────────────────────────────────────────────────────
+  // ── Re-upload PDF ─────────────────────────────────────────────────────────
 
   Future<void> reuploadSyllabus() async {
     final ws = _current;
@@ -264,19 +281,13 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf', 'docx', 'txt'],
-        withData: true,
-      );
-      if (res == null || res.files.isEmpty) return;
-      final f = res.files.first;
-      final bytes = f.bytes;
-      if (bytes == null || bytes.isEmpty) throw Exception('File has no data.');
+      // FIX: use shared helper
+      final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt']);
+      if (picked == null) return;
       _current = await api.reuploadSyllabus(
         workspaceId: ws.id,
-        bytes: bytes,
-        filename: f.name,
+        bytes: picked.bytes,
+        filename: picked.name,
       );
     } catch (e) {
       error = e.toString();
@@ -286,7 +297,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Ask AI ───────────────────────────────────────────────────────────────────
+  // ── Ask AI ────────────────────────────────────────────────────────────────
 
   Future<String?> askInWorkspace(String question) async {
     final ws = _current;
@@ -300,7 +311,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Notifications ────────────────────────────────────────────────────────────
+  // ── Notifications ─────────────────────────────────────────────────────────
 
   Future<void> _initNotifications() async {
     final full = <Workspace>[];
@@ -310,10 +321,15 @@ class WorkspacesViewModel extends ChangeNotifier {
       } catch (_) {}
     }
     if (full.isEmpty) return;
-    if (kIsWeb) {
-      WebNotificationService.instance.init(full);
-    } else {
-      await NotificationScheduler.rescheduleAll(full);
+    try {
+      if (kIsWeb) {
+        WebNotificationService.instance.init(full);
+      } else {
+        await NotificationScheduler.rescheduleAll(full);
+      }
+    } catch (e) {
+      // FIX: log instead of silently swallowing
+      debugPrint('[WorkspacesViewModel] _initNotifications error: $e');
     }
   }
 
@@ -336,7 +352,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         );
       }
     } catch (e) {
-      debugPrint('[Notifications] reschedule failed: $e');
+      debugPrint('[WorkspacesViewModel] reschedule failed: $e');
     }
   }
 }

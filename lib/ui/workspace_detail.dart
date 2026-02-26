@@ -563,21 +563,45 @@ class _InfoTabState extends State<_InfoTab> {
     _migrateOfficeHours();
   }
 
-  // FIX: migrate old 'office_hours' single field → split start/end fields
-  // so users who already have data don't see blank time pickers.
+  // FIX: re-run migration when workspace is replaced (e.g. after save).
+  // Previously only ran in initState, so after a successful save the
+  // workspace object was swapped out but the controllers kept stale empty values.
+  @override
+  void didUpdateWidget(_InfoTab old) {
+    super.didUpdateWidget(old);
+    if (old.ws != widget.ws) {
+      _migrateOfficeHours();
+    }
+  }
+
+  // FIX: always sync controllers from the workspace fields.
+  // On first call (initState) this seeds them. On subsequent calls (didUpdateWidget
+  // after save) it overwrites stale values so the pickers show the saved time.
   void _migrateOfficeHours() {
     final old = widget.ws.fields['office_hours'] ?? '';
-    final startVal = widget.ws.fields['office_hours_start'] ?? '';
-    if (old.isNotEmpty && startVal.isEmpty) {
+    final directStart = widget.ws.fields['office_hours_start'] ?? '';
+    final directEnd = widget.ws.fields['office_hours_end'] ?? '';
+
+    String startVal = directStart;
+    String endVal = directEnd;
+
+    // If the backend stores a combined 'office_hours' string, split it.
+    if (startVal.isEmpty && old.isNotEmpty) {
       final parts = old.split(RegExp(r'\s*[-–to]+\s*', caseSensitive: false));
       if (parts.length >= 2) {
-        widget.ctrl('office_hours_start', parts[0].trim());
-        widget.ctrl('office_hours_end', parts[1].trim());
+        startVal = parts[0].trim();
+        endVal = parts[1].trim();
       } else {
-        widget.ctrl('office_hours_start', old.trim());
-        widget.ctrl('office_hours_end', '');
+        startVal = old.trim();
       }
     }
+
+    // FIX: force-write the controllers (not just seed) so a reload after save
+    // shows the new values rather than the old empty strings.
+    final startCtrl = widget.ctrl('office_hours_start', startVal);
+    final endCtrl = widget.ctrl('office_hours_end', endVal);
+    if (startCtrl.text != startVal) startCtrl.text = startVal;
+    if (endCtrl.text != endVal) endCtrl.text = endVal;
   }
 
   bool _validateAll() {
@@ -587,7 +611,36 @@ class _InfoTabState extends State<_InfoTab> {
       final err = _validateField(key, val);
       if (err != null) _errors[key] = err;
     }
+
+    // FIX: cross-field validation — start and end must differ, end must be after start
+    final startText = widget.ctrl('office_hours_start', '').text.trim();
+    final endText = widget.ctrl('office_hours_end', '').text.trim();
+    if (_errors['office_hours_start'] == null &&
+        _errors['office_hours_end'] == null &&
+        startText.isNotEmpty &&
+        endText.isNotEmpty) {
+      final startMins = _timeToMinutes(startText);
+      final endMins = _timeToMinutes(endText);
+      if (startMins != null && endMins != null) {
+        if (startMins == endMins) {
+          _errors['office_hours_end'] = 'End time must differ from start time';
+        } else if (endMins < startMins) {
+          _errors['office_hours_end'] = 'End time must be after start time';
+        }
+      }
+    }
+
     return _errors.isEmpty;
+  }
+
+  /// Converts "HH:MM" to total minutes. Returns null on parse failure.
+  int? _timeToMinutes(String t) {
+    final parts = t.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
   }
 
   Future<void> _save() async {
@@ -1597,6 +1650,23 @@ class _SectionsTabState extends State<_SectionsTab> {
       return;
     }
 
+    // FIX: validate start/end time relationship
+    final startMins = _sectionTimeToMinutes(_draft.startTime);
+    final endMins = _sectionTimeToMinutes(_draft.endTime);
+    if (_draft.startTime.isNotEmpty &&
+        _draft.endTime.isNotEmpty &&
+        startMins != null &&
+        endMins != null) {
+      if (startMins == endMins) {
+        widget.onError('Start time and end time cannot be the same.');
+        return;
+      }
+      if (endMins < startMins) {
+        widget.onError('End time must be after start time.');
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     final isEditing = _editingSection != null;
     try {
@@ -1632,6 +1702,16 @@ class _SectionsTabState extends State<_SectionsTab> {
       setState(() => _saving = false);
       widget.onError(e.toString());
     }
+  }
+
+  // FIX: shared time helper for cross-field validation
+  int? _sectionTimeToMinutes(String t) {
+    final parts = t.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
   }
 }
 

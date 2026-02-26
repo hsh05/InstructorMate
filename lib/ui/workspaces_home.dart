@@ -175,14 +175,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                         color: _textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Imported: ${workspace.createdAt}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: _textSecondary,
-                      ),
-                    ),
+                    const SizedBox(height: 5),
+                    _StatusBadge(status: workspace.status),
                   ],
                 ),
               ),
@@ -238,7 +232,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'This syllabus was already uploaded — opening existing workspace.',
+                  '⚠️ Already Imported — this syllabus was uploaded before. Opening the existing workspace.',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -246,7 +240,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           ),
           backgroundColor: _warn,
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
+          duration: const Duration(seconds: 5),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -315,6 +309,49 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             child: const Text(
               'Delete',
               style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final isReady = status == 'ready';
+    final label = isReady ? 'Ready' : 'Draft';
+    final bg = isReady ? const Color(0xFFE0FAF5) : const Color(0xFFFFF4E0);
+    final fg = isReady ? const Color(0xFF007A63) : const Color(0xFFB36200);
+    final dot = isReady ? const Color(0xFF00B896) : const Color(0xFFE8900A);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: fg,
+              letterSpacing: 0.2,
             ),
           ),
         ],

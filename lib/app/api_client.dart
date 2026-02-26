@@ -26,25 +26,7 @@ class ImportWorkspaceResult {
   });
 }
 
-class Student {
-  final String studentId;
-  final String name;
-  final String email;
-  final String studentNo;
-  const Student({
-    required this.studentId,
-    required this.name,
-    required this.email,
-    required this.studentNo,
-  });
-  factory Student.fromJson(Map<String, dynamic> j) => Student(
-    studentId: (j['student_id'] ?? j['id'] ?? '').toString(),
-    name: (j['name'] ?? '').toString(),
-    email: (j['email'] ?? '').toString(),
-    studentNo: (j['student_no'] ?? '').toString(),
-  );
-}
-
+// Student is defined in workspace_models.dart — imported above.
 // ── Client ────────────────────────────────────────────────────────────────────
 
 class ApiClient {

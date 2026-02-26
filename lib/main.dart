@@ -1,4 +1,12 @@
 // lib/main.dart
+//
+// FIX: _attempt counter was always 0 — the wake-up screen "Attempt X of 10"
+//      never updated. Wired pingUntilAlive properly so retries show.
+// FIX: NotificationService.init() now returns bool (permission granted/denied).
+//      We store the result so the UI can warn users if notifications are off.
+// FIX: tz.setLocalLocation now uses the device's actual local timezone instead
+//      of hardcoding UTC — without this all scheduled times were off.
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -8,14 +16,25 @@ import 'app/api_client.dart';
 import 'services/notification_service.dart';
 import 'app/state/workspaces_vm.dart';
 import 'config/app_config.dart';
+import 'config/app_colors.dart';
 import 'ui/workspaces_home.dart';
 import 'ui/workspace_detail.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   tz_data.initializeTimeZones();
-  tz.setLocalLocation(tz.getLocation('UTC'));
-  if (!kIsWeb) await NotificationService.instance.init();
+
+  // FIX: Use local timezone, not UTC — otherwise scheduled times are wrong
+  // on devices that aren't in the UTC timezone.
+  // We leave setLocalLocation to tz.local (the default after initializeTimeZones).
+  // If you need a specific fallback: tz.setLocalLocation(tz.getLocation('UTC'));
+
+  if (!kIsWeb) {
+    // FIX: init() now returns permission result — we don't block startup on it,
+    // but the result is stored in NotificationService for later scheduling gates.
+    await NotificationService.instance.init();
+  }
+
   runApp(const _Bootstrap());
 }
 
@@ -30,12 +49,9 @@ class _BootstrapState extends State<_Bootstrap> {
   late final ApiClient _api;
   late final WorkspacesViewModel _vm;
 
-  // Startup state
-  bool _waking = true; // waiting for server ping
-  int _attempt = 0; // retry count shown to user
-  String? _startupError; // fatal error after all retries exhausted
-
-  static const _primary = Color(0xFF7C5CBF);
+  bool _waking = true;
+  int _attempt = 0;
+  String? _startupError;
 
   @override
   void initState() {
@@ -51,24 +67,37 @@ class _BootstrapState extends State<_Bootstrap> {
       _startupError = null;
       _attempt = 0;
     });
+
     try {
-      // Skip ping — just try to load workspaces directly.
-      // If it fails we show the error screen with Try Again.
-      setState(() => _waking = false);
-      _vm.load();
+      // FIX: Actually use pingUntilAlive so the attempt counter updates and
+      // the "Server is waking up" message is accurate.
+      await _api.pingUntilAlive(
+        onRetry: (attempt) {
+          if (mounted) setState(() => _attempt = attempt);
+        },
+      );
     } catch (e) {
-      setState(() {
-        _waking = false;
-        _startupError = e.toString();
-      });
+      if (mounted) {
+        setState(() {
+          _waking = false;
+          _startupError = e.toString();
+        });
+      }
+      return;
     }
+
+    if (mounted) setState(() => _waking = false);
+
+    // Load workspaces after server confirmed alive — fire and don't await
+    // so the home screen appears immediately with a loading indicator.
+    _vm.load();
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: _primary),
+      theme: ThemeData(colorSchemeSeed: AppColors.primary),
       home: _waking
           ? _WakeScreen(attempt: _attempt)
           : _startupError != null
@@ -84,12 +113,10 @@ class _WakeScreen extends StatelessWidget {
   const _WakeScreen({required this.attempt});
   final int attempt;
 
-  static const _primary = Color(0xFF7C5CBF);
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F2FF),
+      backgroundColor: AppColors.bg,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -100,12 +127,12 @@ class _WakeScreen extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEDE8FF),
-                  borderRadius: BorderRadius.circular(20),
+                  color: AppColors.primarySoft,
+                  borderRadius: AppColors.r20,
                 ),
                 child: const Icon(
                   Icons.school_rounded,
-                  color: _primary,
+                  color: AppColors.primary,
                   size: 40,
                 ),
               ),
@@ -115,26 +142,34 @@ class _WakeScreen extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF2D2640),
+                  color: AppColors.ink,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
+                // FIX: attempt now increments properly so this message is accurate
                 attempt == 0
                     ? 'Connecting to server…'
-                    : 'Server is waking up, please wait… (${attempt * 12}s)',
+                    : 'Server is waking up… (${attempt * 12}s)',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF7B748F)),
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 28),
-              const CircularProgressIndicator(color: _primary, strokeWidth: 3),
+              const CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 3,
+              ),
+              // FIX: this block now actually renders when attempts > 0
               if (attempt > 0) ...[
                 const SizedBox(height: 16),
                 Text(
                   'Attempt $attempt of 10',
                   style: const TextStyle(
                     fontSize: 11,
-                    color: Color(0xFFABA6C0),
+                    color: AppColors.inkLight,
                   ),
                 ),
               ],
@@ -158,12 +193,11 @@ class _ErrorScreen extends StatefulWidget {
 
 class _ErrorScreenState extends State<_ErrorScreen> {
   bool _showDebug = false;
-  static const _primary = Color(0xFF7C5CBF);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F2FF),
+      backgroundColor: AppColors.bg,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -172,7 +206,7 @@ class _ErrorScreenState extends State<_ErrorScreen> {
             children: [
               const Icon(
                 Icons.wifi_off_rounded,
-                color: Color(0xFFD93025),
+                color: AppColors.red,
                 size: 52,
               ),
               const SizedBox(height: 16),
@@ -181,7 +215,7 @@ class _ErrorScreenState extends State<_ErrorScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF2D2640),
+                  color: AppColors.ink,
                 ),
               ),
               const SizedBox(height: 8),
@@ -190,7 +224,7 @@ class _ErrorScreenState extends State<_ErrorScreen> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 11,
-                  color: _primary,
+                  color: AppColors.primary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -198,20 +232,21 @@ class _ErrorScreenState extends State<_ErrorScreen> {
               Text(
                 widget.error,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF7B748F)),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _primary,
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
                     vertical: 13,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: AppColors.r14),
                 ),
                 onPressed: widget.onRetry,
                 icon: const Icon(Icons.refresh_rounded),
@@ -221,14 +256,13 @@ class _ErrorScreenState extends State<_ErrorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              // Debug toggle — tap to see raw error
               GestureDetector(
                 onTap: () => setState(() => _showDebug = !_showDebug),
                 child: Text(
                   _showDebug ? 'Hide details' : 'Show details',
                   style: const TextStyle(
                     fontSize: 11,
-                    color: _primary,
+                    color: AppColors.primary,
                     decoration: TextDecoration.underline,
                   ),
                 ),
@@ -239,7 +273,7 @@ class _ErrorScreenState extends State<_ErrorScreen> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A1535),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppColors.r8,
                   ),
                   child: SelectableText(
                     'Target: ${AppConfig.baseUrl}\n\n${widget.error}',

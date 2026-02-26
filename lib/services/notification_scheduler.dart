@@ -1,36 +1,36 @@
-// lib/app/notifications/notification_scheduler.dart
+// lib/services/notification_scheduler.dart
 //
-// Schedules a "15 minutes before class" notification for every
-// (section × day) pair. Each notification repeats weekly automatically
-// because NotificationService uses DateTimeComponents.dayOfWeekAndTime.
+// Schedules a "N minutes before class" notification for every (section × day).
+// Each notification repeats weekly via DateTimeComponents.dayOfWeekAndTime.
 //
-// Notification ID scheme:
-//   id = sectionIndex * 10 + dayIndex
-// This gives each (section, day) a stable unique int ID so we can
-// cancel/replace individual ones without touching others.
+// FIX: Previously _dayMap was duplicated here and in WebNotificationService.
+//      Now uses shared ScheduleUtils.dayMap.
+// FIX: Now checks for notification permission before scheduling, so on Android
+//      13+ that denied permission we fail gracefully with a debugPrint rather
+//      than silently doing nothing or throwing.
+// FIX: Improved time display uses ScheduleUtils.formatTime (12-h AM/PM).
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../app/workspace_models.dart';
+import '../utils/schedule_utils.dart';
 import 'notification_service.dart';
 
 class NotificationScheduler {
-  // Day abbreviation → DateTime weekday (Monday=1 … Sunday=7)
-  static const _dayMap = {
-    'mon': DateTime.monday,
-    'tue': DateTime.tuesday,
-    'wed': DateTime.wednesday,
-    'thu': DateTime.thursday,
-    'fri': DateTime.friday,
-    'sat': DateTime.saturday,
-    'sun': DateTime.sunday,
-  };
-
   /// Cancel all existing reminders then re-schedule for every section
-  /// in every workspace. Call this after load() or after creating a section.
+  /// in every workspace. Call after load() or after creating/deleting a section.
   static Future<void> rescheduleAll(List<Workspace> workspaces) async {
-    if (kIsWeb) return; // not supported on web
+    if (kIsWeb) return;
+
+    // FIX: check permission first — avoids silent failure on Android 13+
+    final hasPermission = await NotificationService.instance.hasPermission();
+    if (!hasPermission) {
+      debugPrint(
+        '[NotificationScheduler] No permission — skipping reschedule.',
+      );
+      return;
+    }
 
     await NotificationService.instance.cancelAll();
 
@@ -43,9 +43,12 @@ class NotificationScheduler {
           courseName: ws.title,
           baseId: notifId,
         );
-        notifId += 10; // leave 10 slots per section (one per day of week)
+        notifId += 10; // 10 slots per section (one per possible day)
       }
     }
+    debugPrint(
+      '[NotificationScheduler] Rescheduled for ${workspaces.length} workspaces.',
+    );
   }
 
   static Future<void> _scheduleSection({
@@ -55,9 +58,8 @@ class NotificationScheduler {
   }) async {
     final sch = section.schedule;
 
-    // Parse start time "HH:mm"
     final timeParts = sch.startTime.split(':');
-    if (timeParts.length < 2) return; // malformed time — skip
+    if (timeParts.length < 2) return;
     final hour = int.tryParse(timeParts[0]);
     final minute = int.tryParse(timeParts[1]);
     if (hour == null || minute == null) return;
@@ -72,14 +74,12 @@ class NotificationScheduler {
 
     final reminderMinutes = sch.reminderMinutes > 0 ? sch.reminderMinutes : 15;
 
+    // FIX: use ScheduleUtils instead of local _dayMap
     for (int di = 0; di < sch.days.length; di++) {
-      final dayKey = sch.days[di].toLowerCase().substring(0, 3);
-      final weekday = _dayMap[dayKey];
+      final weekday = ScheduleUtils.weekdayFor(sch.days[di]);
       if (weekday == null) continue;
 
       final notifId = baseId + di;
-
-      // Find the next occurrence of this weekday at class time
       final scheduledTime = _nextOccurrence(
         weekday: weekday,
         hour: hour,
@@ -92,18 +92,18 @@ class NotificationScheduler {
       final locationStr = section.location.isNotEmpty
           ? ' @ ${section.location}'
           : '';
+      // FIX: show 12-h formatted start time so notification body is user-friendly
+      final friendlyTime = ScheduleUtils.formatTime(sch.startTime);
 
       await NotificationService.instance.scheduleClassReminder(
         id: notifId,
         title: '⏰ $courseName starts in ${reminderMinutes}min',
-        body: '$sectionLabel$locationStr — ${sch.startTime}',
+        body: '$sectionLabel$locationStr — $friendlyTime',
         when: scheduledTime,
       );
     }
   }
 
-  /// Returns the next TZDateTime that falls on [weekday] at [hour]:[minute],
-  /// minus [reminderMinutes], from now.
   static tz.TZDateTime _nextOccurrence({
     required int weekday,
     required int hour,
@@ -113,7 +113,6 @@ class NotificationScheduler {
   }) {
     final now = tz.TZDateTime.now(location);
 
-    // Start from today at the class time minus reminder offset
     var candidate = tz.TZDateTime(
       location,
       now.year,
@@ -123,11 +122,10 @@ class NotificationScheduler {
       minute,
     ).subtract(Duration(minutes: reminderMinutes));
 
-    // Advance day by day until we land on the correct weekday and it's in the future
     int safety = 0;
     while (candidate.weekday != weekday || candidate.isBefore(now)) {
       candidate = candidate.add(const Duration(days: 1));
-      if (++safety > 14) break; // should never need more than 7 days
+      if (++safety > 14) break;
     }
 
     return candidate;
