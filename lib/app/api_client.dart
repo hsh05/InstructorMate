@@ -49,31 +49,6 @@ class ApiClient {
     return baseUri.resolve(p);
   }
 
-  // ── Wake-up ping — Render free tier sleeps after inactivity ─────────────────
-  // Call this on app start. Retries up to 6 times (≈ 60 seconds) to wait for
-  // the instance to cold-start. Throws a friendly error if it never comes up.
-  Future<void> pingUntilAlive({void Function(int attempt)? onRetry}) async {
-    const maxAttempts = 10;
-    for (var i = 1; i <= maxAttempts; i++) {
-      try {
-        final resp = await http
-            .get(
-              _u('/workspaces'),
-            ) // ping /workspaces — we know this route exists
-            .timeout(const Duration(seconds: 15));
-        if (resp.statusCode == 200) return; // server is awake
-      } catch (_) {}
-      if (i < maxAttempts) {
-        onRetry?.call(i);
-        await Future.delayed(const Duration(seconds: 12));
-      }
-    }
-    throw Exception(
-      'Could not reach the server after ${maxAttempts * 12} seconds.\n'
-      'Check your internet connection or try again in a moment.',
-    );
-  }
-
   // ── Workspaces ──────────────────────────────────────────────────────────────
 
   Future<ImportWorkspaceResult> importWorkspace({

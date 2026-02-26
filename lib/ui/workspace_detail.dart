@@ -556,6 +556,11 @@ class _InfoTabState extends State<_InfoTab> {
   final Map<String, String?> _errors = {};
   bool _saving = false;
   bool _triedSave = false;
+  // FIX: _dirty tracks whether any field has been changed independently of
+  // _editing. Time pickers call onDone() immediately after selecting a time
+  // (clearing _editing), so without _dirty the Save button disappears right
+  // after a time is picked.
+  bool _dirty = false;
 
   @override
   void initState() {
@@ -658,6 +663,7 @@ class _InfoTabState extends State<_InfoTab> {
       setState(() {
         _saving = false;
         _triedSave = false;
+        _dirty = false;
       });
     }
   }
@@ -725,7 +731,10 @@ class _InfoTabState extends State<_InfoTab> {
                         editing: _editing,
                         errors: _errors,
                         triedSave: _triedSave,
-                        onEditStart: (k) => setState(() => _editing.add(k)),
+                        onEditStart: (k) => setState(() {
+                          _editing.add(k);
+                          _dirty = true;
+                        }),
                         onEditDone: (k) => setState(() {
                           _editing.remove(k);
                           if (_triedSave) {
@@ -744,7 +753,10 @@ class _InfoTabState extends State<_InfoTab> {
                         isEditing: _editing.contains(group.key),
                         error: _errors[group.key],
                         keyboardType: _keyboardType(group.key),
-                        onTap: () => setState(() => _editing.add(group.key)),
+                        onTap: () => setState(() {
+                          _editing.add(group.key);
+                          _dirty = true;
+                        }),
                         onDone: () => setState(() {
                           _editing.remove(group.key);
                           if (_triedSave) {
@@ -768,7 +780,7 @@ class _InfoTabState extends State<_InfoTab> {
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
-                child: (hasEdits || _saving || _triedSave)
+                child: (hasEdits || _dirty || _saving || _triedSave)
                     ? Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         child: SizedBox(
@@ -892,7 +904,9 @@ class _InfoFieldRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = _fieldLabels[fieldKey] ?? fieldKey;
     final icon = _fieldIcons[fieldKey] ?? Icons.edit_rounded;
-    final isEmpty = value.trim().isEmpty;
+    // FIX: read from live controller, not stale value prop
+    final liveValue = ctrl(fieldKey, value).text;
+    final isEmpty = liveValue.trim().isEmpty;
     final hasError = error != null;
 
     if (isEditing) {
@@ -1003,12 +1017,12 @@ class _InfoFieldRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      value.isEmpty ? 'Tap to add…' : value,
+                      liveValue.isEmpty ? 'Tap to add…' : liveValue,
                       style: TextStyle(
-                        color: value.isEmpty ? _DS.inkLight : _DS.ink,
+                        color: liveValue.isEmpty ? _DS.inkLight : _DS.ink,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        fontStyle: value.isEmpty
+                        fontStyle: liveValue.isEmpty
                             ? FontStyle.italic
                             : FontStyle.normal,
                       ),
@@ -1210,9 +1224,13 @@ class _TimePickerFieldState extends State<_TimePickerField> {
       widget.ctrl(widget.fieldKey, widget.value).text = formatted;
       // Update local display immediately — no parent rebuild needed.
       setState(() => _displayValue = formatted);
+      // FIX: only call onDone when a time was actually selected.
+      // Previously onDone() was called unconditionally, so cancelling the
+      // picker (tapping outside) would clear editing state and hide the
+      // Save button even though nothing was changed.
+      widget.onDone();
     }
-    // Always call onDone to clear editing state and run validation.
-    widget.onDone();
+    // If picked == null the user cancelled — leave editing state as-is.
   }
 
   @override

@@ -79,7 +79,7 @@ def _ws_dict(workspace_id: str, ws, section_repo, student_repo) -> dict:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.post("/workspaces/{workspace_id}/sections", status_code=201)
+@router.post("/workspaces/{workspace_id}/sections", status_code=200)
 def create_section(
     workspace_id: str,
     body: SectionCreateRequest,
