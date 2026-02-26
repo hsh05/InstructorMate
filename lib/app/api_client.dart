@@ -129,7 +129,11 @@ class ApiClient {
           body: jsonEncode(d.toJson()),
         )
         .timeout(AppConfig.shortTimeout);
-    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    // FIX: backend returns 201 Created for new sections, not 200.
+    // Accept both so this works regardless of backend version.
+    if (resp.statusCode != 200 && resp.statusCode != 201) {
+      throw Exception(_extractDetail(resp));
+    }
     return await getWorkspace(wid);
   }
 
