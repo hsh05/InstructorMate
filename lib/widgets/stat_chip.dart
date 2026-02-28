@@ -14,7 +14,6 @@ class StatChip extends StatelessWidget {
   });
 
   @override
-  @override
 Widget build(BuildContext context) => Container(
     padding: EdgeInsets.symmetric(
       horizontal: AppStyles.paddingS,

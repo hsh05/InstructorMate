@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:instructor_mate/screens/workspace.dart';
+import 'package:instructor_mate/screens/login_screen.dart';
 void main() {
   runApp(const InstructorMateApp());
 }
@@ -11,7 +11,7 @@ class InstructorMateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-home: WorkspacesScreen(),
+home: LoginScreen(),
     );
   }
 }
