@@ -2,6 +2,7 @@
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -15,8 +16,20 @@ import 'ui/workspace_detail.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize timezone data and set device's local timezone.
+  // tz.setLocalLocation(tz.local) is a no-op — tz.local is UTC until
+  // explicitly set. We use flutter_timezone to get the real device timezone.
   tz_data.initializeTimeZones();
-  tz.setLocalLocation(tz.local);
+  if (!kIsWeb) {
+    try {
+      final deviceTz = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(deviceTz));
+    } catch (_) {
+      // Fall back to UTC if timezone detection fails
+      tz.setLocalLocation(tz.UTC);
+    }
+  }
 
   if (!kIsWeb) {
     await NotificationService.instance.init();
@@ -41,9 +54,6 @@ class _BootstrapState extends State<_Bootstrap> {
     super.initState();
     _api = ApiClient(baseUrl: AppConfig.baseUrl);
     _vm = WorkspacesViewModel(api: _api);
-    // Load immediately — no ping, no wake-up wait.
-    // If the server is unreachable, vm.load() sets vm.error and the
-    // home screen shows a "Try Again" button.
     _vm.load();
   }
 

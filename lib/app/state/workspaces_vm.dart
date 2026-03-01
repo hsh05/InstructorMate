@@ -1,10 +1,4 @@
 // lib/app/state/workspaces_vm.dart
-//
-// FIX: Extracted repeated FilePicker boilerplate into _pickFileBytes().
-// FIX: lastImportWasDuplicate is now set correctly and surfaced to the UI
-//      so the home screen shows a snackbar on duplicate uploads.
-// FIX: _initNotifications now logs errors instead of swallowing them silently.
-// FIX: importStudents now calls recordImport() after success so student counts update.
 
 import 'dart:typed_data';
 
@@ -25,8 +19,6 @@ class WorkspacesViewModel extends ChangeNotifier {
   bool importing = false;
   String? error;
 
-  /// True after importSyllabusBytes when the backend flagged a duplicate PDF.
-  /// The home screen reads this once and resets it.
   bool lastImportWasDuplicate = false;
 
   List<WorkspaceSummary> workspaces = [];
@@ -35,7 +27,6 @@ class WorkspacesViewModel extends ChangeNotifier {
   Workspace? get current => _current;
   set current(Workspace? ws) {
     _current = ws;
-    // Callers must call notifyListeners() themselves.
   }
 
   final Map<String, int> sectionStudentCounts = {};
@@ -50,9 +41,8 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   int countForSection(String sectionId) => sectionStudentCounts[sectionId] ?? 0;
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  // ── File picker helper ────────────────────────────────────────────────────
 
-  /// FIX: Shared file-picker helper — removes the 5 identical copy-paste blocks.
   Future<({Uint8List bytes, String name})?> _pickFileBytes({
     required List<String> extensions,
   }) async {
@@ -69,7 +59,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     return (bytes: f.bytes!, name: f.name);
   }
 
-  // ── Load ─────────────────────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> load() async {
     loading = true;
@@ -83,11 +73,6 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
-    // Awaited — cancelAll() inside NotificationService.init() MUST complete
-    // before any scheduleClassReminder call (including the Test button).
-    // Fire-and-forget caused the "Missing type parameter" crash because
-    // init() hadn't finished clearing SharedPreferences when the user
-    // tapped the test button.
     await _initNotifications();
   }
 
@@ -117,7 +102,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Import syllabus (bytes — called from drag-drop) ───────────────────────
+  // ── Import syllabus (bytes) ───────────────────────────────────────────────
 
   Future<void> importSyllabusBytes({
     required Uint8List bytes,
@@ -134,7 +119,6 @@ class WorkspacesViewModel extends ChangeNotifier {
         filename: filename,
       );
       _current = result.workspace;
-      // FIX: flag is reliably set here; UI reads it in workspaces_home.dart
       lastImportWasDuplicate = result.alreadyUploaded;
       await load();
     } catch (e) {
@@ -154,7 +138,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     lastImportWasDuplicate = false;
     notifyListeners();
     try {
-      // FIX: use shared helper instead of inline copy-paste
       final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt']);
       if (picked == null) return;
       final result = await api.importWorkspace(
@@ -178,8 +161,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     final ws = _current;
     if (ws == null) return;
 
-    // office_hours_start / office_hours_end are UI-only.
-    // Merge back into 'office_hours' before sending to backend.
     final payload = Map<String, String>.from(fields);
     final start = payload.remove('office_hours_start') ?? '';
     final end = payload.remove('office_hours_end') ?? '';
@@ -209,23 +190,18 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      // FIX: use shared helper
       final picked = await _pickFileBytes(extensions: ['csv', 'xlsx']);
       if (picked == null) return;
-
       final result = await api.importStudents(
         workspaceId: ws.id,
         bytes: picked.bytes,
         filename: picked.name,
         sectionId: sectionId,
       );
-
-      // FIX: update count so header badge refreshes immediately
       recordImport(
         result.sectionId.isNotEmpty ? result.sectionId : sectionId,
         result.imported,
       );
-
       _current = await api.getWorkspace(ws.id);
     } catch (e) {
       error = e.toString();
@@ -284,7 +260,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      // FIX: use shared helper
       final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt']);
       if (picked == null) return;
       _current = await api.reuploadSyllabus(
@@ -317,12 +292,21 @@ class WorkspacesViewModel extends ChangeNotifier {
   // ── Notifications ─────────────────────────────────────────────────────────
 
   Future<void> _initNotifications() async {
+    if (workspaces.isEmpty) return;
+
+    // Reuse _current if it's one of the loaded workspaces (already has sections).
+    // Only fetch from API for workspaces we don't already have in memory.
     final full = <Workspace>[];
-    for (final s in workspaces) {
+    for (final summary in workspaces) {
       try {
-        full.add(await api.getWorkspace(s.id));
+        if (_current != null && _current!.id == summary.id) {
+          full.add(_current!);
+        } else {
+          full.add(await api.getWorkspace(summary.id));
+        }
       } catch (_) {}
     }
+
     if (full.isEmpty) return;
     try {
       if (kIsWeb) {
@@ -331,8 +315,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         await NotificationScheduler.rescheduleAll(full);
       }
     } catch (e) {
-      // FIX: log instead of silently swallowing
-      debugPrint('[WorkspacesViewModel] _initNotifications error: $e');
+      debugPrint('[VM] _initNotifications error: $e');
     }
   }
 
@@ -355,7 +338,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         );
       }
     } catch (e) {
-      debugPrint('[WorkspacesViewModel] reschedule failed: $e');
+      debugPrint('[VM] reschedule failed: $e');
     }
   }
 }

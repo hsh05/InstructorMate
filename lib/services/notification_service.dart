@@ -1,21 +1,8 @@
 // lib/services/notification_service.dart
-//
-// FINAL FIX — "Missing type parameter" root cause:
-//
-// The crash is at loadScheduledNotifications() because SharedPreferences
-// contains notifications saved WITHOUT matchDateTimeComponents (one-shot type)
-// but the plugin tries to deserialize them as repeating (dayOfWeekAndTime type).
-// The type mismatch throws RuntimeException("Missing type parameter") in Java.
-//
-// Three things must ALL be true simultaneously:
-//   1. cancelAll() wipes stale SharedPreferences BEFORE any zonedSchedule call
-//   2. matchDateTimeComponents is ALWAYS passed (repeating weekly notifications)
-//   3. init() is always awaited before scheduleClassReminder is called
-//
-// All three are now guaranteed.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
@@ -29,7 +16,7 @@ class NotificationService {
   bool _notifGranted = false;
   bool _alarmGranted = false;
 
-  // Single shared Future — concurrent callers get the same one.
+  // Cached Future — concurrent callers all await the same one.
   Future<bool>? _initFuture;
 
   bool get _supported => !kIsWeb;
@@ -45,30 +32,53 @@ class NotificationService {
   Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
 
+    // Step 1 — Delete plugin SharedPrefs keys directly BEFORE initialize().
+    // plugin.cancelAll() internally calls loadScheduledNotifications() which
+    // can itself throw "Missing type parameter" on corrupt data, making it
+    // useless as a cleanup tool. Deleting the keys directly via the
+    // shared_preferences package bypasses the plugin's broken deserializer.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final toRemove = prefs
+          .getKeys()
+          .where(
+            (k) =>
+                k.startsWith('flutter_local_notifications') ||
+                k == 'scheduled_notifications' ||
+                k.startsWith('scheduled_notification'),
+          )
+          .toList();
+      for (final key in toRemove) {
+        await prefs.remove(key);
+      }
+      debugPrint('[NS] Cleared ${toRemove.length} plugin SharedPrefs keys.');
+    } catch (e) {
+      debugPrint('[NS] SharedPrefs clear failed (non-fatal): $e');
+    }
+
+    // Step 2 — Initialize the plugin on a now-clean SharedPrefs.
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
-
     final didInit = await _plugin.initialize(
       const InitializationSettings(android: android, iOS: ios),
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // Wipe ALL previously saved notifications from SharedPreferences.
-    // Must happen before any zonedSchedule call — this is what prevents
-    // the "Missing type parameter" deserialization crash.
+    // Step 3 — cancelAll() as extra safety net (now safe since keys are gone).
     try {
       await _plugin.cancelAll();
-      debugPrint('[NotificationService] Cleared stale notifications on init.');
+      debugPrint('[NS] cancelAll() completed.');
     } catch (e) {
-      debugPrint('[NotificationService] cancelAll on init (non-fatal): $e');
+      debugPrint('[NS] cancelAll() failed (non-fatal): $e');
     }
 
     _initialized = true;
 
+    // Step 4 — Request permissions.
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -78,10 +88,7 @@ class NotificationService {
       _notifGranted =
           await androidImpl.requestNotificationsPermission() ?? false;
       _alarmGranted = await androidImpl.requestExactAlarmsPermission() ?? false;
-      debugPrint(
-        '[NotificationService] notifications=$_notifGranted '
-        'exactAlarms=$_alarmGranted',
-      );
+      debugPrint('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
     } else {
       _notifGranted = didInit ?? true;
       _alarmGranted = _notifGranted;
@@ -90,7 +97,7 @@ class NotificationService {
     return _notifGranted;
   }
 
-  // ── Permission guard ──────────────────────────────────────────────────────
+  // ── Permission check ──────────────────────────────────────────────────────
 
   Future<bool> hasPermission() async {
     if (!_supported) return false;
@@ -121,31 +128,27 @@ class NotificationService {
     required tz.TZDateTime when,
   }) async {
     if (!_supported) return;
-    await init(); // always await — ensures cancelAll() completed first
+    await init();
 
     if (!_notifGranted) {
-      debugPrint('[NotificationService] No permission — skipping id=$id');
+      debugPrint('[NS] No permission — skipping id=$id');
       return;
     }
 
-    const androidDetails = AndroidNotificationDetails(
-      'class_reminders',
-      'Class Reminders',
-      channelDescription: 'Reminders before class starts',
-      importance: Importance.high,
-      priority: Priority.high,
-      fullScreenIntent: false,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
     const details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
+      android: AndroidNotificationDetails(
+        'class_reminders',
+        'Class Reminders',
+        channelDescription: 'Reminders before class starts',
+        importance: Importance.high,
+        priority: Priority.high,
+        fullScreenIntent: false,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
     );
 
     await _scheduleWithFallback(id, title, body, when, details);
@@ -169,12 +172,9 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        // REQUIRED: tells the plugin this is a repeating weekly notification.
-        // Missing this = wrong serialized type = "Missing type parameter" crash
-        // when any subsequent zonedSchedule call loads SharedPreferences.
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
-      debugPrint('[NotificationService] Scheduled (exact) id=$id at $when');
+      debugPrint('[NS] Scheduled exact id=$id at $when');
       return;
     } catch (e) {
       final msg = e.toString().toLowerCase();
@@ -183,35 +183,26 @@ class NotificationService {
           msg.contains('schedule_exact') ||
           msg.contains('exact alarm') ||
           msg.contains('platformexception');
-
       if (!isExactError) {
-        debugPrint('[NotificationService] Unexpected error id=$id: $e');
+        debugPrint('[NS] Unexpected error id=$id: $e');
         rethrow;
       }
-      debugPrint(
-        '[NotificationService] Exact alarm blocked — inexact fallback id=$id',
-      );
+      debugPrint('[NS] Exact blocked, trying inexact id=$id');
     }
 
     // Attempt 2 — inexact fallback
-    try {
-      await _plugin.zonedSchedule(
-        id,
-        title,
-        body,
-        when,
-        details,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        // REQUIRED here too — must match exact attempt's serialized format
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-      );
-      debugPrint('[NotificationService] Scheduled (inexact) id=$id at $when');
-    } catch (e) {
-      debugPrint('[NotificationService] Inexact fallback failed id=$id: $e');
-      rethrow;
-    }
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      when,
+      details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+    );
+    debugPrint('[NS] Scheduled inexact id=$id at $when');
   }
 
   Future<void> cancel(int id) async {
@@ -222,10 +213,10 @@ class NotificationService {
   Future<void> cancelAll() async {
     if (!_supported) return;
     await _plugin.cancelAll();
-    debugPrint('[NotificationService] All notifications cancelled.');
+    debugPrint('[NS] All cancelled.');
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
-    debugPrint('[NotificationService] Tapped id=${response.id}');
+    debugPrint('[NS] Tapped id=${response.id}');
   }
 }
