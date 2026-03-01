@@ -116,9 +116,13 @@ class NotificationService {
         'class_reminders',
         'Class Reminders',
         channelDescription: 'Reminders before class starts',
-        importance: Importance.high,
-        priority: Priority.high,
+        importance: Importance.max, // max = forces heads-up banner
+        priority: Priority.max, // max = shows over other notifications
         fullScreenIntent: false,
+        playSound: true,
+        enableVibration: true,
+        enableLights: true,
+        visibility: NotificationVisibility.public, // shows on lock screen
       ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,

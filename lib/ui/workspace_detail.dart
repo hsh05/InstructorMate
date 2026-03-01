@@ -2903,14 +2903,20 @@ class _TestNotifButtonState extends State<_TestNotifButton> {
         id: 99999,
         title: '⏰ Test — ${widget.ws.title}',
         body: 'Notifications are working correctly!',
-        when: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 5)),
+        // 10 seconds gives time to press the home button.
+        // Android suppresses heads-up banners while the app is in foreground
+        // on many OEM skins — you must background the app to see it appear.
+        when: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 10)),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Test notification in 5 seconds 🔔'),
+            content: const Text(
+              '🔔 Press home now — notification in 10 seconds',
+            ),
             backgroundColor: _DS.accent,
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 8),
             shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
           ),
         );
