@@ -1,14 +1,16 @@
 // lib/services/notification_scheduler.dart
 //
-// Schedules a "N minutes before class" notification for every (section × day).
-// Each notification repeats weekly via DateTimeComponents.dayOfWeekAndTime.
+// FIX: _nextOccurrence previously called .subtract(reminderMinutes) BEFORE
+//      aligning to the correct weekday. When the reminder offset crossed
+//      midnight (e.g. class at 00:05 with 15-min reminder → 23:50 previous
+//      day), candidate.weekday was already wrong and the while-loop
+//      overshot by a full week.
 //
-// FIX: Previously _dayMap was duplicated here and in WebNotificationService.
-//      Now uses shared ScheduleUtils.dayMap.
-// FIX: Now checks for notification permission before scheduling, so on Android
-//      13+ that denied permission we fail gracefully with a debugPrint rather
-//      than silently doing nothing or throwing.
-// FIX: Improved time display uses ScheduleUtils.formatTime (12-h AM/PM).
+//      Fix: align to the target weekday FIRST, then subtract the reminder
+//      offset. Also tightened the safety cap to 7 days (one full week is
+//      enough to find the next occurrence).
+//
+// No other logic changed.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:timezone/timezone.dart' as tz;
@@ -18,12 +20,9 @@ import '../utils/schedule_utils.dart';
 import 'notification_service.dart';
 
 class NotificationScheduler {
-  /// Cancel all existing reminders then re-schedule for every section
-  /// in every workspace. Call after load() or after creating/deleting a section.
   static Future<void> rescheduleAll(List<Workspace> workspaces) async {
     if (kIsWeb) return;
 
-    // FIX: check permission first — avoids silent failure on Android 13+
     final hasPermission = await NotificationService.instance.hasPermission();
     if (!hasPermission) {
       debugPrint(
@@ -43,7 +42,7 @@ class NotificationScheduler {
           courseName: ws.title,
           baseId: notifId,
         );
-        notifId += 10; // 10 slots per section (one per possible day)
+        notifId += 10;
       }
     }
     debugPrint(
@@ -64,7 +63,6 @@ class NotificationScheduler {
     final minute = int.tryParse(timeParts[1]);
     if (hour == null || minute == null) return;
 
-    // Resolve timezone — fall back to local if unknown
     tz.Location location;
     try {
       location = tz.getLocation(sch.timezone.isNotEmpty ? sch.timezone : 'UTC');
@@ -74,7 +72,6 @@ class NotificationScheduler {
 
     final reminderMinutes = sch.reminderMinutes > 0 ? sch.reminderMinutes : 15;
 
-    // FIX: use ScheduleUtils instead of local _dayMap
     for (int di = 0; di < sch.days.length; di++) {
       final weekday = ScheduleUtils.weekdayFor(sch.days[di]);
       if (weekday == null) continue;
@@ -92,7 +89,6 @@ class NotificationScheduler {
       final locationStr = section.location.isNotEmpty
           ? ' @ ${section.location}'
           : '';
-      // FIX: show 12-h formatted start time so notification body is user-friendly
       final friendlyTime = ScheduleUtils.formatTime(sch.startTime);
 
       await NotificationService.instance.scheduleClassReminder(
@@ -113,21 +109,31 @@ class NotificationScheduler {
   }) {
     final now = tz.TZDateTime.now(location);
 
-    var candidate = tz.TZDateTime(
+    // FIX: start from today at the class time (no reminder offset yet)
+    var classTime = tz.TZDateTime(
       location,
       now.year,
       now.month,
       now.day,
       hour,
       minute,
-    ).subtract(Duration(minutes: reminderMinutes));
+    );
 
+    // Step 1 — advance to the correct weekday (max 7 days forward)
     int safety = 0;
-    while (candidate.weekday != weekday || candidate.isBefore(now)) {
-      candidate = candidate.add(const Duration(days: 1));
-      if (++safety > 14) break;
+    while (classTime.weekday != weekday) {
+      classTime = classTime.add(const Duration(days: 1));
+      if (++safety > 7) break;
     }
 
-    return candidate;
+    // Step 2 — subtract reminder offset to get the fire time
+    var fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
+
+    // Step 3 — if the fire time is already in the past, skip ahead one week
+    if (fireTime.isBefore(now)) {
+      fireTime = fireTime.add(const Duration(days: 7));
+    }
+
+    return fireTime;
   }
 }

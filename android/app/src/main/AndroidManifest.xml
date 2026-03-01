@@ -9,6 +9,30 @@
     <!-- Required for exact alarms (Android 12+) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
 
+    <!--
+        FIX 1: USE_EXACT_ALARM — added for Android 13+ (API 33+).
+        SCHEDULE_EXACT_ALARM alone is no longer sufficient on API 33+;
+        USE_EXACT_ALARM grants exact alarms unconditionally without a
+        user-facing permission dialog. Include both so the app works
+        across Android 12 and 13+.
+    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+
+    <!--
+        FIX 2: RECEIVE_BOOT_COMPLETED — required so the plugin can
+        re-schedule notifications after the device reboots. Without this,
+        all scheduled class reminders vanish on every restart.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!--
+        FIX 3: VIBRATE — required for Importance.HIGH notifications to
+        vibrate on Android. Without it the notification still shows but
+        silently skips vibration, which can also cause scheduling issues
+        on some OEM skins.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
     <application
         android:label="instructor_mate"
         android:name="${applicationName}"
@@ -35,9 +59,39 @@
             </intent-filter>
         </activity>
 
+        <!--
+            FIX 4: BroadcastReceiver for boot — re-schedules notifications
+            after device reboot. Required by flutter_local_notifications.
+            Without this receiver the RECEIVE_BOOT_COMPLETED permission above
+            does nothing.
+        -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+        <!--
+            FIX 5: BroadcastReceiver for firing scheduled notifications.
+            This is the receiver the plugin uses to actually deliver the
+            alarm when the scheduled time arrives. Missing this = notifications
+            are scheduled but never fire (the "Missing type parameter" crash
+            occurs during registration when this receiver is absent on some
+            Android versions).
+        -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
+
     </application>
 
     <queries>

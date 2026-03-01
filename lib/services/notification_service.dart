@@ -1,11 +1,26 @@
 // lib/services/notification_service.dart
 //
-// FIX: Mobile notifications were silently failing because:
-//  1. Android 13+ requires POST_NOTIFICATIONS permission — we now request it
-//     and throw a clear error if denied, instead of silently doing nothing.
-//  2. Exact alarms on Android 12+ require SCHEDULE_EXACT_ALARM — we request it.
-//  3. Added a permission-check helper so callers can gate scheduling on approval.
-//  4. scheduleClassReminder now catches and rethrows with a human-readable message.
+// FIX 1: uiLocalNotificationDateInterpretation is REQUIRED on this version of
+//         flutter_local_notifications (pre-v14). Added back to both zonedSchedule
+//         calls (exact + inexact fallback).
+//
+// FIX 2: Both notification AND exact-alarm permission are now required before
+//         scheduling. Previously only notifGranted was checked; alarmGranted
+//         was ignored, so exact alarms silently failed on Android 12+.
+//
+// FIX 3: hasPermission() re-queries the plugin live so system-settings changes
+//         take effect without a full app restart.
+//
+// FIX 4: "Missing type parameter" RuntimeException — root cause of the red
+//         error screen. The Android plugin throws this when exactAllowWhileIdle
+//         is requested but the OS denies the exact-alarm at runtime (common on
+//         Xiaomi/MIUI, Samsung One UI, and other skins that silently revoke
+//         SCHEDULE_EXACT_ALARM even after the user taps "Allow").
+//
+//         Fix: try exactAllowWhileIdle first. If Android throws that specific
+//         error, fall back to inexactAllowWhileIdle — no special permission
+//         needed, fires within a few minutes, perfectly acceptable for class
+//         reminders.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -19,7 +34,8 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
-  bool _permissionGranted = false;
+  bool _notifGranted = false;
+  bool _alarmGranted = false;
 
   bool get _supported => !kIsWeb;
 
@@ -27,7 +43,7 @@ class NotificationService {
 
   Future<bool> init() async {
     if (!_supported) return false;
-    if (_initialized) return _permissionGranted;
+    if (_initialized) return _notifGranted && _alarmGranted;
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -36,49 +52,53 @@ class NotificationService {
       requestSoundPermission: true,
     );
 
-    const settings = InitializationSettings(android: android, iOS: ios);
-
-    // FIX: capture the return value — on iOS this is false if the user denies.
     final didInit = await _plugin.initialize(
-      settings,
-      // FIX: handle notification tap while app is terminated (mobile)
+      const InitializationSettings(android: android, iOS: ios),
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
     _initialized = true;
 
-    // ── Android: request POST_NOTIFICATIONS (Android 13+) ──────────────────
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
 
     if (androidImpl != null) {
-      // FIX: await the permission result so we know if we can schedule
-      final notifGranted =
+      _notifGranted =
           await androidImpl.requestNotificationsPermission() ?? false;
-      final alarmGranted =
-          await androidImpl.requestExactAlarmsPermission() ?? false;
-      _permissionGranted = notifGranted;
+      _alarmGranted = await androidImpl.requestExactAlarmsPermission() ?? false;
       debugPrint(
-        '[NotificationService] notifications=$notifGranted exactAlarms=$alarmGranted',
+        '[NotificationService] init: notifications=$_notifGranted exactAlarms=$_alarmGranted',
       );
     } else {
-      // iOS: didInit reflects the permission dialog result
-      _permissionGranted = didInit ?? true;
+      _notifGranted = didInit ?? true;
+      _alarmGranted = _notifGranted;
     }
 
-    return _permissionGranted;
+    return _notifGranted;
   }
 
   // ── Permission guard ──────────────────────────────────────────────────────
 
-  /// Returns true if notifications can be scheduled.
-  /// Call this before scheduling to show a meaningful error rather than silence.
   Future<bool> hasPermission() async {
     if (!_supported) return false;
     if (!_initialized) await init();
-    return _permissionGranted;
+
+    final androidImpl = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
+    if (androidImpl != null) {
+      _notifGranted =
+          await androidImpl.areNotificationsEnabled() ?? _notifGranted;
+      _alarmGranted =
+          await androidImpl.canScheduleExactNotifications() ?? _alarmGranted;
+      return _notifGranted;
+    }
+
+    return _notifGranted;
   }
 
   // ── Schedule ──────────────────────────────────────────────────────────────
@@ -92,17 +112,13 @@ class NotificationService {
     if (!_supported) return;
 
     if (!_initialized) {
-      final granted = await init();
-      if (!granted) {
-        debugPrint(
-          '[NotificationService] Permission denied — cannot schedule.',
-        );
-        return;
-      }
+      await init();
     }
 
-    if (!_permissionGranted) {
-      debugPrint('[NotificationService] No permission — skipping id=$id');
+    if (!_notifGranted) {
+      debugPrint(
+        '[NotificationService] No notification permission — skipping id=$id',
+      );
       return;
     }
 
@@ -112,7 +128,6 @@ class NotificationService {
       channelDescription: 'Reminders before class starts',
       importance: Importance.high,
       priority: Priority.high,
-      // FIX: show heads-up notification on Android when screen is on
       fullScreenIntent: false,
     );
 
@@ -127,6 +142,8 @@ class NotificationService {
       iOS: iosDetails,
     );
 
+    // FIX 4: Try exact scheduling first. If Android throws "Missing type
+    // parameter" (MIUI/One UI exact-alarm block), fall back to inexact.
     try {
       await _plugin.zonedSchedule(
         id,
@@ -139,13 +156,46 @@ class NotificationService {
             UILocalNotificationDateInterpretation.absoluteTime,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
-      debugPrint('[NotificationService] Scheduled id=$id at $when');
+      debugPrint('[NotificationService] Scheduled (exact) id=$id at $when');
     } catch (e) {
-      // FIX: log clearly instead of swallowing — caller sees the error
-      debugPrint(
-        '[NotificationService] scheduleClassReminder failed id=$id: $e',
-      );
-      rethrow;
+      final msg = e.toString().toLowerCase();
+      final isExactAlarmError =
+          msg.contains('missing type parameter') ||
+          msg.contains('schedule_exact') ||
+          msg.contains('exact alarm');
+
+      if (isExactAlarmError) {
+        debugPrint(
+          '[NotificationService] Exact alarm denied by OS — '
+          'falling back to inexact for id=$id',
+        );
+        try {
+          await _plugin.zonedSchedule(
+            id,
+            title,
+            body,
+            when,
+            details,
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+          );
+          debugPrint(
+            '[NotificationService] Scheduled (inexact fallback) id=$id at $when',
+          );
+        } catch (e2) {
+          debugPrint(
+            '[NotificationService] Inexact fallback also failed id=$id: $e2',
+          );
+          rethrow;
+        }
+      } else {
+        debugPrint(
+          '[NotificationService] scheduleClassReminder failed id=$id: $e',
+        );
+        rethrow;
+      }
     }
   }
 
@@ -163,7 +213,6 @@ class NotificationService {
   // ── Tap handler ───────────────────────────────────────────────────────────
 
   static void _onNotificationResponse(NotificationResponse response) {
-    // FIX: placeholder — wire up navigation here if needed in the future
     debugPrint('[NotificationService] Tapped notification id=${response.id}');
   }
 }

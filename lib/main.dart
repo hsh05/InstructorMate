@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:flutter_native_timezone/flutter_native_timezone.dart';
 
 import 'app/api_client.dart';
 import 'services/notification_service.dart';
@@ -16,14 +15,10 @@ import 'ui/workspace_detail.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   tz_data.initializeTimeZones();
+  tz.setLocalLocation(tz.local);
 
-  // set correct local timezone
   if (!kIsWeb) {
-    final String timeZoneName = await FlutterNativeTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(timeZoneName));
-
     await NotificationService.instance.init();
   }
 
