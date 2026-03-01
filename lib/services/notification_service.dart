@@ -1,26 +1,8 @@
 // lib/services/notification_service.dart
 //
-// FIX 1: uiLocalNotificationDateInterpretation is REQUIRED on this version of
-//         flutter_local_notifications (pre-v14). Added back to both zonedSchedule
-//         calls (exact + inexact fallback).
-//
-// FIX 2: Both notification AND exact-alarm permission are now required before
-//         scheduling. Previously only notifGranted was checked; alarmGranted
-//         was ignored, so exact alarms silently failed on Android 12+.
-//
-// FIX 3: hasPermission() re-queries the plugin live so system-settings changes
-//         take effect without a full app restart.
-//
-// FIX 4: "Missing type parameter" RuntimeException — root cause of the red
-//         error screen. The Android plugin throws this when exactAllowWhileIdle
-//         is requested but the OS denies the exact-alarm at runtime (common on
-//         Xiaomi/MIUI, Samsung One UI, and other skins that silently revoke
-//         SCHEDULE_EXACT_ALARM even after the user taps "Allow").
-//
-//         Fix: try exactAllowWhileIdle first. If Android throws that specific
-//         error, fall back to inexactAllowWhileIdle — no special permission
-//         needed, fires within a few minutes, perfectly acceptable for class
-//         reminders.
+// Compatible with flutter_local_notifications v9 through v17.
+// uiLocalNotificationDateInterpretation is included for older versions
+// and is safely ignored by v17+.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -43,7 +25,7 @@ class NotificationService {
 
   Future<bool> init() async {
     if (!_supported) return false;
-    if (_initialized) return _notifGranted && _alarmGranted;
+    if (_initialized) return _notifGranted;
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -57,6 +39,15 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
+    // Wipe stale SharedPreferences from old builds — prevents
+    // "Missing type parameter" deserialization crash on next schedule call.
+    try {
+      await _plugin.cancelAll();
+      debugPrint('[NotificationService] Cleared stale notifications on init.');
+    } catch (e) {
+      debugPrint('[NotificationService] cancelAll on init (non-fatal): $e');
+    }
+
     _initialized = true;
 
     final androidImpl = _plugin
@@ -69,7 +60,8 @@ class NotificationService {
           await androidImpl.requestNotificationsPermission() ?? false;
       _alarmGranted = await androidImpl.requestExactAlarmsPermission() ?? false;
       debugPrint(
-        '[NotificationService] init: notifications=$_notifGranted exactAlarms=$_alarmGranted',
+        '[NotificationService] notifications=$_notifGranted '
+        'exactAlarms=$_alarmGranted',
       );
     } else {
       _notifGranted = didInit ?? true;
@@ -110,15 +102,10 @@ class NotificationService {
     required tz.TZDateTime when,
   }) async {
     if (!_supported) return;
-
-    if (!_initialized) {
-      await init();
-    }
+    if (!_initialized) await init();
 
     if (!_notifGranted) {
-      debugPrint(
-        '[NotificationService] No notification permission — skipping id=$id',
-      );
+      debugPrint('[NotificationService] No permission — skipping id=$id');
       return;
     }
 
@@ -142,8 +129,17 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    // FIX 4: Try exact scheduling first. If Android throws "Missing type
-    // parameter" (MIUI/One UI exact-alarm block), fall back to inexact.
+    await _scheduleWithFallback(id, title, body, when, details);
+  }
+
+  Future<void> _scheduleWithFallback(
+    int id,
+    String title,
+    String body,
+    tz.TZDateTime when,
+    NotificationDetails details,
+  ) async {
+    // Attempt 1 — exact alarm
     try {
       await _plugin.zonedSchedule(
         id,
@@ -157,45 +153,41 @@ class NotificationService {
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
       debugPrint('[NotificationService] Scheduled (exact) id=$id at $when');
+      return;
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      final isExactAlarmError =
+      final isExactError =
           msg.contains('missing type parameter') ||
           msg.contains('schedule_exact') ||
-          msg.contains('exact alarm');
+          msg.contains('exact alarm') ||
+          msg.contains('platformexception');
 
-      if (isExactAlarmError) {
-        debugPrint(
-          '[NotificationService] Exact alarm denied by OS — '
-          'falling back to inexact for id=$id',
-        );
-        try {
-          await _plugin.zonedSchedule(
-            id,
-            title,
-            body,
-            when,
-            details,
-            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-            matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-          );
-          debugPrint(
-            '[NotificationService] Scheduled (inexact fallback) id=$id at $when',
-          );
-        } catch (e2) {
-          debugPrint(
-            '[NotificationService] Inexact fallback also failed id=$id: $e2',
-          );
-          rethrow;
-        }
-      } else {
-        debugPrint(
-          '[NotificationService] scheduleClassReminder failed id=$id: $e',
-        );
+      if (!isExactError) {
+        debugPrint('[NotificationService] Unexpected error id=$id: $e');
         rethrow;
       }
+      debugPrint(
+        '[NotificationService] Exact alarm blocked — inexact fallback id=$id',
+      );
+    }
+
+    // Attempt 2 — inexact fallback
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      );
+      debugPrint('[NotificationService] Scheduled (inexact) id=$id at $when');
+    } catch (e) {
+      debugPrint('[NotificationService] Inexact fallback failed id=$id: $e');
+      rethrow;
     }
   }
 
@@ -209,8 +201,6 @@ class NotificationService {
     await _plugin.cancelAll();
     debugPrint('[NotificationService] All notifications cancelled.');
   }
-
-  // ── Tap handler ───────────────────────────────────────────────────────────
 
   static void _onNotificationResponse(NotificationResponse response) {
     debugPrint('[NotificationService] Tapped notification id=${response.id}');
