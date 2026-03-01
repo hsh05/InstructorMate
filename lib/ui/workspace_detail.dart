@@ -2884,52 +2884,55 @@ class _TypingIndicator extends StatelessWidget {
 }
 
 // ─── Test notification button ──────────────────────────────────────────────────
-class _TestNotifButton extends StatefulWidget {
-  const _TestNotifButton({required this.ws});
-  final Workspace ws;
-
-  @override
-  State<_TestNotifButton> createState() => _TestNotifButtonState();
-}
-
 class _TestNotifButtonState extends State<_TestNotifButton> {
   bool _sending = false;
 
   Future<void> _sendTest() async {
     if (_sending) return;
     setState(() => _sending = true);
+
     try {
+      // 1️⃣ Ensure plugin initialized
+      final granted = await NotificationService.instance.hasPermission();
+
+      if (!granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Notifications permission not granted'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 2️⃣ Show immediate notification (NO scheduling)
+      await NotificationService.instance.showImmediateTest();
+
+      // 3️⃣ Schedule one 30 seconds later
       await NotificationService.instance.scheduleClassReminder(
         id: 99999,
-        title: '⏰ Test — ${widget.ws.title}',
-        body: 'Notifications are working correctly!',
-        // 10 seconds gives time to press the home button.
-        // Android suppresses heads-up banners while the app is in foreground
-        // on many OEM skins — you must background the app to see it appear.
-        when: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 10)),
+        title: '⏰ Scheduled Test — ${widget.ws.title}',
+        body: 'If you see this after 30s, scheduling works.',
+        when: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 30)),
       );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              '🔔 Press home now — notification in 10 seconds',
+          const SnackBar(
+            content: Text(
+              '🔔 Immediate test shown. Press Home — scheduled in 30 seconds.',
             ),
-            backgroundColor: _DS.accent,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 8),
-            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 6),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Notification failed: $e'),
-            backgroundColor: _DS.red,
-            behavior: SnackBarBehavior.floating,
-            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -3236,4 +3239,13 @@ class _ChatMsg {
   const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
+}
+
+class _TestNotifButton extends StatefulWidget {
+  const _TestNotifButton({required this.ws});
+
+  final Workspace ws;
+
+  @override
+  State<_TestNotifButton> createState() => _TestNotifButtonState();
 }

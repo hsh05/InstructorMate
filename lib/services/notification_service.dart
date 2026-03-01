@@ -195,4 +195,26 @@ class NotificationService {
   static void _onNotificationResponse(NotificationResponse response) {
     debugPrint('[NS] Tapped id=${response.id}');
   }
+
+  Future<void> showImmediateTest() async {
+    if (!_supported) return;
+    await init();
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'class_reminders',
+        'Class Reminders',
+        importance: Importance.max,
+        priority: Priority.max,
+      ),
+      iOS: DarwinNotificationDetails(),
+    );
+
+    await _plugin.show(
+      11111,
+      '🚀 Immediate Notification',
+      'If you see this, notifications are working.',
+      details,
+    );
+  }
 }
