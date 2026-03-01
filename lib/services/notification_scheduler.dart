@@ -1,4 +1,17 @@
 // lib/services/notification_scheduler.dart
+//
+// ARCHITECTURAL CHANGE: No longer uses matchDateTimeComponents (repeating).
+//
+// The "Missing type parameter" crash is caused by the repeating notification
+// serialization format (type=2) in flutter_local_notifications. The plugin's
+// Java deserializer is brittle — any mismatch in the stored JSON causes a
+// RuntimeException that cannot be caught in Dart.
+//
+// FIX: Schedule the next 4 individual one-time occurrences per section/day
+// instead of one repeating notification. Type=1 (one-shot) serialization
+// is simple and never causes deserialization crashes.
+// rescheduleAll() is already called on every app launch and after every
+// section change, so notifications stay current.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:timezone/timezone.dart' as tz;
@@ -8,6 +21,10 @@ import '../utils/schedule_utils.dart';
 import 'notification_service.dart';
 
 class NotificationScheduler {
+  // How many future occurrences to schedule per section+day.
+  // 4 weeks covers a month; rescheduleAll on next app open refreshes them.
+  static const int _weeksAhead = 4;
+
   static Future<void> rescheduleAll(List<Workspace> workspaces) async {
     if (kIsWeb) return;
 
@@ -17,7 +34,6 @@ class NotificationScheduler {
       return;
     }
 
-    // Cancel all existing before rescheduling.
     await NotificationService.instance.cancelAll();
 
     for (final ws in workspaces) {
@@ -32,15 +48,20 @@ class NotificationScheduler {
     debugPrint('[Scheduler] Done for ${workspaces.length} workspaces.');
   }
 
-  // Stable hash-based notification ID from workspace + section + day.
-  // Same section+day always gets the same ID regardless of list order.
-  static int _notifId(String workspaceId, String sectionId, String day) {
-    final key = '$workspaceId:$sectionId:$day';
+  // Stable ID from workspace + section + day + week offset.
+  // Keeps IDs consistent across reschedules.
+  static int _notifId(
+    String workspaceId,
+    String sectionId,
+    String day,
+    int weekIndex,
+  ) {
+    final key = '$workspaceId:$sectionId:$day:$weekIndex';
     int hash = 5381;
     for (final c in key.codeUnits) {
       hash = ((hash << 5) + hash) + c;
     }
-    return hash.abs() % 100000;
+    return hash.abs() % 2000000000; // stay within Android int range
   }
 
   static Future<void> _scheduleSection({
@@ -74,7 +95,8 @@ class NotificationScheduler {
       final weekday = ScheduleUtils.weekdayFor(day);
       if (weekday == null) continue;
 
-      final scheduledTime = _nextOccurrence(
+      // Find the next occurrence of this weekday
+      final firstOccurrence = _nextOccurrence(
         weekday: weekday,
         hour: hour,
         minute: minute,
@@ -82,12 +104,17 @@ class NotificationScheduler {
         reminderMinutes: reminderMinutes,
       );
 
-      await NotificationService.instance.scheduleClassReminder(
-        id: _notifId(workspaceId, section.id, day),
-        title: '⏰ $courseName starts in ${reminderMinutes}min',
-        body: '$sectionLabel$locationStr — $friendlyTime',
-        when: scheduledTime,
-      );
+      // Schedule _weeksAhead individual one-time notifications
+      for (int week = 0; week < _weeksAhead; week++) {
+        final fireTime = firstOccurrence.add(Duration(days: week * 7));
+
+        await NotificationService.instance.scheduleClassReminder(
+          id: _notifId(workspaceId, section.id, day, week),
+          title: '⏰ $courseName starts in ${reminderMinutes}min',
+          body: '$sectionLabel$locationStr — $friendlyTime',
+          when: fireTime,
+        );
+      }
     }
   }
 
@@ -100,8 +127,6 @@ class NotificationScheduler {
   }) {
     final now = tz.TZDateTime.now(location);
 
-    // Start at today's class time, advance to the correct weekday, then
-    // subtract the reminder offset. If the result is already past, add a week.
     var classTime = tz.TZDateTime(
       location,
       now.year,
@@ -111,13 +136,17 @@ class NotificationScheduler {
       minute,
     );
 
+    // Advance to the correct weekday
     int safety = 0;
     while (classTime.weekday != weekday) {
       classTime = classTime.add(const Duration(days: 1));
       if (++safety > 7) break;
     }
 
+    // Subtract reminder offset
     var fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
+
+    // If already past, jump to next week
     if (fireTime.isBefore(now)) {
       fireTime = fireTime.add(const Duration(days: 7));
     }

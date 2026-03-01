@@ -2,7 +2,6 @@
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
@@ -16,7 +15,6 @@ class NotificationService {
   bool _notifGranted = false;
   bool _alarmGranted = false;
 
-  // Cached Future — concurrent callers all await the same one.
   Future<bool>? _initFuture;
 
   bool get _supported => !kIsWeb;
@@ -32,53 +30,31 @@ class NotificationService {
   Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
 
-    // Step 1 — Delete plugin SharedPrefs keys directly BEFORE initialize().
-    // plugin.cancelAll() internally calls loadScheduledNotifications() which
-    // can itself throw "Missing type parameter" on corrupt data, making it
-    // useless as a cleanup tool. Deleting the keys directly via the
-    // shared_preferences package bypasses the plugin's broken deserializer.
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final toRemove = prefs
-          .getKeys()
-          .where(
-            (k) =>
-                k.startsWith('flutter_local_notifications') ||
-                k == 'scheduled_notifications' ||
-                k.startsWith('scheduled_notification'),
-          )
-          .toList();
-      for (final key in toRemove) {
-        await prefs.remove(key);
-      }
-      debugPrint('[NS] Cleared ${toRemove.length} plugin SharedPrefs keys.');
-    } catch (e) {
-      debugPrint('[NS] SharedPrefs clear failed (non-fatal): $e');
-    }
-
-    // Step 2 — Initialize the plugin on a now-clean SharedPrefs.
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
+
     final didInit = await _plugin.initialize(
       const InitializationSettings(android: android, iOS: ios),
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // Step 3 — cancelAll() as extra safety net (now safe since keys are gone).
+    // Cancel all on init to clear any stale entries.
+    // Safe because we no longer use matchDateTimeComponents — all
+    // notifications are simple one-shot (type=1) which never causes
+    // the "Missing type parameter" deserialization crash.
     try {
       await _plugin.cancelAll();
-      debugPrint('[NS] cancelAll() completed.');
+      debugPrint('[NS] Init: cleared existing notifications.');
     } catch (e) {
-      debugPrint('[NS] cancelAll() failed (non-fatal): $e');
+      debugPrint('[NS] Init cancelAll failed (non-fatal): $e');
     }
 
     _initialized = true;
 
-    // Step 4 — Request permissions.
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -151,17 +127,10 @@ class NotificationService {
       ),
     );
 
-    await _scheduleWithFallback(id, title, body, when, details);
-  }
-
-  Future<void> _scheduleWithFallback(
-    int id,
-    String title,
-    String body,
-    tz.TZDateTime when,
-    NotificationDetails details,
-  ) async {
-    // Attempt 1 — exact alarm
+    // One-shot scheduling — NO matchDateTimeComponents.
+    // The scheduler calls this multiple times (once per week) to cover
+    // upcoming occurrences. This avoids the repeating notification
+    // serialization format that causes "Missing type parameter" crashes.
     try {
       await _plugin.zonedSchedule(
         id,
@@ -172,37 +141,36 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        // NO matchDateTimeComponents — intentionally one-shot
       );
-      debugPrint('[NS] Scheduled exact id=$id at $when');
-      return;
+      debugPrint('[NS] Scheduled id=$id at $when');
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      final isExactError =
-          msg.contains('missing type parameter') ||
+      // If exact alarm is blocked by OS, fall back to inexact
+      if (msg.contains('exact') ||
           msg.contains('schedule_exact') ||
-          msg.contains('exact alarm') ||
-          msg.contains('platformexception');
-      if (!isExactError) {
-        debugPrint('[NS] Unexpected error id=$id: $e');
-        rethrow;
+          msg.contains('platformexception')) {
+        debugPrint('[NS] Exact blocked, trying inexact id=$id');
+        try {
+          await _plugin.zonedSchedule(
+            id,
+            title,
+            body,
+            when,
+            details,
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            // NO matchDateTimeComponents — intentionally one-shot
+          );
+          debugPrint('[NS] Scheduled inexact id=$id');
+        } catch (e2) {
+          debugPrint('[NS] Both exact and inexact failed id=$id: $e2');
+        }
+      } else {
+        debugPrint('[NS] Schedule failed id=$id: $e');
       }
-      debugPrint('[NS] Exact blocked, trying inexact id=$id');
     }
-
-    // Attempt 2 — inexact fallback
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      when,
-      details,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-    );
-    debugPrint('[NS] Scheduled inexact id=$id at $when');
   }
 
   Future<void> cancel(int id) async {
@@ -212,8 +180,12 @@ class NotificationService {
 
   Future<void> cancelAll() async {
     if (!_supported) return;
-    await _plugin.cancelAll();
-    debugPrint('[NS] All cancelled.');
+    try {
+      await _plugin.cancelAll();
+      debugPrint('[NS] All cancelled.');
+    } catch (e) {
+      debugPrint('[NS] cancelAll failed: $e');
+    }
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
