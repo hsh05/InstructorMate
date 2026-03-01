@@ -1,8 +1,16 @@
 // lib/services/notification_service.dart
 //
-// Compatible with flutter_local_notifications v9 through v17.
-// uiLocalNotificationDateInterpretation is included for older versions
-// and is safely ignored by v17+.
+// ROOT CAUSE OF "Missing type parameter":
+// The Android plugin serializes notifications to SharedPreferences.
+// On every zonedSchedule call it first calls loadScheduledNotifications()
+// which deserializes ALL previously saved notifications. If any were saved
+// by an older build with a different format, it throws RuntimeException
+// at deserialization — BEFORE your Dart try/catch runs.
+//
+// THE REAL FIX: cancelAll() must run BEFORE the very first zonedSchedule call.
+// Previously init() was fire-and-forgotten from the VM (unawaited), so it
+// hadn't completed by the time _TestNotifButton called scheduleClassReminder.
+// The guard below forces init() to always complete before any schedule call.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -19,12 +27,22 @@ class NotificationService {
   bool _notifGranted = false;
   bool _alarmGranted = false;
 
+  // Tracks the in-progress init Future so concurrent callers await the
+  // same Future instead of running init() twice simultaneously.
+  Future<bool>? _initFuture;
+
   bool get _supported => !kIsWeb;
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
-  Future<bool> init() async {
-    if (!_supported) return false;
+  Future<bool> init() {
+    if (!_supported) return Future.value(false);
+    // Return the cached future if init is already running or complete.
+    _initFuture ??= _doInit();
+    return _initFuture!;
+  }
+
+  Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -39,8 +57,8 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // Wipe stale SharedPreferences from old builds — prevents
-    // "Missing type parameter" deserialization crash on next schedule call.
+    // CRITICAL: wipe stale SharedPreferences from older builds BEFORE any
+    // schedule call. This prevents the loadScheduledNotifications crash.
     try {
       await _plugin.cancelAll();
       debugPrint('[NotificationService] Cleared stale notifications on init.');
@@ -75,7 +93,7 @@ class NotificationService {
 
   Future<bool> hasPermission() async {
     if (!_supported) return false;
-    if (!_initialized) await init();
+    await init(); // always await — ensures cancelAll() ran first
 
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<
@@ -102,7 +120,7 @@ class NotificationService {
     required tz.TZDateTime when,
   }) async {
     if (!_supported) return;
-    if (!_initialized) await init();
+    await init(); // ALWAYS await — this is the key fix
 
     if (!_notifGranted) {
       debugPrint('[NotificationService] No permission — skipping id=$id');
@@ -203,6 +221,6 @@ class NotificationService {
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
-    debugPrint('[NotificationService] Tapped notification id=${response.id}');
+    debugPrint('[NotificationService] Tapped id=${response.id}');
   }
 }

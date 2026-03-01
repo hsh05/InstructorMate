@@ -83,9 +83,12 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
-    // Fire-and-forget — don't block UI on notification init.
-    // ignore: unawaited_futures
-    _initNotifications();
+    // Awaited — cancelAll() inside NotificationService.init() MUST complete
+    // before any scheduleClassReminder call (including the Test button).
+    // Fire-and-forget caused the "Missing type parameter" crash because
+    // init() hadn't finished clearing SharedPreferences when the user
+    // tapped the test button.
+    await _initNotifications();
   }
 
   // ── Open workspace ────────────────────────────────────────────────────────
