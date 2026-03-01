@@ -168,7 +168,6 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
       debugPrint('[NotificationService] Scheduled (exact) id=$id at $when');
       return;
@@ -200,7 +199,6 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
       debugPrint('[NotificationService] Scheduled (inexact) id=$id at $when');
     } catch (e) {
