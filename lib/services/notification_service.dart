@@ -142,7 +142,7 @@ class NotificationService {
         body,
         when,
         details,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.alarmClock,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         // NO matchDateTimeComponents — intentionally one-shot
@@ -162,7 +162,7 @@ class NotificationService {
             body,
             when,
             details,
-            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            androidScheduleMode: AndroidScheduleMode.alarmClock,
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
             // NO matchDateTimeComponents — intentionally one-shot
