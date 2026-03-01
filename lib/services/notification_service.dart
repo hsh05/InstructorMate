@@ -1,16 +1,18 @@
 // lib/services/notification_service.dart
 //
-// ROOT CAUSE OF "Missing type parameter":
-// The Android plugin serializes notifications to SharedPreferences.
-// On every zonedSchedule call it first calls loadScheduledNotifications()
-// which deserializes ALL previously saved notifications. If any were saved
-// by an older build with a different format, it throws RuntimeException
-// at deserialization — BEFORE your Dart try/catch runs.
+// FINAL FIX — "Missing type parameter" root cause:
 //
-// THE REAL FIX: cancelAll() must run BEFORE the very first zonedSchedule call.
-// Previously init() was fire-and-forgotten from the VM (unawaited), so it
-// hadn't completed by the time _TestNotifButton called scheduleClassReminder.
-// The guard below forces init() to always complete before any schedule call.
+// The crash is at loadScheduledNotifications() because SharedPreferences
+// contains notifications saved WITHOUT matchDateTimeComponents (one-shot type)
+// but the plugin tries to deserialize them as repeating (dayOfWeekAndTime type).
+// The type mismatch throws RuntimeException("Missing type parameter") in Java.
+//
+// Three things must ALL be true simultaneously:
+//   1. cancelAll() wipes stale SharedPreferences BEFORE any zonedSchedule call
+//   2. matchDateTimeComponents is ALWAYS passed (repeating weekly notifications)
+//   3. init() is always awaited before scheduleClassReminder is called
+//
+// All three are now guaranteed.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -27,8 +29,7 @@ class NotificationService {
   bool _notifGranted = false;
   bool _alarmGranted = false;
 
-  // Tracks the in-progress init Future so concurrent callers await the
-  // same Future instead of running init() twice simultaneously.
+  // Single shared Future — concurrent callers get the same one.
   Future<bool>? _initFuture;
 
   bool get _supported => !kIsWeb;
@@ -37,7 +38,6 @@ class NotificationService {
 
   Future<bool> init() {
     if (!_supported) return Future.value(false);
-    // Return the cached future if init is already running or complete.
     _initFuture ??= _doInit();
     return _initFuture!;
   }
@@ -57,8 +57,9 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // CRITICAL: wipe stale SharedPreferences from older builds BEFORE any
-    // schedule call. This prevents the loadScheduledNotifications crash.
+    // Wipe ALL previously saved notifications from SharedPreferences.
+    // Must happen before any zonedSchedule call — this is what prevents
+    // the "Missing type parameter" deserialization crash.
     try {
       await _plugin.cancelAll();
       debugPrint('[NotificationService] Cleared stale notifications on init.');
@@ -93,7 +94,7 @@ class NotificationService {
 
   Future<bool> hasPermission() async {
     if (!_supported) return false;
-    await init(); // always await — ensures cancelAll() ran first
+    await init();
 
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<
@@ -120,7 +121,7 @@ class NotificationService {
     required tz.TZDateTime when,
   }) async {
     if (!_supported) return;
-    await init(); // ALWAYS await — this is the key fix
+    await init(); // always await — ensures cancelAll() completed first
 
     if (!_notifGranted) {
       debugPrint('[NotificationService] No permission — skipping id=$id');
@@ -168,6 +169,10 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
+        // REQUIRED: tells the plugin this is a repeating weekly notification.
+        // Missing this = wrong serialized type = "Missing type parameter" crash
+        // when any subsequent zonedSchedule call loads SharedPreferences.
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
       debugPrint('[NotificationService] Scheduled (exact) id=$id at $when');
       return;
@@ -199,6 +204,8 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
+        // REQUIRED here too — must match exact attempt's serialized format
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
       debugPrint('[NotificationService] Scheduled (inexact) id=$id at $when');
     } catch (e) {
