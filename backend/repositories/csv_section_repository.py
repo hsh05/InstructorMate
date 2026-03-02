@@ -24,7 +24,7 @@ class CsvSectionRepository:
             writer = csv.DictWriter(
                 f,
                 fieldnames=[
-                    "section_id", "workspace_id", "name", "instructor_name",
+                    "section_id", "workspace_id", "name",
                     "location", "days", "start_time", "end_time", "timezone", "reminder_minutes",
                 ],
             )
@@ -38,7 +38,6 @@ class CsvSectionRepository:
                 "section_id":       section_data["section_id"],
                 "workspace_id":     workspace_id,
                 "name":             section_data.get("name", ""),
-                "instructor_name":  section_data.get("instructor_name", ""),
                 "location":         section_data.get("location", ""),
                 "days":             ",".join(days) if isinstance(days, list) else days,
                 "start_time":       schedule.get("start_time", ""),
@@ -65,7 +64,6 @@ class CsvSectionRepository:
                         "section_id":      row.get("section_id", ""),
                         "workspace_id":    row.get("workspace_id", ""),
                         "name":            row.get("name", ""),
-                        "instructor_name": row.get("instructor_name", ""),
                         "location":        row.get("location", ""),
                         "schedule": {
                             "days":             days,

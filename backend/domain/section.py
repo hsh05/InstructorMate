@@ -8,14 +8,12 @@ class Section:
         section_id: str,
         workspace_id: str,
         name: str,
-        instructor_name: str,
         location: str,
         schedule: Schedule,
     ):
         self.section_id = section_id
         self.workspace_id = workspace_id
         self.name = name
-        self.instructor_name = instructor_name
         self.location = location
         self.schedule = schedule
 
@@ -23,7 +21,6 @@ class Section:
         return {
             "section_id": self.section_id,
             "name": self.name,
-            "instructor_name": self.instructor_name,
             "location": self.location,
             "schedule": {
                 "days": self.schedule.days,

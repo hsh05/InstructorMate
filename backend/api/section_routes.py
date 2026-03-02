@@ -35,7 +35,6 @@ class ScheduleRequest(BaseModel):
 
 class SectionCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Section name is required")
-    instructor_name: str = ""
     location: str = ""
     schedule: ScheduleRequest = Field(default_factory=ScheduleRequest)
 

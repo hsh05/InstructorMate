@@ -25,7 +25,6 @@ class SectionService:
         section_data = {
             "section_id": str(uuid.uuid4()),
             "name": data.get("name", ""),
-            "instructor_name": data.get("instructor_name", ""),
             "location": data.get("location", ""),
             "schedule": {
                 "days": schedule_data.get("days", []),

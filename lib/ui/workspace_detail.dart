@@ -551,7 +551,11 @@ String? _validateField(String key, String value) {
 const _numericKeys = {'allow_validation', 'capacity', 'max_students'};
 const _officeHoursPair = {'office_hours_start', 'office_hours_end'};
 
-class _InfoTabState extends State<_InfoTab> {
+class _InfoTabState extends State<_InfoTab>
+    with AutomaticKeepAliveClientMixin<_InfoTab> {
+  @override
+  bool get wantKeepAlive => true;
+
   final Set<String> _editing = {};
   final Map<String, String?> _errors = {};
   bool _saving = false;
@@ -677,6 +681,7 @@ class _InfoTabState extends State<_InfoTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
     final hasEdits = _editing.isNotEmpty;
 
     final List<_FieldGroup> groups = [];
@@ -1209,11 +1214,7 @@ class _TimePickerFieldState extends State<_TimePickerField> {
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
-      // Use input (keyboard) mode on web/desktop — the clock dial is fiddly
-      // with a mouse and doesn't let you type directly.
-      initialEntryMode: kIsWeb
-          ? TimePickerEntryMode.input
-          : TimePickerEntryMode.dial,
+      initialEntryMode: TimePickerEntryMode.input,
     );
 
     if (picked != null) {
@@ -1403,8 +1404,6 @@ class _SectionsTabState extends State<_SectionsTab> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (!kIsWeb && ws.sections.isNotEmpty) _TestNotifButton(ws: ws),
-              const SizedBox(width: 8),
               if (!_showForm)
                 _PillButton(
                   label: '+ Add Section',
@@ -2882,98 +2881,6 @@ class _TypingIndicator extends StatelessWidget {
   );
 }
 
-// ─── Test notification button ──────────────────────────────────────────────────
-class _TestNotifButtonState extends State<_TestNotifButton> {
-  bool _sending = false;
-
-  Future<void> _sendTest() async {
-    if (_sending) return;
-    setState(() => _sending = true);
-
-    try {
-      // 1️⃣ Ensure plugin initialized
-      final granted = await NotificationService.instance.hasPermission();
-
-      if (!granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Notifications permission not granted'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      // 2️⃣ Show immediate notification (NO scheduling)
-      await NotificationService.instance.showImmediateTest();
-
-      // 3️⃣ Schedule one 30 seconds later
-      await NotificationService.instance.scheduleClassReminder(
-        id: 99999,
-        title: '⏰ Scheduled Test — ${widget.ws.title}',
-        body: 'If you see this after 30s, scheduling works.',
-        when: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 30)),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🔔 Immediate test shown. Press Home — scheduled in 30 seconds.',
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 6),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: _DS.accentSoft,
-    borderRadius: _DS.r20,
-    child: InkWell(
-      onTap: _sendTest,
-      borderRadius: _DS.r20,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _sending
-                  ? Icons.hourglass_top_rounded
-                  : Icons.notifications_active_rounded,
-              color: _DS.accent,
-              size: 13,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              _sending ? 'Sending…' : 'Test',
-              style: const TextStyle(
-                color: _DS.accent,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 // ── Section schedule time picker chip ─────────────────────────────────────────
 // Wraps a TextEditingController and shows the OS/web time picker on tap.
 // Stateful so the chip label refreshes immediately after a pick without
@@ -3016,9 +2923,7 @@ class _SectionTimePickerState extends State<_SectionTimePicker> {
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
-      initialEntryMode: kIsWeb
-          ? TimePickerEntryMode.input
-          : TimePickerEntryMode.dial,
+      initialEntryMode: TimePickerEntryMode.input,
     );
     if (picked != null) {
       widget.ctrl.text =
@@ -3238,13 +3143,4 @@ class _ChatMsg {
   const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
-}
-
-class _TestNotifButton extends StatefulWidget {
-  const _TestNotifButton({required this.ws});
-
-  final Workspace ws;
-
-  @override
-  State<_TestNotifButton> createState() => _TestNotifButtonState();
 }
