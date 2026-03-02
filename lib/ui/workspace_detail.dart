@@ -1355,7 +1355,7 @@ class _SectionsTabState extends State<_SectionsTab> {
   final _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
-  final _instructorCtrl = TextEditingController();
+
   final _startCtrl = TextEditingController(text: '09:00');
   final _endCtrl = TextEditingController(text: '10:15');
   bool _saving = false;
@@ -1364,7 +1364,7 @@ class _SectionsTabState extends State<_SectionsTab> {
     _editingSection = s;
     _nameCtrl.text = s.name;
     _locationCtrl.text = s.location;
-    _instructorCtrl.text = s.instructorName;
+
     _startCtrl.text = s.schedule.startTime;
     _endCtrl.text = s.schedule.endTime;
     _draft.days = List<String>.from(s.schedule.days);
@@ -1377,7 +1377,7 @@ class _SectionsTabState extends State<_SectionsTab> {
     _editingSection = null;
     _nameCtrl.text = '';
     _locationCtrl.text = '';
-    _instructorCtrl.text = '';
+
     _startCtrl.text = '09:00';
     _endCtrl.text = '10:15';
     _draft.days = const [];
@@ -1386,13 +1386,7 @@ class _SectionsTabState extends State<_SectionsTab> {
 
   @override
   void dispose() {
-    for (final c in [
-      _nameCtrl,
-      _locationCtrl,
-      _instructorCtrl,
-      _startCtrl,
-      _endCtrl,
-    ])
+    for (final c in [_nameCtrl, _locationCtrl, _startCtrl, _endCtrl])
       c.dispose();
     super.dispose();
   }
@@ -1532,12 +1526,6 @@ class _SectionsTabState extends State<_SectionsTab> {
           ),
           const SizedBox(height: 10),
           _FormField(
-            ctrl: _instructorCtrl,
-            label: 'Instructor',
-            icon: Icons.person_rounded,
-          ),
-          const SizedBox(height: 10),
-          _FormField(
             ctrl: _locationCtrl,
             label: 'Location / Room',
             icon: Icons.location_on_rounded,
@@ -1655,7 +1643,6 @@ class _SectionsTabState extends State<_SectionsTab> {
     _draft
       ..name = _nameCtrl.text.trim()
       ..location = _locationCtrl.text.trim()
-      ..instructorName = _instructorCtrl.text.trim()
       ..startTime = _startCtrl.text.trim()
       ..endTime = _endCtrl.text.trim()
       // FIX: trim each day so CSV round-trips ("Mon, Tue" -> [" Tue"]) don't

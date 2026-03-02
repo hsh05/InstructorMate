@@ -1,85 +1,60 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+package com.example.instructor_mate
 
-    <!-- Internet -->
-    <uses-permission android:name="android.permission.INTERNET"/>
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
-    <!-- Required for Android 13+ notifications -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+class MainActivity : FlutterActivity() {
 
-    <!-- Required for exact alarms (Android 12+) -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    private val CHANNEL = "com.instructormate/battery"
 
-    <!-- Required so scheduled notifications survive device reboot -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
 
-    <!-- Required for vibration on notifications -->
-    <uses-permission android:name="android.permission.VIBRATE"/>
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
 
-    <!--
-        THE SAMSUNG FIX:
-        Allows the app to request Doze/battery optimization exemption.
-        Without this, Samsung Device Care suspends AlarmManager alarms within
-        seconds of the app being backgrounded, even with USE_EXACT_ALARM set.
-        This permission enables the system whitelist dialog in MainActivity.kt.
-        The user taps "Allow" once — exemption is then permanent.
-    -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+                "requestIgnoreBatteryOptimizations" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val pm = getSystemService(POWER_SERVICE) as PowerManager
+                        val pkgName = packageName
+                        if (!pm.isIgnoringBatteryOptimizations(pkgName)) {
+                            val intent = Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                            ).apply {
+                                data = Uri.parse("package:$pkgName")
+                            }
+                            startActivity(intent)
+                            result.success("requested")
+                        } else {
+                            result.success("already_exempt")
+                        }
+                    } else {
+                        result.success("not_required")
+                    }
+                }
 
-    <application
-        android:label="instructor_mate"
-        android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+                "openBatterySettings" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        startActivity(
+                            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        )
+                        result.success(null)
+                    } else {
+                        result.success(null)
+                    }
+                }
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
-
-            <meta-data
-                android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme"/>
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
-
-        <!-- Fires scheduled notifications when the alarm triggers -->
-        <receiver
-            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
-            android:exported="false"/>
-
-        <!-- Reschedules notifications after device reboot -->
-        <receiver
-            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
-                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
-            </intent-filter>
-        </receiver>
-
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2"/>
-
-    </application>
-
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
-        </intent>
-    </queries>
-
-</manifest>
+                else -> result.notImplemented()
+            }
+        }
+    }
+}
