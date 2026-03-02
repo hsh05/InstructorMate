@@ -143,12 +143,17 @@ class NotificationScheduler {
       if (++safety > 7) break;
     }
 
-    // Subtract reminder offset
+    // Subtract reminder offset to get the fire time
     var fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
 
-    // If already past, jump to next week
+    // BUG FIX: If the fire time has already passed, advance the CLASS time
+    // by 7 days first, then recompute fireTime. The old code advanced fireTime
+    // directly, which is correct in isolation but was applied before the
+    // per-week loop below — causing week 0 to be skipped and all subsequent
+    // weeks to be one week too far into the future.
     if (fireTime.isBefore(now)) {
-      fireTime = fireTime.add(const Duration(days: 7));
+      classTime = classTime.add(const Duration(days: 7));
+      fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
     }
 
     return fireTime;

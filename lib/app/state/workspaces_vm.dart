@@ -94,6 +94,9 @@ class WorkspacesViewModel extends ChangeNotifier {
           sectionStudentCounts.putIfAbsent(s.id, () => s.studentsCount);
         }
       }
+      // FIX: reschedule notifications so any sections added/changed since
+      // last launch are immediately reflected without requiring a full reload.
+      await rescheduleNotificationsForCurrent();
     } catch (e) {
       error = e.toString();
     } finally {

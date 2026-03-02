@@ -135,6 +135,10 @@ class NotificationService {
     // The scheduler calls this multiple times (once per week) to cover
     // upcoming occurrences. This avoids the repeating notification
     // serialization format that causes "Missing type parameter" crashes.
+
+    // Ensure plugin is fully initialised before scheduling (Bug 3 fix).
+    await init();
+
     try {
       await _plugin.zonedSchedule(
         id,
@@ -162,10 +166,12 @@ class NotificationService {
             body,
             when,
             details,
-            androidScheduleMode: AndroidScheduleMode.alarmClock,
+            // BUG FIX: was erroneously using alarmClock (exact) here too —
+            // must use inexactAllowWhileIdle so this actually differs from
+            // the primary attempt and doesn't throw the same exception again.
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
-            // NO matchDateTimeComponents — intentionally one-shot
           );
           debugPrint('[NS] Scheduled inexact id=$id');
         } catch (e2) {
