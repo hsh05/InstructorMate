@@ -8,30 +8,23 @@
 
     <!-- Required for exact alarms (Android 12+) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-
-    <!--
-        FIX 1: USE_EXACT_ALARM — added for Android 13+ (API 33+).
-        SCHEDULE_EXACT_ALARM alone is no longer sufficient on API 33+;
-        USE_EXACT_ALARM grants exact alarms unconditionally without a
-        user-facing permission dialog. Include both so the app works
-        across Android 12 and 13+.
-    -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
-    <!--
-        FIX 2: RECEIVE_BOOT_COMPLETED — required so the plugin can
-        re-schedule notifications after the device reboots. Without this,
-        all scheduled class reminders vanish on every restart.
-    -->
+    <!-- Required so scheduled notifications survive device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <!--
-        FIX 3: VIBRATE — required for Importance.HIGH notifications to
-        vibrate on Android. Without it the notification still shows but
-        silently skips vibration, which can also cause scheduling issues
-        on some OEM skins.
-    -->
+    <!-- Required for vibration on notifications -->
     <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <!--
+        THE SAMSUNG FIX:
+        Allows the app to request Doze/battery optimization exemption.
+        Without this, Samsung Device Care suspends AlarmManager alarms within
+        seconds of the app being backgrounded, even with USE_EXACT_ALARM set.
+        This permission enables the system whitelist dialog in MainActivity.kt.
+        The user taps "Allow" once — exemption is then permanent.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
         android:label="instructor_mate"
@@ -59,12 +52,12 @@
             </intent-filter>
         </activity>
 
-        <!--
-            FIX 4: BroadcastReceiver for boot — re-schedules notifications
-            after device reboot. Required by flutter_local_notifications.
-            Without this receiver the RECEIVE_BOOT_COMPLETED permission above
-            does nothing.
-        -->
+        <!-- Fires scheduled notifications when the alarm triggers -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
+
+        <!-- Reschedules notifications after device reboot -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
             android:exported="false">
@@ -75,18 +68,6 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
-
-        <!--
-            FIX 5: BroadcastReceiver for firing scheduled notifications.
-            This is the receiver the plugin uses to actually deliver the
-            alarm when the scheduled time arrives. Missing this = notifications
-            are scheduled but never fire (the "Missing type parameter" crash
-            occurs during registration when this receiver is absent on some
-            Android versions).
-        -->
-        <receiver
-            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
-            android:exported="false"/>
 
         <meta-data
             android:name="flutterEmbedding"

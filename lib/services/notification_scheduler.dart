@@ -71,11 +71,30 @@ class NotificationScheduler {
   }) async {
     final sch = section.schedule;
 
+    // FIX: log clearly when skipping so you can see it in the debug console
+    // instead of silently returning with no trace.
+    if (sch.startTime.isEmpty) {
+      debugPrint(
+        '[Scheduler] SKIP section "${section.name}" — startTime is empty. '
+        'Edit the section and set a start time.',
+      );
+      return;
+    }
     final timeParts = sch.startTime.split(':');
-    if (timeParts.length < 2) return;
+    if (timeParts.length < 2) {
+      debugPrint(
+        '[Scheduler] SKIP section "${section.name}" — bad startTime format: "${sch.startTime}"',
+      );
+      return;
+    }
     final hour = int.tryParse(timeParts[0]);
     final minute = int.tryParse(timeParts[1]);
-    if (hour == null || minute == null) return;
+    if (hour == null || minute == null) {
+      debugPrint(
+        '[Scheduler] SKIP section "${section.name}" — non-numeric time: "${sch.startTime}"',
+      );
+      return;
+    }
 
     tz.Location location;
     try {
@@ -92,8 +111,17 @@ class NotificationScheduler {
     final friendlyTime = ScheduleUtils.formatTime(sch.startTime);
 
     for (final day in sch.days) {
-      final weekday = ScheduleUtils.weekdayFor(day);
-      if (weekday == null) continue;
+      // FIX: trim day strings — CSV round-trips can introduce leading spaces
+      // e.g. "Mon, Tue" split by "," gives [" Tue"] which weekdayFor() won't match.
+      final dayTrimmed = day.trim();
+      final weekday = ScheduleUtils.weekdayFor(dayTrimmed);
+      if (weekday == null) {
+        debugPrint(
+          '[Scheduler] SKIP day "$day" in section "${section.name}" — unrecognised. '
+          'Expected Mon/Tue/Wed/Thu/Fri/Sat/Sun.',
+        );
+        continue;
+      }
 
       // Find the next occurrence of this weekday
       final firstOccurrence = _nextOccurrence(
@@ -143,17 +171,12 @@ class NotificationScheduler {
       if (++safety > 7) break;
     }
 
-    // Subtract reminder offset to get the fire time
+    // Subtract reminder offset
     var fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
 
-    // BUG FIX: If the fire time has already passed, advance the CLASS time
-    // by 7 days first, then recompute fireTime. The old code advanced fireTime
-    // directly, which is correct in isolation but was applied before the
-    // per-week loop below — causing week 0 to be skipped and all subsequent
-    // weeks to be one week too far into the future.
+    // If already past, jump to next week
     if (fireTime.isBefore(now)) {
-      classTime = classTime.add(const Duration(days: 7));
-      fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
+      fireTime = fireTime.add(const Duration(days: 7));
     }
 
     return fireTime;

@@ -1657,7 +1657,13 @@ class _SectionsTabState extends State<_SectionsTab> {
       ..location = _locationCtrl.text.trim()
       ..instructorName = _instructorCtrl.text.trim()
       ..startTime = _startCtrl.text.trim()
-      ..endTime = _endCtrl.text.trim();
+      ..endTime = _endCtrl.text.trim()
+      // FIX: trim each day so CSV round-trips ("Mon, Tue" -> [" Tue"]) don't
+      // produce space-prefixed strings that ScheduleUtils.weekdayFor() can't match.
+      ..days = _draft.days
+          .map((d) => d.trim())
+          .where((d) => d.isNotEmpty)
+          .toList();
 
     if (_draft.name.isEmpty) {
       widget.onError('Section name is required.');
@@ -1665,6 +1671,12 @@ class _SectionsTabState extends State<_SectionsTab> {
     }
     if (_draft.days.isEmpty) {
       widget.onError('Select at least one day.');
+      return;
+    }
+    // FIX: startTime is required — without it the scheduler silently skips
+    // this section and no notifications are ever fired for it.
+    if (_draft.startTime.isEmpty) {
+      widget.onError('Start time is required for notifications to work.');
       return;
     }
 

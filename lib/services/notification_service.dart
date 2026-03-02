@@ -1,6 +1,7 @@
 // lib/services/notification_service.dart
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -10,6 +11,11 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+
+  // Native method channel — used to request battery optimization exemption.
+  // This is the fix for Samsung Device Care killing AlarmManager alarms
+  // within seconds of the user pressing the home button.
+  static const _channel = MethodChannel('com.instructormate/battery');
 
   bool _initialized = false;
   bool _notifGranted = false;
@@ -42,16 +48,10 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // Cancel all on init to clear any stale entries.
-    // Safe because we no longer use matchDateTimeComponents — all
-    // notifications are simple one-shot (type=1) which never causes
-    // the "Missing type parameter" deserialization crash.
-    try {
-      await _plugin.cancelAll();
-      debugPrint('[NS] Init: cleared existing notifications.');
-    } catch (e) {
-      debugPrint('[NS] Init cancelAll failed (non-fatal): $e');
-    }
+    // NOTE: Do NOT call cancelAll() here.
+    // Calling it on every init wipes all scheduled alarms before
+    // rescheduleAll() has re-added them. The scheduler handles its own
+    // cancelAll() immediately before re-adding, which is the right place.
 
     _initialized = true;
 
@@ -65,12 +65,39 @@ class NotificationService {
           await androidImpl.requestNotificationsPermission() ?? false;
       _alarmGranted = await androidImpl.requestExactAlarmsPermission() ?? false;
       debugPrint('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
+
+      // REQUEST BATTERY OPTIMIZATION EXEMPTION.
+      // Without this, Samsung Device Care suspends AlarmManager alarms
+      // within seconds of the app being backgrounded. The system shows a
+      // one-time dialog — user taps "Allow" and it persists permanently.
+      await _requestBatteryOptimizationExemption();
     } else {
       _notifGranted = didInit ?? true;
       _alarmGranted = _notifGranted;
     }
 
     return _notifGranted;
+  }
+
+  // ── Battery optimization exemption ────────────────────────────────────────
+
+  Future<void> _requestBatteryOptimizationExemption() async {
+    try {
+      await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
+      debugPrint('[NS] Battery optimization exemption requested.');
+    } catch (e) {
+      debugPrint('[NS] Battery exemption request failed (non-fatal): $e');
+    }
+  }
+
+  /// Opens the battery settings page so the user can manually whitelist the
+  /// app if they dismissed the initial prompt. Wire to a settings button.
+  Future<void> openBatterySettings() async {
+    try {
+      await _channel.invokeMethod('openBatterySettings');
+    } catch (e) {
+      debugPrint('[NS] openBatterySettings failed: $e');
+    }
   }
 
   // ── Permission check ──────────────────────────────────────────────────────
@@ -116,13 +143,13 @@ class NotificationService {
         'class_reminders',
         'Class Reminders',
         channelDescription: 'Reminders before class starts',
-        importance: Importance.max, // max = forces heads-up banner
-        priority: Priority.max, // max = shows over other notifications
+        importance: Importance.max,
+        priority: Priority.max,
         fullScreenIntent: false,
         playSound: true,
         enableVibration: true,
         enableLights: true,
-        visibility: NotificationVisibility.public, // shows on lock screen
+        visibility: NotificationVisibility.public,
       ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,
@@ -130,14 +157,6 @@ class NotificationService {
         presentSound: true,
       ),
     );
-
-    // One-shot scheduling — NO matchDateTimeComponents.
-    // The scheduler calls this multiple times (once per week) to cover
-    // upcoming occurrences. This avoids the repeating notification
-    // serialization format that causes "Missing type parameter" crashes.
-
-    // Ensure plugin is fully initialised before scheduling (Bug 3 fix).
-    await init();
 
     try {
       await _plugin.zonedSchedule(
@@ -149,12 +168,10 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.alarmClock,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        // NO matchDateTimeComponents — intentionally one-shot
       );
       debugPrint('[NS] Scheduled id=$id at $when');
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      // If exact alarm is blocked by OS, fall back to inexact
       if (msg.contains('exact') ||
           msg.contains('schedule_exact') ||
           msg.contains('platformexception')) {
@@ -166,9 +183,6 @@ class NotificationService {
             body,
             when,
             details,
-            // BUG FIX: was erroneously using alarmClock (exact) here too —
-            // must use inexactAllowWhileIdle so this actually differs from
-            // the primary attempt and doesn't throw the same exception again.
             androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
