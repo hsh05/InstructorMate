@@ -35,7 +35,7 @@ class WorkspaceService:
         extractor: ExtractionService,
         hash_service: PdfHashService,
         # FIX: model is now a parameter, not hardcoded — easier to test/configure
-        converter_model: str = "gpt-4o",
+        converter_model: str = "gpt-5",
     ):
         self.repo          = repo
         self.parser        = parser
@@ -98,7 +98,7 @@ class WorkspaceService:
             result = self.converter.convert(
                 pdf_path=str(tmp_pdf),
                 output_dir=str(ws_dir),
-                template_csv_path="backend/data/workspaces.csv",
+                template_csv_path="backend/templates/default_template.csv",
                 output_base_name="chunks",
             )
 
