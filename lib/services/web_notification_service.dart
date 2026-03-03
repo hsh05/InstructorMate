@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback, debugPrint;
 import '../app/workspace_models.dart';
 import '../utils/schedule_utils.dart';
 
-// Web Audio API access via dart:js_interop (no dart:html needed — works in
-// both legacy and modern Flutter web compilers).
-import 'dart:js_interop';
+// Conditional import: web_audio_impl.dart on web, stub on all other platforms.
+// This keeps dart:js_interop completely invisible to the Android/iOS compiler.
+import 'web_audio_stub.dart' if (dart.library.js_interop) 'web_audio_impl.dart';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 class PendingNotification {
@@ -37,39 +37,6 @@ class PendingNotification {
   }
 }
 
-// ─── Minimal JS interop bindings for Web Audio API ───────────────────────────
-// We only need what's required to synthesize a bell chime.
-
-@JS('AudioContext')
-@staticInterop
-class _AudioContext {
-  external factory _AudioContext();
-}
-
-extension _AudioContextExt on _AudioContext {
-  external JSObject createOscillator();
-  external JSObject createGain();
-  external JSObject get destination;
-  external double get currentTime;
-  external JSPromise resume();
-}
-
-extension _NodeExt on JSObject {
-  // OscillatorNode
-  external set type(JSString v);
-  external JSObject get frequency;
-  // GainNode
-  external JSObject get gain;
-  // AudioParam (frequency / gain)
-  external void setValueAtTime(double value, double time);
-  external void exponentialRampToValueAtTime(double value, double endTime);
-  external void linearRampToValueAtTime(double value, double endTime);
-  // AudioNode
-  external void connect(JSObject destination);
-  external void start([double when]);
-  external void stop([double when]);
-}
-
 // ─── Service ──────────────────────────────────────────────────────────────────
 class WebNotificationService {
   WebNotificationService._();
@@ -82,23 +49,14 @@ class WebNotificationService {
   int get unreadCount => activeNotifications.length;
   VoidCallback? onChanged;
 
-  // ── Audio context — created once, unlocked on first user gesture ───────────
-  _AudioContext? _audioCtx;
-  bool _audioUnlocked = false;
-
-  /// Call this from any tap/click handler (e.g. the bell button onTap).
-  /// Browsers require a user gesture before AudioContext can play sound.
-  /// Once unlocked it stays unlocked for the session.
+  // ── Audio unlock ───────────────────────────────────────────────────────────
+  // Delegates to web_audio_impl.dart on web, no-op stub on Android/iOS.
   void unlockAudio() {
-    if (!kIsWeb || _audioUnlocked) return;
-    try {
-      _audioCtx ??= _AudioContext();
-      _audioCtx!.resume();
-      _audioUnlocked = true;
-      debugPrint('[WebNotif] Audio unlocked');
-    } catch (e) {
-      debugPrint('[WebNotif] Audio unlock failed: $e');
-    }
+    if (!kIsWeb) return;
+    // Calls the conditionally-imported top-level function:
+    //   web_audio_impl.dart on web  → actually unlocks AudioContext
+    //   web_audio_stub.dart on mobile → no-op, never compiled with js_interop
+    unlockWebAudio();
   }
 
   // ── Init / update ──────────────────────────────────────────────────────────
@@ -185,44 +143,6 @@ class WebNotificationService {
     }
   }
 
-  // ── Sound ──────────────────────────────────────────────────────────────────
-
-  /// Plays a gentle 3-note bell chime using the Web Audio API.
-  /// Synthesized entirely in code — no audio file required.
-  /// Notes: E5 (659 Hz) → G#5 (830 Hz) → B5 (988 Hz), each 0.18s apart.
-  void _playBellChime() {
-    if (!kIsWeb || !_audioUnlocked) return;
-    try {
-      final ctx = _audioCtx!;
-      final now = ctx.currentTime;
-
-      // Three ascending bell tones
-      final notes = [659.0, 830.0, 988.0];
-      for (var i = 0; i < notes.length; i++) {
-        final t = now + i * 0.18;
-
-        // Oscillator — sine wave for a clean bell tone
-        final osc = ctx.createOscillator();
-        osc.type = 'sine'.toJS;
-        osc.frequency.setValueAtTime(notes[i], t);
-
-        // Gain envelope: fast attack, slow exponential decay (bell-like)
-        final gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.0, t);
-        gain.gain.linearRampToValueAtTime(0.45, t + 0.01); // 10ms attack
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2); // 1.2s decay
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(t);
-        osc.stop(t + 1.3);
-      }
-      debugPrint('[WebNotif] Bell chime played');
-    } catch (e) {
-      debugPrint('[WebNotif] Sound failed (non-fatal): $e');
-    }
-  }
-
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   static (int, int)? _parseHHmm(String raw) {
@@ -261,9 +181,7 @@ class WebNotificationService {
     }
     var fireAt = classTime.subtract(Duration(minutes: reminderMinutes));
     final secondsPast = now.difference(fireAt).inSeconds;
-    if (secondsPast >= 60) {
-      fireAt = fireAt.add(const Duration(days: 7));
-    }
+    if (secondsPast >= 60) fireAt = fireAt.add(const Duration(days: 7));
     return fireAt;
   }
 
@@ -276,7 +194,7 @@ class WebNotificationService {
     if (already) return;
     debugPrint('[WebNotif] FIRED: ${notif.title}');
     activeNotifications.insert(0, notif);
-    _playBellChime(); // 🔔 play sound
+    if (kIsWeb) playBellChime(); // web-only, stub on mobile
     onChanged?.call();
   }
 }
