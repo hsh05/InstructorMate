@@ -1,14 +1,4 @@
 # backend/services/workspace_service.py
-#
-# FIX: Replaced `print(...)` + `raise` pattern with proper logging.
-#      Previously the service printed a warning then immediately re-raised,
-#      which is redundant — pick one. Now logs at ERROR level then re-raises.
-#
-# FIX: Added type hints throughout so IDEs and mypy can catch issues early.
-#
-# FIX: WorkspaceService no longer hardcodes the converter model string "gpt-5"
-#      inside __init__ — it's now a constructor parameter with a sensible default,
-#      making it testable and configurable without code changes.
 
 import csv
 import logging
@@ -17,9 +7,8 @@ from pathlib import Path
 
 from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
+from domain.workspace_fields import WORKSPACE_FIELD_NAMES
 from repositories.pg_workspace_repository import PgWorkspaceRepository
-from services.file_parser_service import FileParserService
-from services.extraction_service import ExtractionService
 from services.pdf_hash_service import PdfHashService
 from syllabus_converter import SyllabusConverterService
 
@@ -31,17 +20,12 @@ class WorkspaceService:
     def __init__(
         self,
         repo: PgWorkspaceRepository,
-        parser: FileParserService,
-        extractor: ExtractionService,
         hash_service: PdfHashService,
-        # FIX: model is now a parameter, not hardcoded — easier to test/configure
         converter_model: str = "gpt-5",
     ):
-        self.repo          = repo
-        self.parser        = parser
-        self.extractor     = extractor
-        self.hash_service  = hash_service
-        self.converter     = SyllabusConverterService(model=converter_model)
+        self.repo         = repo
+        self.hash_service = hash_service
+        self.converter    = SyllabusConverterService(model=converter_model)
 
     def create_from_file(self, filename: str, content: bytes) -> dict:
         pdf_hash = self.hash_service.compute(content)
@@ -54,13 +38,10 @@ class WorkspaceService:
             logger.info("Duplicate upload detected, returning existing workspace id=%s", existing.workspace_id)
             return {"already_uploaded": True, "workspace": existing}
 
-        text   = self.parser.extract_text(filename, content)
-        fields = self.extractor.extract_fields(text)
-
         workspace = Workspace(
             workspace_id=str(uuid.uuid4()),
             pdf_hash=pdf_hash,
-            fields=fields,
+            fields={name: "" for name in WORKSPACE_FIELD_NAMES},
             status=WorkspaceStatus.DRAFT,
         )
         self.repo.save(workspace)
@@ -71,7 +52,6 @@ class WorkspaceService:
         return {"already_uploaded": False, "workspace": workspace}
 
     def reprocess_pdf(self, workspace_id: str, content: bytes) -> Workspace:
-        """Re-run the converter for an existing workspace."""
         ws = self.repo.get_by_id(workspace_id)
         if ws is None:
             raise FileNotFoundError(f"Workspace '{workspace_id}' not found")
@@ -85,8 +65,6 @@ class WorkspaceService:
         ws.update_fields(updates)
         self.repo.save(ws)
         return ws
-
-    # ── Private ───────────────────────────────────────────────────────────────
 
     def _run_converter(self, workspace_id: str, content: bytes, workspace: Workspace) -> None:
         ws_dir  = self.repo.workspace_dir(workspace_id)
@@ -122,6 +100,5 @@ class WorkspaceService:
                         logger.info("Auto-filled fields %s for workspace=%s", list(updates.keys()), workspace_id)
 
         except Exception as e:
-            # FIX: log at ERROR level (not print) then re-raise — one action, not two
             logger.error("Converter failed for workspace=%s: %s", workspace_id, e)
             raise

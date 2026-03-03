@@ -209,7 +209,7 @@ class SyllabusFieldExtractor:
             "assessment", "grading", "grade", "rubric", "evaluation",
             "office hour", "office hours", "instructor", "email", "contact",
             "schedule", "timeline", "calendar", "weekly", "outline", "topics",
-            "policy", "policies", "attendance", "late", "late work",
+            "policy", "policies", "attendance", "late", "late work","textbook",
             "academic integrity", "plagiarism", "exam", "midterm", "final",
             "quiz", "project", "assignment", "learning outcomes", "objectives",
             "prerequisite", "required text", "textbook",

@@ -10,8 +10,6 @@ from db.database import get_db
 from repositories.pg_workspace_repository import PgWorkspaceRepository
 from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
-from services.extraction_service import ExtractionService
-from services.file_parser_service import FileParserService
 from services.pdf_hash_service import PdfHashService
 from services.workspace_service import WorkspaceService
 from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore
@@ -55,8 +53,6 @@ def get_workspace_service(
 ) -> WorkspaceService:
     return WorkspaceService(
         repo         = workspace_repo,
-        parser       = FileParserService(),
-        extractor    = ExtractionService(),
         hash_service = PdfHashService(),
     )
 
@@ -73,7 +69,7 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     return d
 
 
-# ── Routes (unchanged) ────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/workspaces")
 def list_workspaces(
@@ -160,8 +156,10 @@ async def ask_workspace_question(
         raise HTTPException(status_code=404, detail="Workspace not found")
     chunks_path = workspace_repo.get_chunks_csv_path(workspace_id)
     if not chunks_path.exists():
-        raise HTTPException(status_code=422,
-            detail="Syllabus chunks not found. Re-upload the PDF to regenerate them.")
+        raise HTTPException(
+            status_code=422,
+            detail="Syllabus chunks not found. Re-upload the PDF to regenerate them.",
+        )
     pipeline = AskPipeline(
         store=SyllabusCsvStore(str(chunks_path)),
         retriever=LightweightRetriever(),
