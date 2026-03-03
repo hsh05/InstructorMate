@@ -80,11 +80,18 @@ class WorkspaceService:
                 output_base_name="chunks",
             )
 
+            # ── Save chunks to Postgres ───────────────────────────────────
             chunks_src = Path(result.chunks_csv)
-            chunks_dst = self.repo.get_chunks_csv_path(workspace_id)
-            if chunks_src.exists() and chunks_src != chunks_dst:
-                chunks_src.replace(chunks_dst)
+            if chunks_src.exists():
+                # Save to DB so chunks survive Render restarts
+                self.repo.save_chunks(workspace_id, chunks_src)
+                # Also copy to expected path for AskPipeline file fallback
+                chunks_dst = self.repo.get_chunks_csv_path(workspace_id)
+                if chunks_src != chunks_dst:
+                    import shutil
+                    shutil.copy2(str(chunks_src), str(chunks_dst))
 
+            # ── Auto-fill workspace fields from extracted single row ───────
             single_row_src = Path(result.single_row_csv)
             if single_row_src.exists():
                 with open(single_row_src, newline="", encoding="utf-8") as f:

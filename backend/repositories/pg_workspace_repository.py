@@ -1,8 +1,8 @@
 # backend/repositories/pg_workspace_repository.py
 
+import csv
 import logging
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
 from domain.workspace_fields import WORKSPACE_FIELD_NAMES
-from db.models import Workspace as WorkspaceModel
+from db.models import Workspace as WorkspaceModel, SyllabusChunk as SyllabusChunkModel
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class PgWorkspaceRepository:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Path helpers (kept for PDF/chunks file storage) ───────────────────────
+    # ── Path helpers ──────────────────────────────────────────────────────────
 
     def workspace_dir(self, workspace_id: str) -> Path:
         return self.data_dir / workspace_id
@@ -51,14 +51,12 @@ class PgWorkspaceRepository:
         ).first()
 
         if row:
-            # Update existing
             row.pdf_hash = workspace.pdf_hash
             row.status   = workspace.status.value
             for name in WORKSPACE_FIELD_NAMES:
                 setattr(row, name, workspace.fields.get(name, ""))
             logger.info("Updated workspace id=%s", workspace.workspace_id)
         else:
-            # Insert new
             row = WorkspaceModel(
                 workspace_id = workspace.workspace_id,
                 pdf_hash     = workspace.pdf_hash,
@@ -76,17 +74,50 @@ class PgWorkspaceRepository:
         ).first()
         if not row:
             return False
-
         self.db.delete(row)
         self.db.commit()
 
-        # Remove PDF/chunks files from disk
         ws_dir = self.workspace_dir(workspace_id)
         if ws_dir.exists():
             shutil.rmtree(ws_dir)
             logger.info("Deleted workspace folder for id=%s", workspace_id)
 
         return True
+
+    def save_chunks(self, workspace_id: str, chunks_csv_path: Path) -> None:
+        """Read chunks CSV and save all rows to the syllabus_chunks table.
+        Deletes existing chunks for this workspace first so re-upload is safe."""
+
+        # Delete existing chunks for this workspace
+        self.db.query(SyllabusChunkModel).filter(
+            SyllabusChunkModel.workspace_id == workspace_id
+        ).delete()
+        self.db.commit()
+
+        # Insert new chunks from CSV
+        with open(chunks_csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                chunk = SyllabusChunkModel(
+                    workspace_id = workspace_id,
+                    chunk_index  = int(row.get("chunk_id", 0)),
+                    content      = row.get("text", ""),
+                )
+                self.db.add(chunk)
+
+        self.db.commit()
+        logger.info("Saved chunks to DB for workspace=%s", workspace_id)
+
+    def get_chunks_for_ask(self, workspace_id: str) -> List[dict]:
+        """Load chunks from Postgres for the AskPipeline."""
+        rows = self.db.query(SyllabusChunkModel).filter(
+            SyllabusChunkModel.workspace_id == workspace_id
+        ).order_by(SyllabusChunkModel.chunk_index).all()
+
+        return [
+            {"chunk_id": r.chunk_index, "page": r.chunk_index, "content": r.content}
+            for r in rows
+        ]
 
     # ── Private ───────────────────────────────────────────────────────────────
 

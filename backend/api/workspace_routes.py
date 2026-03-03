@@ -154,37 +154,43 @@ async def ask_workspace_question(
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    chunks_path = workspace_repo.get_chunks_csv_path(workspace_id)
-    if not chunks_path.exists():
-        raise HTTPException(
-            status_code=422,
-            detail="Syllabus chunks not found. Re-upload the PDF to regenerate them.",
+
+    # Try DB chunks first (survives Render restarts)
+    # Fall back to file if DB is empty (local dev)
+    chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
+
+    if chunks_from_db:
+        # Write a temp CSV for AskPipeline to read
+        import tempfile, csv as _csv, os
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
         )
-    pipeline = AskPipeline(
-        store=SyllabusCsvStore(str(chunks_path)),
-        retriever=LightweightRetriever(),
-        llm=SyllabusChatGPT(),
-    )
-    return {"answer": pipeline.run(req.question)}
+        writer = _csv.DictWriter(tmp, fieldnames=["chunk_id", "page", "text"])
+        writer.writeheader()
+        for c in chunks_from_db:
+            writer.writerow({"chunk_id": c["chunk_id"], "page": c["page"], "text": c["content"]})
+        tmp.close()
+        chunks_path = tmp.name
+    else:
+        # Fallback to file
+        chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
+        if not chunks_path_obj.exists():
+            raise HTTPException(
+                status_code=422,
+                detail="Syllabus chunks not found. Re-upload the PDF to regenerate them.",
+            )
+        chunks_path = str(chunks_path_obj)
 
-
-@router.post("/workspaces/{workspace_id}/reupload")
-async def reupload_syllabus(
-    workspace_id: str,
-    file: UploadFile = File(...),
-    workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
-    section_repo:      PgSectionRepository   = Depends(get_section_repo),
-    student_repo:      PgStudentRepository   = Depends(get_student_repo),
-    workspace_service: WorkspaceService       = Depends(get_workspace_service),
-):
-    ws = workspace_repo.get_by_id(workspace_id)
-    if not ws:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    content = await file.read()
     try:
-        workspace_service.reprocess_pdf(workspace_id, content)
-    except Exception as e:
-        logger.error("Reupload failed workspace=%s: %s", workspace_id, e)
-        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {e}")
-    ws = workspace_repo.get_by_id(workspace_id)
-    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
+        pipeline = AskPipeline(
+            store=SyllabusCsvStore(chunks_path),
+            retriever=LightweightRetriever(),
+            llm=SyllabusChatGPT(),
+        )
+        answer = pipeline.run(req.question)
+    finally:
+        # Clean up temp file if we created one
+        if chunks_from_db:
+            os.unlink(chunks_path)
+
+    return {"answer": answer}
