@@ -95,15 +95,9 @@ class NotificationScheduler {
       );
       return;
     }
+    final location = tz.local;
 
-    tz.Location location;
-    try {
-      location = tz.getLocation(sch.timezone.isNotEmpty ? sch.timezone : 'UTC');
-    } catch (_) {
-      location = tz.local;
-    }
-
-    final reminderMinutes = sch.reminderMinutes > 0 ? sch.reminderMinutes : 15;
+    final reminderMinutes = sch.reminderMinutes > 0 ? sch.reminderMinutes : 10;
     final sectionLabel = section.name.isNotEmpty ? section.name : 'Class';
     final locationStr = section.location.isNotEmpty
         ? ' @ ${section.location}'

@@ -9,8 +9,6 @@ import 'package:http_parser/http_parser.dart';
 import '../config/app_config.dart';
 import '../app/workspace_models.dart';
 
-// ── Result types ──────────────────────────────────────────────────────────────
-
 class ImportResult {
   final int imported;
   final String sectionId;
@@ -25,9 +23,6 @@ class ImportWorkspaceResult {
     required this.alreadyUploaded,
   });
 }
-
-// Student is defined in workspace_models.dart — imported above.
-// ── Client ────────────────────────────────────────────────────────────────────
 
 class ApiClient {
   ApiClient({required String baseUrl}) : baseUri = _normalizeBaseUri(baseUrl);
@@ -49,7 +44,7 @@ class ApiClient {
     return baseUri.resolve(p);
   }
 
-  // ── Workspaces ──────────────────────────────────────────────────────────────
+  // ── Workspaces ─────────────────────────────────────────────────────────────
 
   Future<ImportWorkspaceResult> importWorkspace({
     required Uint8List bytes,
@@ -121,6 +116,10 @@ class ApiClient {
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
   }
 
+  // FIX: Returns Workspace by reading it from the create-section response body.
+  // Backend now returns {"section": ..., "workspace": ...} so we avoid a
+  // redundant GET. Falls back to getWorkspace if workspace key is absent
+  // (backwards compatibility with older backend deployments).
   Future<Workspace> createSection(String wid, SectionDraft d) async {
     final resp = await http
         .post(
@@ -129,12 +128,15 @@ class ApiClient {
           body: jsonEncode(d.toJson()),
         )
         .timeout(AppConfig.shortTimeout);
-    // FIX: backend returns 201 Created for new sections, not 200.
-    // Accept both so this works regardless of backend version.
     if (resp.statusCode != 200 && resp.statusCode != 201) {
       throw Exception(_extractDetail(resp));
     }
-    return await getWorkspace(wid);
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    // Use workspace from response if present; otherwise fall back to GET
+    if (map['workspace'] != null) {
+      return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
+    }
+    return getWorkspace(wid);
   }
 
   Future<Workspace> deleteSection(String workspaceId, String sectionId) async {
@@ -238,7 +240,7 @@ class ApiClient {
     return (map['answer'] ?? '').toString();
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   MediaType _contentTypeFor(String filename) {
     final f = filename.toLowerCase();

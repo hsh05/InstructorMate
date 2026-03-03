@@ -144,10 +144,13 @@ class Section {
   }
 }
 
+// lib/app/workspace_models.dart
+// (only the changed parts shown — merge into full file)
+
 class SectionSchedule {
   final List<String> days;
-  final String startTime; // raw HH:mm (24-h)
-  final String endTime; // raw HH:mm (24-h)
+  final String startTime;
+  final String endTime;
   final String timezone;
   final int reminderMinutes;
 
@@ -161,27 +164,41 @@ class SectionSchedule {
 
   factory SectionSchedule.fromJson(Map<String, dynamic> j) {
     final daysRaw = (j['days'] as List?) ?? [];
+
+    // FIX: guard end_time — if it's missing or equals the timezone string,
+    // treat as empty. Previously a missing end_time key fell back to
+    // j['timezone'] in some call paths, causing "UTC" to render as the time.
+    final rawEnd = (j['end_time'] ?? '').toString().trim();
+    final rawStart = (j['start_time'] ?? '').toString().trim();
+    final rawTz = (j['timezone'] ?? 'UTC').toString().trim();
+
     return SectionSchedule(
       days: daysRaw.map((e) => e.toString()).toList(),
-      startTime: (j['start_time'] ?? '').toString(),
-      endTime: (j['end_time'] ?? '').toString(),
-      timezone: (j['timezone'] ?? 'UTC').toString(),
+      startTime: rawStart,
+      // FIX: never let endTime hold a timezone string
+      endTime:
+          (rawEnd == rawTz ||
+              rawEnd.toUpperCase() == 'UTC' &&
+                  rawStart.isNotEmpty &&
+                  rawEnd == rawTz)
+          ? ''
+          : rawEnd,
+      timezone: rawTz,
       reminderMinutes:
           int.tryParse((j['reminder_minutes'] ?? 10).toString()) ?? 10,
     );
   }
 
-  // FIX: Human-readable "8:00 AM – 9:30 AM" using ScheduleUtils
   String get formattedTimeRange {
-    if (startTime.isEmpty && endTime.isEmpty) return '—';
-    final s = ScheduleUtils.formatTime(startTime);
-    final e = ScheduleUtils.formatTime(endTime);
-    if (endTime.isEmpty) return s;
+    final s = startTime.isNotEmpty ? ScheduleUtils.formatTime(startTime) : '';
+    final e = endTime.isNotEmpty ? ScheduleUtils.formatTime(endTime) : '';
+    if (s.isEmpty && e.isEmpty) return '—';
+    if (e.isEmpty) return s;
     return '$s – $e';
   }
 
-  // FIX: 12-h formatted start time for notification body
-  String get formattedStartTime => ScheduleUtils.formatTime(startTime);
+  String get formattedStartTime =>
+      startTime.isNotEmpty ? ScheduleUtils.formatTime(startTime) : '';
 }
 
 /// Draft used when creating or editing a section.

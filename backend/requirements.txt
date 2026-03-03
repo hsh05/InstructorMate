@@ -8,6 +8,7 @@ openai
 pandas
 python-docx
 openpyxl
+psycopg2-binary
 
 
 

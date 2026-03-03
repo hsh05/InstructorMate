@@ -1,51 +1,51 @@
 # backend/api/student_routes.py
-#
-# FIX (Security): No file-type validation — any file was accepted.
-# Now validates content_type against an allowlist of safe MIME types.
-# An attacker uploading an .exe renamed to .csv is now rejected with 415.
-#
-# FIX: Module-level singletons replaced with FastAPI Depends().
-# FIX: Replaced print() with logging.
 
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
-from repositories.csv_student_repository import CsvStudentRepository
-from repositories.csv_workspace_repository import CsvWorkspaceRepository
+from db.database import get_db
+from repositories.pg_workspace_repository import PgWorkspaceRepository
+from repositories.pg_student_repository import PgStudentRepository
 from services.student_service import StudentService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Allowed MIME types for student roster uploads
 _ALLOWED_MIME_TYPES = {
     "text/csv",
     "application/csv",
     "text/plain",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/octet-stream",  # some browsers send this for .xlsx
+    "application/octet-stream",
 }
 
 _ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 
 
-# ── Dependency injection ──────────────────────────────────────────────────────
+# ── Dependency factories ──────────────────────────────────────────────────────
 
-def get_student_service() -> StudentService:
-    workspace_repo = CsvWorkspaceRepository()
-    student_repo   = CsvStudentRepository(workspace_repo)
+def get_workspace_repo(db: Session = Depends(get_db)) -> PgWorkspaceRepository:
+    return PgWorkspaceRepository(db)
+
+
+def get_student_repo(
+    db: Session = Depends(get_db),
+    workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
+) -> PgStudentRepository:
+    return PgStudentRepository(db, workspace_repo)
+
+
+def get_student_service(
+    student_repo: PgStudentRepository = Depends(get_student_repo),
+) -> StudentService:
     return StudentService(student_repo)
 
 
-def get_student_repo() -> CsvStudentRepository:
-    workspace_repo = CsvWorkspaceRepository()
-    return CsvStudentRepository(workspace_repo)
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Routes (unchanged) ────────────────────────────────────────────────────────
 
 @router.post("/workspaces/{workspace_id}/students/import")
 async def import_students(
@@ -54,7 +54,6 @@ async def import_students(
     section_id: Optional[str] = Form(None),
     service: StudentService = Depends(get_student_service),
 ):
-    # FIX: validate file extension
     filename = file.filename or ""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in _ALLOWED_EXTENSIONS:
@@ -89,7 +88,7 @@ async def import_students(
 def list_section_students(
     workspace_id: str,
     section_id: str,
-    repo: CsvStudentRepository = Depends(get_student_repo),
+    repo: PgStudentRepository = Depends(get_student_repo),
 ):
     students = repo.list_by_section(workspace_id, section_id)
     return {"students": students, "count": len(students)}

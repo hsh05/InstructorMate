@@ -94,8 +94,6 @@ class WorkspacesViewModel extends ChangeNotifier {
           sectionStudentCounts.putIfAbsent(s.id, () => s.studentsCount);
         }
       }
-      // FIX: reschedule notifications so any sections added/changed since
-      // last launch are immediately reflected without requiring a full reload.
       await rescheduleNotificationsForCurrent();
     } catch (e) {
       error = e.toString();
@@ -176,6 +174,28 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.updateWorkspaceFields(ws.id, payload);
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  // ── Create section ────────────────────────────────────────────────────────
+
+  Future<void> createSection(SectionDraft draft) async {
+    final ws = _current;
+    if (ws == null) return;
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      // FIX: api.createSection now returns the full updated Workspace directly
+      // from the create response (backend now returns workspace in body).
+      // No separate GET needed.
+      _current = await api.createSection(ws.id, draft);
+      await rescheduleNotificationsForCurrent();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -297,8 +317,6 @@ class WorkspacesViewModel extends ChangeNotifier {
   Future<void> _initNotifications() async {
     if (workspaces.isEmpty) return;
 
-    // Reuse _current if it's one of the loaded workspaces (already has sections).
-    // Only fetch from API for workspaces we don't already have in memory.
     final full = <Workspace>[];
     for (final summary in workspaces) {
       try {
@@ -325,20 +343,40 @@ class WorkspacesViewModel extends ChangeNotifier {
   Future<void> rescheduleNotificationsForCurrent() async {
     final ws = _current;
     if (ws == null) return;
+
     try {
+      final fresh = await api.getWorkspace(ws.id);
+      _current = fresh;
+
       if (kIsWeb) {
-        final full = await api.getWorkspace(ws.id);
-        WebNotificationService.instance.updateWorkspaces([full]);
-      } else {
-        final allFull = <Workspace>[];
-        for (final s in workspaces) {
+        // FIX: rebuild the FULL workspace list for the web ticker.
+        // Previously this passed only [fresh] (one workspace) to updateWorkspaces(),
+        // which meant the ticker stopped watching all other workspaces' sections —
+        // their notifications would silently stop firing after any section edit.
+        final all = <Workspace>[];
+        for (final summary in workspaces) {
           try {
-            allFull.add(s.id == ws.id ? ws : await api.getWorkspace(s.id));
+            if (summary.id == fresh.id) {
+              all.add(fresh); // use the already-fetched fresh copy
+            } else {
+              all.add(await api.getWorkspace(summary.id));
+            }
           } catch (_) {}
         }
-        await NotificationScheduler.rescheduleAll(
-          allFull.isEmpty ? [ws] : allFull,
-        );
+        WebNotificationService.instance.updateWorkspaces(all);
+      } else {
+        // For mobile: reschedule ALL workspaces so no alarms are lost
+        final all = <Workspace>[];
+        for (final summary in workspaces) {
+          try {
+            all.add(
+              summary.id == fresh.id
+                  ? fresh
+                  : await api.getWorkspace(summary.id),
+            );
+          } catch (_) {}
+        }
+        await NotificationScheduler.rescheduleAll(all);
       }
     } catch (e) {
       debugPrint('[VM] reschedule failed: $e');

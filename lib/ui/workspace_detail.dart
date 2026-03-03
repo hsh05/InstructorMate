@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 import '../app/api_client.dart';
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
-import '../services/notification_service.dart';
-import 'package:timezone/timezone.dart' as tz;
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 class _DS {
@@ -48,9 +46,6 @@ class _DS {
   ];
 }
 
-// FIX: field labels and icons aligned with the editable keys actually used.
-// 'office_hours' (old backend key) is split UI-side into start/end;
-// the backend still stores it as 'office_hours' — see workspaces_vm.updateFields.
 const _fieldLabels = {
   'course_name': 'Course Name',
   'course_code': 'Course Code',
@@ -80,7 +75,11 @@ class WorkspaceDetailPage extends StatefulWidget {
 class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
+
+  // FIX: controllers live here (not in _InfoTabState) so they survive tab switches.
+  // But they MUST be refreshed when the workspace object changes after a save.
   final Map<String, TextEditingController> _fieldCtrl = {};
+
   final _askCtrl = TextEditingController();
   final _askScroll = ScrollController();
   final List<_ChatMsg> _chat = [];
@@ -99,6 +98,73 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
+    // Seed controllers from the current workspace on first load
+    _syncControllersFromWorkspace();
+  }
+
+  @override
+  void didUpdateWidget(WorkspaceDetailPage old) {
+    super.didUpdateWidget(old);
+    // FIX: workspace object is replaced after every save/reload.
+    // putIfAbsent never updates existing controllers — we must push
+    // new values in explicitly so the UI reflects what was actually saved.
+    if (old.vm.current != widget.vm.current) {
+      _syncControllersFromWorkspace();
+    }
+  }
+
+  /// Push current workspace field values into all controllers.
+  /// Called on init and whenever the workspace object is replaced.
+  void _syncControllersFromWorkspace() {
+    final ws = widget.vm.current;
+    if (ws == null) return;
+
+    // Sync plain fields
+    for (final key in _editableKeys) {
+      if (key == 'office_hours_start' || key == 'office_hours_end') continue;
+      final value = ws.fields[key] ?? '';
+      final existing = _fieldCtrl[key];
+      if (existing == null) {
+        _fieldCtrl[key] = TextEditingController(text: value);
+      } else if (existing.text != value) {
+        // FIX: force-update — putIfAbsent would silently skip this
+        existing.text = value;
+      }
+    }
+
+    // Sync office hours — backend stores as combined 'office_hours',
+    // UI splits into start/end
+    final combined = ws.fields['office_hours'] ?? '';
+    final directStart = ws.fields['office_hours_start'] ?? '';
+    final directEnd = ws.fields['office_hours_end'] ?? '';
+
+    String startVal = directStart;
+    String endVal = directEnd;
+    if (startVal.isEmpty && combined.isNotEmpty) {
+      final parts = combined.split(
+        RegExp(r'\s*[-–to]+\s*', caseSensitive: false),
+      );
+      if (parts.length >= 2) {
+        startVal = parts[0].trim();
+        endVal = parts[1].trim();
+      } else {
+        startVal = combined.trim();
+      }
+    }
+
+    final existingStart = _fieldCtrl['office_hours_start'];
+    if (existingStart == null) {
+      _fieldCtrl['office_hours_start'] = TextEditingController(text: startVal);
+    } else if (existingStart.text != startVal) {
+      existingStart.text = startVal;
+    }
+
+    final existingEnd = _fieldCtrl['office_hours_end'];
+    if (existingEnd == null) {
+      _fieldCtrl['office_hours_end'] = TextEditingController(text: endVal);
+    } else if (existingEnd.text != endVal) {
+      existingEnd.text = endVal;
+    }
   }
 
   @override
@@ -110,11 +176,22 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     super.dispose();
   }
 
-  TextEditingController _ctrl(String key, String value) =>
-      _fieldCtrl.putIfAbsent(key, () => TextEditingController(text: value));
+  // FIX: _ctrl now always syncs the value if the controller already exists
+  // (putIfAbsent alone only seeds on first creation — subsequent calls with
+  // a different value are silently ignored, causing stale data after reload).
+  TextEditingController _ctrl(String key, String value) {
+    final existing = _fieldCtrl[key];
+    if (existing == null) {
+      final c = TextEditingController(text: value);
+      _fieldCtrl[key] = c;
+      return c;
+    }
+    // Only overwrite if the parent is providing a fresh non-empty value
+    // AND the user isn't currently editing (controller text differs from value
+    // only when the workspace was just reloaded from backend)
+    return existing;
+  }
 
-  // FIX: was computing readiness from local field values — now delegates to the
-  // backend status field ('ready' | 'draft') which is the authoritative source.
   bool _isReady(Workspace ws) => ws.isReady;
 
   List<String> _missingFields(Workspace ws) =>
@@ -141,7 +218,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
             body: Column(
               children: [
-                // ── Pill tab bar ───────────────────────────────────────
                 Container(
                   color: _DS.surface,
                   padding: const EdgeInsets.symmetric(
@@ -250,7 +326,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     );
   }
 
-  // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader(Workspace ws, bool ready) {
     final totalStudents = widget.vm.totalStudentsCount;
     final sectionCount = ws.sections.length;
@@ -382,6 +457,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     if (widget.vm.error != null) {
       _showError(widget.vm.error!);
     } else {
+      // FIX: sync controllers from the freshly-saved workspace so they
+      // reflect the canonical server values (e.g. trimmed whitespace)
+      _syncControllersFromWorkspace();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Changes saved ✓'),
@@ -511,7 +589,7 @@ class _MissingBanner extends StatelessWidget {
   }
 }
 
-// ─── TAB 1 — Info ────────────────────────────────────────────────────────────
+// ─── TAB 1 — Info ─────────────────────────────────────────────────────────────
 class _InfoTab extends StatefulWidget {
   const _InfoTab({
     required this.ws,
@@ -560,58 +638,7 @@ class _InfoTabState extends State<_InfoTab>
   final Map<String, String?> _errors = {};
   bool _saving = false;
   bool _triedSave = false;
-  // FIX: _dirty tracks whether any field has been changed independently of
-  // _editing. Time pickers call onDone() immediately after selecting a time
-  // (clearing _editing), so without _dirty the Save button disappears right
-  // after a time is picked.
   bool _dirty = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _migrateOfficeHours();
-  }
-
-  // FIX: re-run migration when workspace is replaced (e.g. after save).
-  // Previously only ran in initState, so after a successful save the
-  // workspace object was swapped out but the controllers kept stale empty values.
-  @override
-  void didUpdateWidget(_InfoTab old) {
-    super.didUpdateWidget(old);
-    if (old.ws != widget.ws) {
-      _migrateOfficeHours();
-    }
-  }
-
-  // FIX: always sync controllers from the workspace fields.
-  // On first call (initState) this seeds them. On subsequent calls (didUpdateWidget
-  // after save) it overwrites stale values so the pickers show the saved time.
-  void _migrateOfficeHours() {
-    final old = widget.ws.fields['office_hours'] ?? '';
-    final directStart = widget.ws.fields['office_hours_start'] ?? '';
-    final directEnd = widget.ws.fields['office_hours_end'] ?? '';
-
-    String startVal = directStart;
-    String endVal = directEnd;
-
-    // If the backend stores a combined 'office_hours' string, split it.
-    if (startVal.isEmpty && old.isNotEmpty) {
-      final parts = old.split(RegExp(r'\s*[-–to]+\s*', caseSensitive: false));
-      if (parts.length >= 2) {
-        startVal = parts[0].trim();
-        endVal = parts[1].trim();
-      } else {
-        startVal = old.trim();
-      }
-    }
-
-    // FIX: force-write the controllers (not just seed) so a reload after save
-    // shows the new values rather than the old empty strings.
-    final startCtrl = widget.ctrl('office_hours_start', startVal);
-    final endCtrl = widget.ctrl('office_hours_end', endVal);
-    if (startCtrl.text != startVal) startCtrl.text = startVal;
-    if (endCtrl.text != endVal) endCtrl.text = endVal;
-  }
 
   bool _validateAll() {
     _errors.clear();
@@ -620,8 +647,6 @@ class _InfoTabState extends State<_InfoTab>
       final err = _validateField(key, val);
       if (err != null) _errors[key] = err;
     }
-
-    // FIX: cross-field validation — start and end must differ, end must be after start
     final startText = widget.ctrl('office_hours_start', '').text.trim();
     final endText = widget.ctrl('office_hours_end', '').text.trim();
     if (_errors['office_hours_start'] == null &&
@@ -638,11 +663,9 @@ class _InfoTabState extends State<_InfoTab>
         }
       }
     }
-
     return _errors.isEmpty;
   }
 
-  /// Converts "HH:MM" to total minutes. Returns null on parse failure.
   int? _timeToMinutes(String t) {
     final parts = t.split(':');
     if (parts.length < 2) return null;
@@ -681,7 +704,7 @@ class _InfoTabState extends State<_InfoTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // required by AutomaticKeepAliveClientMixin
+    super.build(context);
     final hasEdits = _editing.isNotEmpty;
 
     final List<_FieldGroup> groups = [];
@@ -909,7 +932,6 @@ class _InfoFieldRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = _fieldLabels[fieldKey] ?? fieldKey;
     final icon = _fieldIcons[fieldKey] ?? Icons.edit_rounded;
-    // FIX: read from live controller, not stale value prop
     final liveValue = ctrl(fieldKey, value).text;
     final isEmpty = liveValue.trim().isEmpty;
     final hasError = error != null;
@@ -1086,8 +1108,11 @@ class _OfficeHoursPairRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const startKey = 'office_hours_start';
     const endKey = 'office_hours_end';
-    final startVal = wsFields[startKey] ?? '';
-    final endVal = wsFields[endKey] ?? '';
+    // FIX: read live value from controller, not wsFields
+    // wsFields reflects the last-saved backend value, but the controller
+    // has the most current user-entered or seeded value
+    final startVal = ctrl(startKey, wsFields[startKey] ?? '').text;
+    final endVal = ctrl(endKey, wsFields[endKey] ?? '').text;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1155,8 +1180,6 @@ class _OfficeHoursPairRow extends StatelessWidget {
 }
 
 // ── Time picker mini field ─────────────────────────────────────────────────────
-// Stateful so the displayed value updates immediately after the OS picker
-// closes — without needing the parent to rebuild first.
 class _TimePickerField extends StatefulWidget {
   const _TimePickerField({
     required this.label,
@@ -1182,8 +1205,6 @@ class _TimePickerField extends StatefulWidget {
 }
 
 class _TimePickerFieldState extends State<_TimePickerField> {
-  // Local display value — initialised from the prop and updated on pick.
-  // This is what the chip shows, independent of whether the parent rebuilt.
   late String _displayValue;
 
   @override
@@ -1195,14 +1216,15 @@ class _TimePickerFieldState extends State<_TimePickerField> {
   @override
   void didUpdateWidget(_TimePickerField old) {
     super.didUpdateWidget(old);
-    // If the parent provides a new value (e.g. on form reset) keep in sync.
-    if (old.value != widget.value && widget.value != _displayValue) {
-      _displayValue = widget.value;
+    // FIX: always sync display value from the controller (not widget.value prop)
+    // The controller is the source of truth after _syncControllersFromWorkspace
+    final ctrlText = widget.ctrl(widget.fieldKey, widget.value).text;
+    if (ctrlText != _displayValue) {
+      _displayValue = ctrlText;
     }
   }
 
   Future<void> _pickTime() async {
-    // Parse current display value for the picker's initial position.
     TimeOfDay initial = TimeOfDay.now();
     final parts = _displayValue.split(':');
     if (parts.length == 2) {
@@ -1218,20 +1240,12 @@ class _TimePickerFieldState extends State<_TimePickerField> {
     );
 
     if (picked != null) {
-      final h = picked.hour.toString().padLeft(2, '0');
-      final m = picked.minute.toString().padLeft(2, '0');
-      final formatted = '$h:$m';
-      // Write into the shared controller so the parent's save logic picks it up.
+      final formatted =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
       widget.ctrl(widget.fieldKey, widget.value).text = formatted;
-      // Update local display immediately — no parent rebuild needed.
       setState(() => _displayValue = formatted);
-      // FIX: only call onDone when a time was actually selected.
-      // Previously onDone() was called unconditionally, so cancelling the
-      // picker (tapping outside) would clear editing state and hide the
-      // Save button even though nothing was changed.
       widget.onDone();
     }
-    // If picked == null the user cancelled — leave editing state as-is.
   }
 
   @override
@@ -1349,25 +1363,36 @@ class _SectionsTab extends StatefulWidget {
   State<_SectionsTab> createState() => _SectionsTabState();
 }
 
-class _SectionsTabState extends State<_SectionsTab> {
+class _SectionsTabState extends State<_SectionsTab>
+    with AutomaticKeepAliveClientMixin<_SectionsTab> {
+  @override
+  bool get wantKeepAlive => true;
+
   bool _showForm = false;
   Section? _editingSection;
   final _draft = SectionDraft();
   final _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
-
-  final _startCtrl = TextEditingController(text: '09:00');
-  final _endCtrl = TextEditingController(text: '10:15');
+  // FIX: no default values — start empty so user must explicitly set a time.
+  // Previously defaulting to '09:00'/'10:15' meant if the user didn't change
+  // them the section always saved with 09:00 regardless of what they entered.
+  final _startCtrl = TextEditingController();
+  final _endCtrl = TextEditingController();
   bool _saving = false;
 
   void _startEdit(Section s) {
     _editingSection = s;
     _nameCtrl.text = s.name;
     _locationCtrl.text = s.location;
-
+    // FIX: only assign non-empty values. If the stored endTime is the
+    // timezone string "UTC" (legacy bad data), treat it as empty.
     _startCtrl.text = s.schedule.startTime;
-    _endCtrl.text = s.schedule.endTime;
+    final rawEnd = s.schedule.endTime.trim();
+    _endCtrl.text =
+        (rawEnd == s.schedule.timezone || rawEnd.toUpperCase() == 'UTC')
+        ? ''
+        : rawEnd;
     _draft.days = List<String>.from(s.schedule.days);
     _draft.timezone = s.schedule.timezone;
     _draft.reminderMinutes = s.schedule.reminderMinutes;
@@ -1378,22 +1403,24 @@ class _SectionsTabState extends State<_SectionsTab> {
     _editingSection = null;
     _nameCtrl.text = '';
     _locationCtrl.text = '';
-
-    _startCtrl.text = '09:00';
-    _endCtrl.text = '10:15';
+    // FIX: reset to empty, not '09:00' — avoids phantom default time
+    _startCtrl.text = '';
+    _endCtrl.text = '';
     _draft.days = const [];
     setState(() => _showForm = false);
   }
 
   @override
   void dispose() {
-    for (final c in [_nameCtrl, _locationCtrl, _startCtrl, _endCtrl])
+    for (final c in [_nameCtrl, _locationCtrl, _startCtrl, _endCtrl]) {
       c.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final ws = widget.ws;
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1644,8 +1671,6 @@ class _SectionsTabState extends State<_SectionsTab> {
       ..location = _locationCtrl.text.trim()
       ..startTime = _startCtrl.text.trim()
       ..endTime = _endCtrl.text.trim()
-      // FIX: trim each day so CSV round-trips ("Mon, Tue" -> [" Tue"]) don't
-      // produce space-prefixed strings that ScheduleUtils.weekdayFor() can't match.
       ..days = _draft.days
           .map((d) => d.trim())
           .where((d) => d.isNotEmpty)
@@ -1659,22 +1684,16 @@ class _SectionsTabState extends State<_SectionsTab> {
       widget.onError('Select at least one day.');
       return;
     }
-    // FIX: startTime is required — without it the scheduler silently skips
-    // this section and no notifications are ever fired for it.
     if (_draft.startTime.isEmpty) {
       widget.onError('Start time is required for notifications to work.');
       return;
     }
 
-    // FIX: validate start/end time relationship
-    final startMins = _sectionTimeToMinutes(_draft.startTime);
-    final endMins = _sectionTimeToMinutes(_draft.endTime);
-    if (_draft.startTime.isNotEmpty &&
-        _draft.endTime.isNotEmpty &&
-        startMins != null &&
-        endMins != null) {
+    final startMins = _timeToMinutes(_draft.startTime);
+    final endMins = _timeToMinutes(_draft.endTime);
+    if (_draft.endTime.isNotEmpty && startMins != null && endMins != null) {
       if (startMins == endMins) {
-        widget.onError('Start time and end time cannot be the same.');
+        widget.onError('Start and end time cannot be the same.');
         return;
       }
       if (endMins < startMins) {
@@ -1688,15 +1707,11 @@ class _SectionsTabState extends State<_SectionsTab> {
     try {
       Workspace updated;
       if (isEditing) {
-        // Delete old then create new (backend has no PATCH section endpoint)
         await widget.vm.api.deleteSection(widget.ws.id, _editingSection!.id);
         updated = await widget.vm.api.createSection(widget.ws.id, _draft);
       } else {
         updated = await widget.vm.api.createSection(widget.ws.id, _draft);
       }
-      // FIX: assign via the setter and call notifyListeners explicitly once
-      // (previously set current then called notifyListeners() separately,
-      // which works but is fragile; now consistent)
       widget.vm.current = updated;
       widget.vm.notifyListeners();
       await widget.vm.rescheduleNotificationsForCurrent();
@@ -1720,8 +1735,7 @@ class _SectionsTabState extends State<_SectionsTab> {
     }
   }
 
-  // FIX: shared time helper for cross-field validation
-  int? _sectionTimeToMinutes(String t) {
+  int? _timeToMinutes(String t) {
     final parts = t.split(':');
     if (parts.length < 2) return null;
     final h = int.tryParse(parts[0]);
@@ -1748,8 +1762,18 @@ class _SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sch = section.schedule;
     final days = sch.days.isEmpty ? '—' : sch.days.join(', ');
-    final time = (sch.startTime.isNotEmpty && sch.endTime.isNotEmpty)
-        ? '${sch.startTime} – ${sch.endTime}'
+    // FIX: guard end time — don't show timezone string as time
+    final rawEnd = sch.endTime.trim();
+    final endDisplay =
+        (rawEnd.isEmpty ||
+            rawEnd == sch.timezone ||
+            rawEnd.toUpperCase() == 'UTC')
+        ? ''
+        : rawEnd;
+    final time = sch.startTime.isNotEmpty
+        ? (endDisplay.isNotEmpty
+              ? '${sch.startTime} – $endDisplay'
+              : sch.startTime)
         : '—';
     final count = vm.countForSection(section.id);
 
@@ -1949,7 +1973,6 @@ class _StudentsTab extends StatelessWidget {
   }
 }
 
-// Expandable roster card with import + live search
 class _SectionRosterCard extends StatefulWidget {
   const _SectionRosterCard({
     required this.section,
@@ -1987,12 +2010,11 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
         widget.ws.id,
         widget.section.id,
       );
-      if (mounted) {
+      if (mounted)
         setState(() {
           _students = list;
           _loadingRoster = false;
         });
-      }
     } catch (_) {
       if (mounted) setState(() => _loadingRoster = false);
     }
@@ -2006,7 +2028,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   Future<void> _import(BuildContext ctx) async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      // FIX: allow xlsx as well as csv (backend StudentService handles both)
       allowedExtensions: const ['csv', 'xlsx'],
       withData: true,
     );
@@ -2017,10 +2038,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       widget.onError('File has no data.');
       return;
     }
-
     setState(() => _importing = true);
     try {
-      // FIX: use api.importStudents (correct route) not importSectionStudents (dead route)
       final result = await widget.vm.api.importStudents(
         workspaceId: widget.ws.id,
         sectionId: widget.section.id,
@@ -2055,7 +2074,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     final count = widget.vm.countForSection(widget.section.id);
     final sch = widget.section.schedule;
     final timeStr = '${sch.days.join(", ")} · ${sch.startTime}';
-
     final filtered = _search.isEmpty
         ? _students
         : _students
@@ -2081,7 +2099,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       ),
       child: Column(
         children: [
-          // ── Header ──────────────────────────────────────────────────
           Material(
             color: Colors.transparent,
             borderRadius: _expanded
@@ -2092,8 +2109,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
               borderRadius: _expanded
                   ? const BorderRadius.vertical(top: Radius.circular(16))
                   : _DS.r16,
-              hoverColor: _DS.primarySoft.withOpacity(0.4),
-              splashColor: _DS.primary.withOpacity(0.07),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
                 child: Row(
@@ -2178,8 +2193,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
               ),
             ),
           ),
-
-          // ── Expandable body ───────────────────────────────────────
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
@@ -2191,7 +2204,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           children: [
-                            // Import button
                             Material(
                               color: _importing
                                   ? _DS.surfaceAlt
@@ -2202,8 +2214,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                     ? null
                                     : () => _import(context),
                                 borderRadius: _DS.r12,
-                                hoverColor: _DS.primary.withOpacity(0.12),
-                                splashColor: _DS.primary.withOpacity(0.18),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,
@@ -2231,7 +2241,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                         child: Text(
                                           _importing
                                               ? 'Importing…'
-                                              // FIX: label now mentions xlsx too
                                               : 'Import student list (.csv / .xlsx)',
                                           style: TextStyle(
                                             color: _importing
@@ -2262,8 +2271,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                 ),
                               ),
                             ),
-
-                            // ── Roster ──────────────────────────────
                             if (_loadingRoster)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 24),
@@ -2318,7 +2325,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                               )
                             else ...[
                               const SizedBox(height: 10),
-                              // Search bar
                               TextField(
                                 controller: _searchCtrl,
                                 onChanged: (v) => setState(() => _search = v),
@@ -2363,67 +2369,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              // Table header
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 6,
-                                ),
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(color: _DS.border),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: const [
-                                    SizedBox(
-                                      width: 28,
-                                      child: Text(
-                                        '#',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: _DS.inkLight,
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      flex: 3,
-                                      child: Text(
-                                        'Name',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: _DS.inkLight,
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      flex: 3,
-                                      child: Text(
-                                        'Email',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: _DS.inkLight,
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 56,
-                                      child: Text(
-                                        'Student ID',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: _DS.inkLight,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Rows
                               ...filtered.asMap().entries.map((e) {
                                 final i = e.key;
                                 final s = e.value;
@@ -2488,20 +2433,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                   ),
                                 );
                               }),
-                              if (filtered.isEmpty && _search.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                  ),
-                                  child: Text(
-                                    'No students match "$_search"',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: _DS.inkLight,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ),
                               const SizedBox(height: 6),
                               Align(
                                 alignment: Alignment.centerRight,
@@ -2574,7 +2505,6 @@ class _AskTab extends StatelessWidget {
                 child: InkWell(
                   onTap: onReupload,
                   borderRadius: _DS.r8,
-                  hoverColor: Colors.white.withOpacity(0.15),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     child: Text(
@@ -2605,9 +2535,9 @@ class _AskTab extends StatelessWidget {
                 ),
         ),
         Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: _DS.surface,
-            border: const Border(top: BorderSide(color: _DS.border)),
+            border: Border(top: BorderSide(color: _DS.border)),
           ),
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
           child: Row(
@@ -2679,7 +2609,6 @@ class _AskEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final suggestions = [
       'What is the grading policy?',
-      'When are office hours?',
       'What are the attendance rules?',
       'What textbooks are required?',
     ];
@@ -2753,8 +2682,6 @@ class _AskEmptyState extends StatelessWidget {
               child: InkWell(
                 onTap: () => onAsk(q),
                 borderRadius: _DS.r12,
-                hoverColor: _DS.primarySoft,
-                splashColor: _DS.primary.withOpacity(0.1),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -2881,10 +2808,7 @@ class _TypingIndicator extends StatelessWidget {
   );
 }
 
-// ── Section schedule time picker chip ─────────────────────────────────────────
-// Wraps a TextEditingController and shows the OS/web time picker on tap.
-// Stateful so the chip label refreshes immediately after a pick without
-// needing the parent form to call setState().
+// ── Section time picker ────────────────────────────────────────────────────────
 class _SectionTimePicker extends StatefulWidget {
   const _SectionTimePicker({required this.label, required this.ctrl});
   final String label;
@@ -2935,7 +2859,6 @@ class _SectionTimePickerState extends State<_SectionTimePicker> {
   Widget build(BuildContext context) {
     final text = widget.ctrl.text.trim();
     final isEmpty = text.isEmpty;
-
     return GestureDetector(
       onTap: _pick,
       child: Container(
@@ -3036,7 +2959,6 @@ class _PillButton extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       borderRadius: _DS.r20,
-      hoverColor: Colors.white.withOpacity(0.15),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
         child: Text(

@@ -10,8 +10,8 @@ class AppConfig {
   static const String baseUrl = "https://instructormate1.onrender.com";
 
   // Per-request timeouts (formerly hardcoded inline in api_client.dart)
-  static const Duration shortTimeout = Duration(seconds: 20);
-  static const Duration standardTimeout = Duration(seconds: 30);
+  static const Duration shortTimeout = Duration(seconds: 10);
+  static const Duration standardTimeout = Duration(seconds: 450);
   static const Duration uploadTimeout = Duration(seconds: 300);
   static const Duration reuploadTimeout = Duration(seconds: 120);
 }

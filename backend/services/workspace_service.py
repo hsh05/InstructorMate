@@ -17,7 +17,7 @@ from pathlib import Path
 
 from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
-from repositories.csv_workspace_repository import CsvWorkspaceRepository
+from repositories.pg_workspace_repository import PgWorkspaceRepository
 from services.file_parser_service import FileParserService
 from services.extraction_service import ExtractionService
 from services.pdf_hash_service import PdfHashService
@@ -30,7 +30,7 @@ class WorkspaceService:
 
     def __init__(
         self,
-        repo: CsvWorkspaceRepository,
+        repo: PgWorkspaceRepository,
         parser: FileParserService,
         extractor: ExtractionService,
         hash_service: PdfHashService,

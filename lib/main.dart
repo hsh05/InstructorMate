@@ -17,21 +17,18 @@ import 'ui/workspace_detail.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize timezone data and set device's local timezone.
-  // tz.setLocalLocation(tz.local) is a no-op — tz.local is UTC until
-  // explicitly set. We use flutter_timezone to get the real device timezone.
   tz_data.initializeTimeZones();
   if (!kIsWeb) {
     try {
       final deviceTz = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(deviceTz));
     } catch (_) {
-      // Fall back to UTC if timezone detection fails
       tz.setLocalLocation(tz.UTC);
     }
-  }
 
-  if (!kIsWeb) {
+    // FIX: was commented out — permissions must be requested at a predictable
+    // moment (app launch) not lazily inside rescheduleAll(), which caused the
+    // permission dialog to appear mid-session or not at all on some devices.
     await NotificationService.instance.init();
   }
 

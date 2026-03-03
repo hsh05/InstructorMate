@@ -1,10 +1,6 @@
 // lib/utils/schedule_utils.dart
-//
-// Shared schedule utilities used by both NotificationScheduler (mobile)
-// and WebNotificationService (web). Previously _dayMap was duplicated in both.
 
 class ScheduleUtils {
-  /// Maps 3-letter day abbreviations (lowercase) → DateTime weekday constants.
   static const Map<String, int> dayMap = {
     'mon': DateTime.monday,
     'tue': DateTime.tuesday,
@@ -15,16 +11,17 @@ class ScheduleUtils {
     'sun': DateTime.sunday,
   };
 
-  /// Returns the weekday int for a raw day string (e.g. "Monday", "Mon", "mon").
-  /// Returns null if unrecognised.
+  /// Handles "Mon", "Monday", "mon", "MONDAY" — normalised to first 3 chars.
+  /// Always trims whitespace first (CSV round-trips add leading spaces).
   static int? weekdayFor(String day) {
-    if (day.length < 3) return null;
-    return dayMap[day.toLowerCase().substring(0, 3)];
+    final trimmed = day.trim();
+    if (trimmed.length < 3) return null;
+    return dayMap[trimmed.toLowerCase().substring(0, 3)];
   }
 
-  /// Formats a 24-h HH:mm time string to a user-friendly "h:mm AM/PM" string.
-  /// Falls back to the raw value if it cannot be parsed.
+  /// Formats 24-h "HH:mm" → "h:mm AM/PM". Returns raw string on parse failure.
   static String formatTime(String hhmm) {
+    if (hhmm.isEmpty) return '';
     final parts = hhmm.split(':');
     if (parts.length < 2) return hhmm;
     final h = int.tryParse(parts[0]);
