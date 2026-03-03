@@ -14,6 +14,10 @@ import 'config/app_colors.dart';
 import 'ui/workspaces_home.dart';
 import 'ui/workspace_detail.dart';
 
+// Global navigator key so the toast can insert into the overlay
+// from anywhere — even when WorkspacesHome is not in the tree.
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -26,9 +30,6 @@ void main() async {
       tz.setLocalLocation(tz.UTC);
     }
 
-    // FIX: was commented out — permissions must be requested at a predictable
-    // moment (app launch) not lazily inside rescheduleAll(), which caused the
-    // permission dialog to appear mid-session or not at all on some devices.
     await NotificationService.instance.init();
   }
 
@@ -52,11 +53,14 @@ class _BootstrapState extends State<_Bootstrap> {
     _api = ApiClient(baseUrl: AppConfig.baseUrl);
     _vm = WorkspacesViewModel(api: _api);
     _vm.load();
+
+    // Toast is triggered from NotificationBell.onChanged — see notification_bell.dart
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorSchemeSeed: AppColors.primary),
       home: WorkspacesHome(vm: _vm),

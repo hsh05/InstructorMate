@@ -17,6 +17,9 @@ class AppColors {
   static const Color accentSoft = Color(0xFFE0FAF5);
   static const Color warn = Color(0xFFE8900A);
   static const Color warnSoft = Color(0xFFFFF4E0);
+  static const Color warnLight = Color(
+    0xFFFBBF24,
+  ); // amber highlight for gradients
   static const Color red = Color(0xFFD93025);
 
   // ── Neutrals ──────────────────────────────────────────────────────────────

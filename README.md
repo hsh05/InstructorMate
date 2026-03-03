@@ -50,10 +50,11 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 git branch
 git switch merna-syllabus-ui
 git add .
-git status
-git commit -m "backend+frontend oragizing"
-git push origin merna-syllabus-ui
+git commit -m "g"
 git push deploy merna-syllabus-ui
+
+
+git push origin merna-syllabus-ui
 
 flutter clean
 flutter pub get

@@ -1,5 +1,7 @@
 // lib/ui/workspace_detail.dart
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
@@ -72,7 +74,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
     for (final key in _editableKeys) {
       if (key == 'office_hours_start' || key == 'office_hours_end') continue;
-      final value = ws.fields[key] ?? '';
+      String value = ws.fields[key] ?? '';
+      // FIX: The PDF extractor writes 'course_title' but the UI field is
+      // 'course_name'. Fall back to course_title so the field auto-fills.
+      if (key == 'course_name' && value.isEmpty) {
+        value = ws.fields['course_title'] ?? '';
+      }
       final existing = _fieldCtrl[key];
       if (existing == null) {
         _fieldCtrl[key] = TextEditingController(text: value);
@@ -155,115 +162,127 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
         return Scaffold(
           backgroundColor: AppColors.bg,
-          body: NestedScrollView(
-            headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
-            body: Column(
-              children: [
-                Container(
-                  color: AppColors.surface,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceAlt,
-                      borderRadius: AppColors.r20,
+          // FIX: Wrap in ScrollConfiguration to disable the auto-injected web
+          // Scrollbar. Flutter's MaterialScrollBehavior on web wraps every
+          // scrollable with a Scrollbar that requires a single ScrollPosition.
+          // NestedScrollView creates multiple ScrollPositions internally, so
+          // the injected Scrollbar crashes with "attached to more than one
+          // ScrollPosition" whenever an AnimationController (e.g. the bell
+          // shake) notifies its status listeners during a scroll event.
+          body: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: NestedScrollView(
+              headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
+              body: Column(
+                children: [
+                  Container(
+                    color: AppColors.surface,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                    padding: const EdgeInsets.all(3),
-                    child: TabBar(
-                      controller: _tabs,
-                      indicator: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: AppColors.r16,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        borderRadius: AppColors.r20,
                       ),
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      dividerColor: Colors.transparent,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: AppColors.inkMid,
-                      labelStyle: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                      ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11,
-                      ),
-                      tabs: const [
-                        Tab(
-                          icon: Icon(Icons.info_outline_rounded, size: 16),
-                          text: 'Info',
-                        ),
-                        Tab(
-                          icon: Icon(Icons.groups_2_rounded, size: 16),
-                          text: 'Sections',
-                        ),
-                        Tab(
-                          icon: Icon(Icons.people_alt_rounded, size: 16),
-                          text: 'Students',
-                        ),
-                        Tab(
-                          icon: Icon(Icons.auto_awesome_rounded, size: 16),
-                          text: 'Ask AI',
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (!ready && missing.isNotEmpty)
-                  _MissingBanner(fields: missing),
-                Expanded(
-                  child: widget.vm.loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
-                      : TabBarView(
-                          controller: _tabs,
-                          children: [
-                            _InfoTab(
-                              ws: ws,
-                              editableKeys: _editableKeys,
-                              ctrl: _ctrl,
-                              onSave: _onSave,
-                            ),
-                            _SectionsTab(
-                              ws: ws,
-                              vm: widget.vm,
-                              onError: _showError,
-                            ),
-                            _StudentsTab(
-                              ws: ws,
-                              vm: widget.vm,
-                              onError: _showError,
-                            ),
-                            _AskTab(
-                              chat: _chat,
-                              ctrl: _askCtrl,
-                              scrollCtrl: _askScroll,
-                              asking: _asking,
-                              onAsk: _onAsk,
-                              onReupload: () async {
-                                await widget.vm.reuploadSyllabus();
-                                if (widget.vm.error != null) {
-                                  _showError(widget.vm.error!);
-                                }
-                              },
+                      padding: const EdgeInsets.all(3),
+                      child: TabBar(
+                        controller: _tabs,
+                        indicator: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: AppColors.r16,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                ),
-              ],
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        dividerColor: Colors.transparent,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: AppColors.inkMid,
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                        unselectedLabelStyle: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
+                        tabs: const [
+                          Tab(
+                            icon: Icon(Icons.info_outline_rounded, size: 16),
+                            text: 'Info',
+                          ),
+                          Tab(
+                            icon: Icon(Icons.groups_2_rounded, size: 16),
+                            text: 'Sections',
+                          ),
+                          Tab(
+                            icon: Icon(Icons.people_alt_rounded, size: 16),
+                            text: 'Students',
+                          ),
+                          Tab(
+                            icon: Icon(Icons.auto_awesome_rounded, size: 16),
+                            text: 'Ask AI',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (!ready && missing.isNotEmpty)
+                    _MissingBanner(fields: missing),
+                  Expanded(
+                    child: widget.vm.loading
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : TabBarView(
+                            controller: _tabs,
+                            children: [
+                              _InfoTab(
+                                ws: ws,
+                                editableKeys: _editableKeys,
+                                ctrl: _ctrl,
+                                onSave: _onSave,
+                              ),
+                              _SectionsTab(
+                                ws: ws,
+                                vm: widget.vm,
+                                onError: _showError,
+                              ),
+                              _StudentsTab(
+                                ws: ws,
+                                vm: widget.vm,
+                                onError: _showError,
+                              ),
+                              _AskTab(
+                                chat: _chat,
+                                ctrl: _askCtrl,
+                                scrollCtrl: _askScroll,
+                                asking: _asking,
+                                onAsk: _onAsk,
+                                onReupload: () async {
+                                  await widget.vm.reuploadSyllabus();
+                                  if (widget.vm.error != null) {
+                                    _showError(widget.vm.error!);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ), // ScrollConfiguration
         );
       },
     );

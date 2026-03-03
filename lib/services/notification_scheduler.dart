@@ -168,8 +168,12 @@ class NotificationScheduler {
     // Subtract reminder offset
     var fireTime = classTime.subtract(Duration(minutes: reminderMinutes));
 
-    // If already past, jump to next week
-    if (fireTime.isBefore(now)) {
+    // FIX: Only jump to next week if more than 60 seconds past.
+    // Mirrors the web service fix — if the scheduler runs at e.g. 09:50:30
+    // and fireTime=09:50:00, isBefore(now) was true so it jumped to next week,
+    // meaning the notification was never scheduled for today.
+    final secondsPast = now.difference(fireTime).inSeconds;
+    if (secondsPast >= 60) {
       fireTime = fireTime.add(const Duration(days: 7));
     }
 
