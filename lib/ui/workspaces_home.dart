@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
+import '../config/app_colors.dart';
 import 'widgets/notification_bell.dart';
 
 class WorkspacesHome extends StatefulWidget {
@@ -14,16 +15,6 @@ class WorkspacesHome extends StatefulWidget {
 }
 
 class _WorkspacesHomeState extends State<WorkspacesHome> {
-  static const _bg = Color(0xFFF5F2FF);
-  static const _bgTop = Color(0xFFEDE8FF);
-  static const _cardSoft = Color(0xFFFFFFFF);
-  static const _primary = Color(0xFF7C5CBF);
-  static const _accent = Color(0xFF00B896);
-  static const _textPrimary = Color(0xFF2D2640);
-  static const _textSecondary = Color(0xFF7B748F);
-  static const _red = Color(0xFFD93025);
-  static const _warn = Color(0xFFE8900A);
-
   bool _dragOver = false;
 
   @override
@@ -31,10 +22,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     return AnimatedBuilder(
       animation: widget.vm,
       builder: (_, __) => Scaffold(
-        backgroundColor: _bg,
+        backgroundColor: AppColors.bg,
         appBar: AppBar(
           elevation: 0,
-          backgroundColor: _primary,
+          backgroundColor: AppColors.primary,
           title: const Text(
             'InstructorMate',
             style: TextStyle(
@@ -65,7 +56,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [_bgTop, _bg],
+              colors: [AppColors.bgTop, AppColors.bg],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -78,7 +69,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   Widget _buildBody(BuildContext context) {
     if (widget.vm.loading) {
-      return const Center(child: CircularProgressIndicator(color: _primary));
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
     }
 
     if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
@@ -88,7 +81,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           child: Text(
             widget.vm.error!,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.red),
+            style: const TextStyle(color: AppColors.red),
           ),
         ),
       );
@@ -120,7 +113,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 child: Text(
                   'Drop a PDF above or tap the upload button to get started.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: _textSecondary, fontSize: 14),
+                  style: TextStyle(color: AppColors.inkLight, fontSize: 14),
                 ),
               ),
             ),
@@ -131,10 +124,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   Widget _workspaceCard(BuildContext context, dynamic workspace) {
     return Material(
-      color: _cardSoft,
-      borderRadius: BorderRadius.circular(16),
+      color: AppColors.surface,
+      borderRadius: AppColors.r16,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: AppColors.r16,
         onTap: () async {
           await widget.vm.openWorkspace(workspace.id);
           if (context.mounted && widget.vm.current != null) {
@@ -144,8 +137,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE8E3F8)),
+            borderRadius: AppColors.r16,
+            border: Border.all(color: AppColors.border),
           ),
           child: Row(
             children: [
@@ -153,12 +146,12 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEDE8FF),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppColors.primarySoft,
+                  borderRadius: AppColors.r12,
                 ),
                 child: const Icon(
                   Icons.school_rounded,
-                  color: _primary,
+                  color: AppColors.primary,
                   size: 22,
                 ),
               ),
@@ -172,7 +165,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
-                        color: _textPrimary,
+                        color: AppColors.ink,
                       ),
                     ),
                     const SizedBox(height: 5),
@@ -184,14 +177,14 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 tooltip: 'Delete workspace',
                 icon: const Icon(
                   Icons.delete_outline_rounded,
-                  color: _red,
+                  color: AppColors.red,
                   size: 20,
                 ),
                 onPressed: () => _confirmDelete(context, workspace),
               ),
               const Icon(
                 Icons.chevron_right_rounded,
-                color: _textSecondary,
+                color: AppColors.inkLight,
                 size: 20,
               ),
             ],
@@ -218,11 +211,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     await widget.vm.importSyllabusBytes(bytes: bytes, filename: filename);
     if (!mounted) return;
 
-    // ── Duplicate upload detection ──────────────────────────────────────────
-    // Show a friendly info banner instead of silently opening the same
-    // workspace again with no feedback.
     if (widget.vm.lastImportWasDuplicate) {
-      // Reset the flag so subsequent uploads start clean.
       widget.vm.lastImportWasDuplicate = false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -232,33 +221,28 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '⚠️ Already Imported — this syllabus was uploaded before. Opening the existing workspace.',
+                  '⚠️ Already Imported — this syllabus was uploaded before.',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
           ),
-          backgroundColor: _warn,
+          backgroundColor: AppColors.warn,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
         ),
       );
-      return; // Don't also show the error snackbar below.
+      return;
     }
 
-    // ── Generic error ───────────────────────────────────────────────────────
     if (widget.vm.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(widget.vm.error!),
-          backgroundColor: _red,
+          backgroundColor: AppColors.red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
         ),
       );
     }
@@ -268,31 +252,29 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: AppColors.r14),
         title: const Text(
           'Delete Workspace',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
         ),
         content: Text(
           'Delete "${workspace.title}"?\nThis permanently removes all sections, students, and files.',
-          style: const TextStyle(fontSize: 13, color: _textSecondary),
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text(
               'Cancel',
-              style: TextStyle(color: _textSecondary),
+              style: TextStyle(color: AppColors.textSecondary),
             ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: _red,
+              backgroundColor: AppColors.red,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: AppColors.r10),
             ),
             onPressed: () async {
               Navigator.pop(context);
@@ -301,7 +283,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(widget.vm.error ?? 'Delete failed'),
-                    backgroundColor: _red,
+                    backgroundColor: AppColors.red,
                   ),
                 );
               }
@@ -325,16 +307,11 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isReady = status == 'ready';
-    final label = isReady ? 'Ready' : 'Draft';
-    final bg = isReady ? const Color(0xFFE0FAF5) : const Color(0xFFFFF4E0);
-    final fg = isReady ? const Color(0xFF007A63) : const Color(0xFFB36200);
-    final dot = isReady ? const Color(0xFF00B896) : const Color(0xFFE8900A);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
+        color: isReady ? AppColors.accentSoft : AppColors.warnSoft,
+        borderRadius: AppColors.r20,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -342,15 +319,18 @@ class _StatusBadge extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: isReady ? AppColors.accent : AppColors.warn,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 4),
           Text(
-            label,
+            isReady ? 'Ready' : 'Draft',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: fg,
+              color: isReady ? const Color(0xFF007A63) : AppColors.warn,
               letterSpacing: 0.2,
             ),
           ),
@@ -373,8 +353,6 @@ class _DropZone extends StatelessWidget {
   final VoidCallback onPickFile;
   final Future<void> Function(Uint8List, String) onDropBytes;
 
-  static const _primary = Color(0xFF7C5CBF);
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -396,14 +374,11 @@ class _DropZone extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 24),
             decoration: BoxDecoration(
-              color: dragOver
-                  ? const Color(0xFFEDE8FF)
-                  : const Color(0xFFF3F0FF),
-              borderRadius: BorderRadius.circular(16),
+              color: dragOver ? AppColors.primarySoft : AppColors.surfaceAlt,
+              borderRadius: AppColors.r16,
               border: Border.all(
-                color: dragOver ? _primary : const Color(0xFFBFB0E8),
+                color: dragOver ? AppColors.primary : AppColors.border,
                 width: dragOver ? 2 : 1.5,
-                style: BorderStyle.solid,
               ),
             ),
             child: Column(
@@ -416,7 +391,7 @@ class _DropZone extends StatelessWidget {
                     dragOver
                         ? Icons.file_download_rounded
                         : Icons.upload_file_rounded,
-                    color: _primary,
+                    color: AppColors.primary,
                     size: 34,
                   ),
                 ),
@@ -424,7 +399,7 @@ class _DropZone extends StatelessWidget {
                 Text(
                   dragOver ? 'Drop to upload' : 'Drag & drop a PDF here',
                   style: const TextStyle(
-                    color: _primary,
+                    color: AppColors.primary,
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
                   ),
@@ -432,7 +407,7 @@ class _DropZone extends StatelessWidget {
                 const SizedBox(height: 3),
                 const Text(
                   'or tap to browse — PDF, DOCX, TXT',
-                  style: TextStyle(color: Color(0xFF9B96B0), fontSize: 12),
+                  style: TextStyle(color: AppColors.inkLight, fontSize: 12),
                 ),
               ],
             ),

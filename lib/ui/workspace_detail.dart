@@ -1,50 +1,9 @@
 // lib/ui/workspace_detail.dart
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import '../app/api_client.dart';
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
-
-// ─── Design tokens ────────────────────────────────────────────────────────────
-class _DS {
-  static const bg = Color(0xFFF8F6FF);
-  static const surface = Color(0xFFFFFFFF);
-  static const surfaceAlt = Color(0xFFF3F0FF);
-  static const primary = Color(0xFF7C5CBF);
-  static const primarySoft = Color(0xFFEDE8FF);
-  static const accent = Color(0xFF00B896);
-  static const accentSoft = Color(0xFFE0FAF5);
-  static const warn = Color(0xFFE8900A);
-  static const warnSoft = Color(0xFFFFF4E0);
-  static const ink = Color(0xFF2D2640);
-  static const inkMid = Color(0xFF6B6480);
-  static const inkLight = Color(0xFFABA6C0);
-  static const border = Color(0xFFE8E3F8);
-  static const red = Color(0xFFD93025);
-
-  static const r8 = BorderRadius.all(Radius.circular(8));
-  static const r10 = BorderRadius.all(Radius.circular(10));
-  static const r12 = BorderRadius.all(Radius.circular(12));
-  static const r16 = BorderRadius.all(Radius.circular(16));
-  static const r20 = BorderRadius.all(Radius.circular(20));
-
-  static final shadow = [
-    BoxShadow(
-      color: const Color(0xFF7C5CBF).withOpacity(0.07),
-      blurRadius: 14,
-      offset: const Offset(0, 4),
-    ),
-  ];
-  static final shadowSm = [
-    BoxShadow(
-      color: const Color(0xFF7C5CBF).withOpacity(0.04),
-      blurRadius: 6,
-      offset: const Offset(0, 2),
-    ),
-  ];
-}
+import '../config/app_colors.dart';
 
 const _fieldLabels = {
   'course_name': 'Course Name',
@@ -76,8 +35,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
 
-  // FIX: controllers live here (not in _InfoTabState) so they survive tab switches.
-  // But they MUST be refreshed when the workspace object changes after a save.
   final Map<String, TextEditingController> _fieldCtrl = {};
 
   final _askCtrl = TextEditingController();
@@ -98,28 +55,21 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
-    // Seed controllers from the current workspace on first load
     _syncControllersFromWorkspace();
   }
 
   @override
   void didUpdateWidget(WorkspaceDetailPage old) {
     super.didUpdateWidget(old);
-    // FIX: workspace object is replaced after every save/reload.
-    // putIfAbsent never updates existing controllers — we must push
-    // new values in explicitly so the UI reflects what was actually saved.
     if (old.vm.current != widget.vm.current) {
       _syncControllersFromWorkspace();
     }
   }
 
-  /// Push current workspace field values into all controllers.
-  /// Called on init and whenever the workspace object is replaced.
   void _syncControllersFromWorkspace() {
     final ws = widget.vm.current;
     if (ws == null) return;
 
-    // Sync plain fields
     for (final key in _editableKeys) {
       if (key == 'office_hours_start' || key == 'office_hours_end') continue;
       final value = ws.fields[key] ?? '';
@@ -127,13 +77,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       if (existing == null) {
         _fieldCtrl[key] = TextEditingController(text: value);
       } else if (existing.text != value) {
-        // FIX: force-update — putIfAbsent would silently skip this
         existing.text = value;
       }
     }
 
-    // Sync office hours — backend stores as combined 'office_hours',
-    // UI splits into start/end
     final combined = ws.fields['office_hours'] ?? '';
     final directStart = ws.fields['office_hours_start'] ?? '';
     final directEnd = ws.fields['office_hours_end'] ?? '';
@@ -176,9 +123,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     super.dispose();
   }
 
-  // FIX: _ctrl now always syncs the value if the controller already exists
-  // (putIfAbsent alone only seeds on first creation — subsequent calls with
-  // a different value are silently ignored, causing stale data after reload).
   TextEditingController _ctrl(String key, String value) {
     final existing = _fieldCtrl[key];
     if (existing == null) {
@@ -186,9 +130,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       _fieldCtrl[key] = c;
       return c;
     }
-    // Only overwrite if the parent is providing a fresh non-empty value
-    // AND the user isn't currently editing (controller text differs from value
-    // only when the workspace was just reloaded from backend)
     return existing;
   }
 
@@ -205,7 +146,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         final ws = widget.vm.current;
         if (ws == null) {
           return const Scaffold(
-            backgroundColor: _DS.bg,
+            backgroundColor: AppColors.bg,
             body: Center(child: Text('No workspace selected.')),
           );
         }
@@ -213,31 +154,31 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         final missing = _missingFields(ws);
 
         return Scaffold(
-          backgroundColor: _DS.bg,
+          backgroundColor: AppColors.bg,
           body: NestedScrollView(
             headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
             body: Column(
               children: [
                 Container(
-                  color: _DS.surface,
+                  color: AppColors.surface,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 8,
                   ),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: _DS.surfaceAlt,
-                      borderRadius: _DS.r20,
+                      color: AppColors.surfaceAlt,
+                      borderRadius: AppColors.r20,
                     ),
                     padding: const EdgeInsets.all(3),
                     child: TabBar(
                       controller: _tabs,
                       indicator: BoxDecoration(
-                        color: _DS.primary,
-                        borderRadius: _DS.r16,
+                        color: AppColors.primary,
+                        borderRadius: AppColors.r16,
                         boxShadow: [
                           BoxShadow(
-                            color: _DS.primary.withOpacity(0.3),
+                            color: AppColors.primary.withOpacity(0.3),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -246,7 +187,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                       indicatorSize: TabBarIndicatorSize.tab,
                       dividerColor: Colors.transparent,
                       labelColor: Colors.white,
-                      unselectedLabelColor: _DS.inkMid,
+                      unselectedLabelColor: AppColors.inkMid,
                       labelStyle: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 11,
@@ -281,7 +222,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                 Expanded(
                   child: widget.vm.loading
                       ? const Center(
-                          child: CircularProgressIndicator(color: _DS.primary),
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                          ),
                         )
                       : TabBarView(
                           controller: _tabs,
@@ -335,13 +278,13 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     return SliverAppBar(
       expandedHeight: 165,
       pinned: true,
-      backgroundColor: const Color(0xFF5A3DA0),
+      backgroundColor: AppColors.primaryDark,
       foregroundColor: Colors.white,
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF5A3DA0), Color(0xFF9B78E0)],
+              colors: [AppColors.primaryDark, Color(0xFF9B78E0)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -377,12 +320,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: (ready ? _DS.accent : _DS.warn).withOpacity(
-                            0.2,
-                          ),
-                          borderRadius: _DS.r20,
+                          color: (ready ? AppColors.accent : AppColors.warn)
+                              .withOpacity(0.2),
+                          borderRadius: AppColors.r20,
                           border: Border.all(
-                            color: ready ? _DS.accent : _DS.warn,
+                            color: ready ? AppColors.accent : AppColors.warn,
                             width: 1.5,
                           ),
                         ),
@@ -393,14 +335,16 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                               ready
                                   ? Icons.check_circle_rounded
                                   : Icons.pending_rounded,
-                              color: ready ? _DS.accent : _DS.warn,
+                              color: ready ? AppColors.accent : AppColors.warn,
                               size: 12,
                             ),
                             const SizedBox(width: 4),
                             Text(
                               ready ? 'Ready' : 'Draft',
                               style: TextStyle(
-                                color: ready ? _DS.accent : _DS.warn,
+                                color: ready
+                                    ? AppColors.accent
+                                    : AppColors.warn,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 11,
                               ),
@@ -457,15 +401,13 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     if (widget.vm.error != null) {
       _showError(widget.vm.error!);
     } else {
-      // FIX: sync controllers from the freshly-saved workspace so they
-      // reflect the canonical server values (e.g. trimmed whitespace)
       _syncControllersFromWorkspace();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Changes saved ✓'),
-          backgroundColor: _DS.accent,
+          backgroundColor: AppColors.accent,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: _DS.r12),
+          shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
         ),
       );
     }
@@ -507,9 +449,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(msg),
-      backgroundColor: _DS.red,
+      backgroundColor: AppColors.red,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: _DS.r12),
+      shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
     ),
   );
 }
@@ -530,24 +472,28 @@ class _StatPill extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
     decoration: BoxDecoration(
       color: highlight
-          ? _DS.accent.withOpacity(0.2)
+          ? AppColors.accent.withOpacity(0.2)
           : Colors.white.withOpacity(0.15),
-      borderRadius: _DS.r20,
+      borderRadius: AppColors.r20,
       border: Border.all(
         color: highlight
-            ? _DS.accent.withOpacity(0.5)
+            ? AppColors.accent.withOpacity(0.5)
             : Colors.white.withOpacity(0.25),
       ),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: highlight ? _DS.accent : Colors.white, size: 11),
+        Icon(
+          icon,
+          color: highlight ? AppColors.accent : Colors.white,
+          size: 11,
+        ),
         const SizedBox(width: 5),
         Text(
           label,
           style: TextStyle(
-            color: highlight ? _DS.accent : Colors.white,
+            color: highlight ? AppColors.accent : Colors.white,
             fontSize: 11,
             fontWeight: FontWeight.w700,
           ),
@@ -567,17 +513,21 @@ class _MissingBanner extends StatelessWidget {
     final labels = fields.map((k) => _fieldLabels[k] ?? k).join(', ');
     return Container(
       width: double.infinity,
-      color: _DS.warnSoft,
+      color: AppColors.warnSoft,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: _DS.warn, size: 16),
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: AppColors.warn,
+            size: 16,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Complete: $labels',
               style: const TextStyle(
-                color: _DS.warn,
+                color: AppColors.warn,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -727,21 +677,21 @@ class _InfoTabState extends State<_InfoTab>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SectionHeader(
+        const _SectionHeader(
           title: 'Course Details',
           icon: Icons.info_outline_rounded,
         ),
         const SizedBox(height: 4),
         const Text(
           'Tap any field to edit. All fields are required.',
-          style: TextStyle(fontSize: 12, color: _DS.inkMid),
+          style: TextStyle(fontSize: 12, color: AppColors.inkMid),
         ),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: _DS.surface,
-            borderRadius: _DS.r16,
-            boxShadow: _DS.shadow,
+            color: AppColors.surface,
+            borderRadius: AppColors.r16,
+            boxShadow: AppColors.shadow,
           ),
           clipBehavior: Clip.hardEdge,
           child: Column(
@@ -800,7 +750,7 @@ class _InfoTabState extends State<_InfoTab>
                         height: 1,
                         indent: 16,
                         endIndent: 16,
-                        color: _DS.border,
+                        color: AppColors.border,
                       ),
                   ],
                 );
@@ -816,11 +766,11 @@ class _InfoTabState extends State<_InfoTab>
                           height: 48,
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _DS.primary,
+                              backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: const RoundedRectangleBorder(
-                                borderRadius: _DS.r12,
+                                borderRadius: AppColors.r12,
                               ),
                             ),
                             onPressed: _saving ? null : _save,
@@ -854,9 +804,9 @@ class _InfoTabState extends State<_InfoTab>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _DS.warnSoft,
-              borderRadius: _DS.r12,
-              border: Border.all(color: _DS.warn.withOpacity(0.4)),
+              color: AppColors.warnSoft,
+              borderRadius: AppColors.r12,
+              border: Border.all(color: AppColors.warn.withOpacity(0.4)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -865,7 +815,7 @@ class _InfoTabState extends State<_InfoTab>
                   children: const [
                     Icon(
                       Icons.warning_amber_rounded,
-                      color: _DS.warn,
+                      color: AppColors.warn,
                       size: 15,
                     ),
                     SizedBox(width: 6),
@@ -874,7 +824,7 @@ class _InfoTabState extends State<_InfoTab>
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
-                        color: _DS.warn,
+                        color: AppColors.warn,
                       ),
                     ),
                   ],
@@ -885,7 +835,10 @@ class _InfoTabState extends State<_InfoTab>
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       '• ${e.value}',
-                      style: const TextStyle(fontSize: 12, color: _DS.warn),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.warn,
+                      ),
                     ),
                   ),
                 ),
@@ -945,7 +898,7 @@ class _InfoFieldRow extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: hasError ? _DS.warn : _DS.primary,
+                color: hasError ? AppColors.warn : AppColors.primary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
@@ -956,35 +909,40 @@ class _InfoFieldRow extends StatelessWidget {
               autofocus: true,
               keyboardType: keyboardType,
               style: const TextStyle(
-                color: _DS.ink,
+                color: AppColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
               decoration: InputDecoration(
                 prefixIcon: Icon(
                   icon,
-                  color: hasError ? _DS.warn : _DS.primary,
+                  color: hasError ? AppColors.warn : AppColors.primary,
                   size: 17,
                 ),
                 suffixIcon: IconButton(
                   icon: Icon(
                     Icons.check_circle_rounded,
-                    color: hasError ? _DS.warn : _DS.accent,
+                    color: hasError ? AppColors.warn : AppColors.accent,
                   ),
                   onPressed: onDone,
                 ),
                 hintText: _hintFor(fieldKey),
-                hintStyle: const TextStyle(color: _DS.inkLight, fontSize: 13),
+                hintStyle: const TextStyle(
+                  color: AppColors.inkLight,
+                  fontSize: 13,
+                ),
                 filled: true,
-                fillColor: hasError ? _DS.warnSoft : _DS.primarySoft,
+                fillColor: hasError
+                    ? AppColors.warnSoft
+                    : AppColors.primarySoft,
                 border: OutlineInputBorder(
-                  borderRadius: _DS.r12,
+                  borderRadius: AppColors.r12,
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: _DS.r12,
+                  borderRadius: AppColors.r12,
                   borderSide: BorderSide(
-                    color: hasError ? _DS.warn : _DS.primary,
+                    color: hasError ? AppColors.warn : AppColors.primary,
                     width: 2,
                   ),
                 ),
@@ -1006,8 +964,8 @@ class _InfoFieldRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: _DS.primarySoft.withOpacity(0.5),
-        splashColor: _DS.primary.withOpacity(0.06),
+        hoverColor: AppColors.primarySoft.withOpacity(0.5),
+        splashColor: AppColors.primary.withOpacity(0.06),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           child: Row(
@@ -1017,15 +975,15 @@ class _InfoFieldRow extends StatelessWidget {
                 height: 36,
                 decoration: BoxDecoration(
                   color: hasError
-                      ? _DS.warnSoft
-                      : (isEmpty ? _DS.warnSoft : _DS.primarySoft),
-                  borderRadius: _DS.r10,
+                      ? AppColors.warnSoft
+                      : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
+                  borderRadius: AppColors.r10,
                 ),
                 child: Icon(
                   icon,
                   color: hasError
-                      ? _DS.warn
-                      : (isEmpty ? _DS.warn : _DS.primary),
+                      ? AppColors.warn
+                      : (isEmpty ? AppColors.warn : AppColors.primary),
                   size: 17,
                 ),
               ),
@@ -1037,7 +995,7 @@ class _InfoFieldRow extends StatelessWidget {
                     Text(
                       label,
                       style: const TextStyle(
-                        color: _DS.inkLight,
+                        color: AppColors.inkLight,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1046,7 +1004,9 @@ class _InfoFieldRow extends StatelessWidget {
                     Text(
                       liveValue.isEmpty ? 'Tap to add…' : liveValue,
                       style: TextStyle(
-                        color: liveValue.isEmpty ? _DS.inkLight : _DS.ink,
+                        color: liveValue.isEmpty
+                            ? AppColors.inkLight
+                            : AppColors.ink,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         fontStyle: liveValue.isEmpty
@@ -1059,7 +1019,7 @@ class _InfoFieldRow extends StatelessWidget {
                       Text(
                         error!,
                         style: const TextStyle(
-                          color: _DS.warn,
+                          color: AppColors.warn,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1074,8 +1034,8 @@ class _InfoFieldRow extends StatelessWidget {
                     : Icons.edit_outlined,
                 size: 15,
                 color: hasError
-                    ? _DS.warn
-                    : (isEmpty ? _DS.warn : _DS.inkLight),
+                    ? AppColors.warn
+                    : (isEmpty ? AppColors.warn : AppColors.inkLight),
               ),
             ],
           ),
@@ -1108,9 +1068,6 @@ class _OfficeHoursPairRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const startKey = 'office_hours_start';
     const endKey = 'office_hours_end';
-    // FIX: read live value from controller, not wsFields
-    // wsFields reflects the last-saved backend value, but the controller
-    // has the most current user-entered or seeded value
     final startVal = ctrl(startKey, wsFields[startKey] ?? '').text;
     final endVal = ctrl(endKey, wsFields[endKey] ?? '').text;
 
@@ -1121,12 +1078,16 @@ class _OfficeHoursPairRow extends StatelessWidget {
         children: [
           Row(
             children: const [
-              Icon(Icons.access_time_rounded, color: _DS.primary, size: 15),
+              Icon(
+                Icons.access_time_rounded,
+                color: AppColors.primary,
+                size: 15,
+              ),
               SizedBox(width: 6),
               Text(
                 'Office Hours',
                 style: TextStyle(
-                  color: _DS.inkLight,
+                  color: AppColors.inkLight,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1153,7 +1114,7 @@ class _OfficeHoursPairRow extends StatelessWidget {
                 child: Text(
                   '—',
                   style: const TextStyle(
-                    color: _DS.inkMid,
+                    color: AppColors.inkMid,
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
                   ),
@@ -1216,8 +1177,6 @@ class _TimePickerFieldState extends State<_TimePickerField> {
   @override
   void didUpdateWidget(_TimePickerField old) {
     super.didUpdateWidget(old);
-    // FIX: always sync display value from the controller (not widget.value prop)
-    // The controller is the source of truth after _syncControllersFromWorkspace
     final ctrlText = widget.ctrl(widget.fieldKey, widget.value).text;
     if (ctrlText != _displayValue) {
       _displayValue = ctrlText;
@@ -1262,15 +1221,15 @@ class _TimePickerFieldState extends State<_TimePickerField> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         decoration: BoxDecoration(
           color: hasError
-              ? _DS.warnSoft
-              : (isEmpty ? _DS.warnSoft : _DS.primarySoft),
-          borderRadius: _DS.r12,
+              ? AppColors.warnSoft
+              : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
+          borderRadius: AppColors.r12,
           border: Border.all(
             color: hasError
-                ? _DS.warn.withOpacity(0.5)
+                ? AppColors.warn.withOpacity(0.5)
                 : (isEmpty
-                      ? _DS.warn.withOpacity(0.3)
-                      : _DS.primary.withOpacity(0.25)),
+                      ? AppColors.warn.withOpacity(0.3)
+                      : AppColors.primary.withOpacity(0.25)),
           ),
         ),
         child: Column(
@@ -1279,7 +1238,7 @@ class _TimePickerFieldState extends State<_TimePickerField> {
             Text(
               widget.label,
               style: TextStyle(
-                color: hasError ? _DS.warn : _DS.inkMid,
+                color: hasError ? AppColors.warn : AppColors.inkMid,
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
@@ -1291,8 +1250,8 @@ class _TimePickerFieldState extends State<_TimePickerField> {
                   Icons.schedule_rounded,
                   size: 14,
                   color: hasError
-                      ? _DS.warn
-                      : (isEmpty ? _DS.warn : _DS.primary),
+                      ? AppColors.warn
+                      : (isEmpty ? AppColors.warn : AppColors.primary),
                 ),
                 const SizedBox(width: 5),
                 Expanded(
@@ -1300,8 +1259,8 @@ class _TimePickerFieldState extends State<_TimePickerField> {
                     isEmpty ? 'Tap to set…' : _displayValue,
                     style: TextStyle(
                       color: isEmpty
-                          ? _DS.inkLight
-                          : (hasError ? _DS.warn : _DS.ink),
+                          ? AppColors.inkLight
+                          : (hasError ? AppColors.warn : AppColors.ink),
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
@@ -1311,7 +1270,7 @@ class _TimePickerFieldState extends State<_TimePickerField> {
                 Icon(
                   Icons.edit_outlined,
                   size: 13,
-                  color: hasError ? _DS.warn : _DS.inkLight,
+                  color: hasError ? AppColors.warn : AppColors.inkLight,
                 ),
               ],
             ),
@@ -1320,7 +1279,7 @@ class _TimePickerFieldState extends State<_TimePickerField> {
               Text(
                 widget.error!,
                 style: const TextStyle(
-                  color: _DS.warn,
+                  color: AppColors.warn,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1374,9 +1333,6 @@ class _SectionsTabState extends State<_SectionsTab>
   final _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
-  // FIX: no default values — start empty so user must explicitly set a time.
-  // Previously defaulting to '09:00'/'10:15' meant if the user didn't change
-  // them the section always saved with 09:00 regardless of what they entered.
   final _startCtrl = TextEditingController();
   final _endCtrl = TextEditingController();
   bool _saving = false;
@@ -1385,8 +1341,6 @@ class _SectionsTabState extends State<_SectionsTab>
     _editingSection = s;
     _nameCtrl.text = s.name;
     _locationCtrl.text = s.location;
-    // FIX: only assign non-empty values. If the stored endTime is the
-    // timezone string "UTC" (legacy bad data), treat it as empty.
     _startCtrl.text = s.schedule.startTime;
     final rawEnd = s.schedule.endTime.trim();
     _endCtrl.text =
@@ -1403,7 +1357,6 @@ class _SectionsTabState extends State<_SectionsTab>
     _editingSection = null;
     _nameCtrl.text = '';
     _locationCtrl.text = '';
-    // FIX: reset to empty, not '09:00' — avoids phantom default time
     _startCtrl.text = '';
     _endCtrl.text = '';
     _draft.days = const [];
@@ -1477,19 +1430,19 @@ class _SectionsTabState extends State<_SectionsTab>
             ),
             content: Text(
               'Delete "${s.name.isNotEmpty ? s.name : 'this section'}"?',
-              style: const TextStyle(fontSize: 13, color: _DS.inkMid),
+              style: const TextStyle(fontSize: 13, color: AppColors.inkMid),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
                 child: const Text(
                   'Cancel',
-                  style: TextStyle(color: _DS.inkLight),
+                  style: TextStyle(color: AppColors.inkLight),
                 ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _DS.red,
+                  backgroundColor: AppColors.red,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -1515,10 +1468,10 @@ class _SectionsTabState extends State<_SectionsTab>
   Widget _buildForm() {
     return Container(
       decoration: BoxDecoration(
-        color: _DS.surface,
-        borderRadius: _DS.r16,
-        boxShadow: _DS.shadow,
-        border: Border.all(color: _DS.primary.withOpacity(0.2)),
+        color: AppColors.surface,
+        borderRadius: AppColors.r16,
+        boxShadow: AppColors.shadow,
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1530,7 +1483,7 @@ class _SectionsTabState extends State<_SectionsTab>
                 _editingSection != null
                     ? Icons.edit_rounded
                     : Icons.add_circle_rounded,
-                color: _DS.primary,
+                color: AppColors.primary,
                 size: 16,
               ),
               const SizedBox(width: 7),
@@ -1539,7 +1492,7 @@ class _SectionsTabState extends State<_SectionsTab>
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
-                  color: _DS.ink,
+                  color: AppColors.ink,
                 ),
               ),
             ],
@@ -1562,7 +1515,7 @@ class _SectionsTabState extends State<_SectionsTab>
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: _DS.inkMid,
+              color: AppColors.inkMid,
             ),
           ),
           const SizedBox(height: 8),
@@ -1598,14 +1551,16 @@ class _SectionsTabState extends State<_SectionsTab>
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: sel ? _DS.primary : _DS.surfaceAlt,
-                    borderRadius: _DS.r8,
-                    border: Border.all(color: sel ? _DS.primary : _DS.border),
+                    color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                    borderRadius: AppColors.r8,
+                    border: Border.all(
+                      color: sel ? AppColors.primary : AppColors.border,
+                    ),
                   ),
                   child: Text(
                     d,
                     style: TextStyle(
-                      color: sel ? Colors.white : _DS.inkMid,
+                      color: sel ? Colors.white : AppColors.inkMid,
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -1620,9 +1575,11 @@ class _SectionsTabState extends State<_SectionsTab>
               Expanded(
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: _DS.inkMid,
-                    side: const BorderSide(color: _DS.border),
-                    shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+                    foregroundColor: AppColors.inkMid,
+                    side: const BorderSide(color: AppColors.border),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: AppColors.r12,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
                   onPressed: _cancelForm,
@@ -1636,10 +1593,12 @@ class _SectionsTabState extends State<_SectionsTab>
               Expanded(
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _DS.primary,
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: AppColors.r12,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                   ),
                   onPressed: _saving ? null : _saveSection,
@@ -1723,9 +1682,9 @@ class _SectionsTabState extends State<_SectionsTab>
             content: Text(
               isEditing ? 'Section updated ✓' : 'Section created ✓',
             ),
-            backgroundColor: _DS.accent,
+            backgroundColor: AppColors.accent,
             behavior: SnackBarBehavior.floating,
-            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+            shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
           ),
         );
       }
@@ -1762,7 +1721,6 @@ class _SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sch = section.schedule;
     final days = sch.days.isEmpty ? '—' : sch.days.join(', ');
-    // FIX: guard end time — don't show timezone string as time
     final rawEnd = sch.endTime.trim();
     final endDisplay =
         (rawEnd.isEmpty ||
@@ -1778,19 +1736,19 @@ class _SectionCard extends StatelessWidget {
     final count = vm.countForSection(section.id);
 
     return Material(
-      color: _DS.surface,
-      borderRadius: _DS.r16,
+      color: AppColors.surface,
+      borderRadius: AppColors.r16,
       child: InkWell(
-        borderRadius: _DS.r16,
-        hoverColor: _DS.primarySoft.withOpacity(0.5),
-        splashColor: _DS.primary.withOpacity(0.08),
+        borderRadius: AppColors.r16,
+        hoverColor: AppColors.primarySoft.withOpacity(0.5),
+        splashColor: AppColors.primary.withOpacity(0.08),
         highlightColor: Colors.transparent,
         onTap: onEdit,
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: _DS.r16,
-            boxShadow: _DS.shadowSm,
-            border: Border.all(color: _DS.border),
+            borderRadius: AppColors.r16,
+            boxShadow: AppColors.shadowSm,
+            border: Border.all(color: AppColors.border),
           ),
           padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
           child: Row(
@@ -1799,12 +1757,12 @@ class _SectionCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: const BoxDecoration(
-                  color: _DS.primarySoft,
-                  borderRadius: _DS.r12,
+                  color: AppColors.primarySoft,
+                  borderRadius: AppColors.r12,
                 ),
                 child: const Icon(
                   Icons.groups_2_rounded,
-                  color: _DS.primary,
+                  color: AppColors.primary,
                   size: 20,
                 ),
               ),
@@ -1818,7 +1776,7 @@ class _SectionCard extends StatelessWidget {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
-                        color: _DS.ink,
+                        color: AppColors.ink,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1827,28 +1785,28 @@ class _SectionCard extends StatelessWidget {
                         const Icon(
                           Icons.calendar_today_rounded,
                           size: 11,
-                          color: _DS.inkLight,
+                          color: AppColors.inkLight,
                         ),
                         const SizedBox(width: 3),
                         Text(
                           days,
                           style: const TextStyle(
                             fontSize: 11,
-                            color: _DS.inkMid,
+                            color: AppColors.inkMid,
                           ),
                         ),
                         const SizedBox(width: 8),
                         const Icon(
                           Icons.schedule_rounded,
                           size: 11,
-                          color: _DS.inkLight,
+                          color: AppColors.inkLight,
                         ),
                         const SizedBox(width: 3),
                         Text(
                           time,
                           style: const TextStyle(
                             fontSize: 11,
-                            color: _DS.inkMid,
+                            color: AppColors.inkMid,
                           ),
                         ),
                       ],
@@ -1860,14 +1818,14 @@ class _SectionCard extends StatelessWidget {
                           const Icon(
                             Icons.location_on_rounded,
                             size: 11,
-                            color: _DS.inkLight,
+                            color: AppColors.inkLight,
                           ),
                           const SizedBox(width: 3),
                           Text(
                             section.location,
                             style: const TextStyle(
                               fontSize: 11,
-                              color: _DS.inkMid,
+                              color: AppColors.inkMid,
                             ),
                           ),
                         ],
@@ -1879,14 +1837,16 @@ class _SectionCard extends StatelessWidget {
                         const Icon(
                           Icons.people_alt_rounded,
                           size: 11,
-                          color: _DS.inkLight,
+                          color: AppColors.inkLight,
                         ),
                         const SizedBox(width: 3),
                         Text(
                           '$count student${count == 1 ? "" : "s"}',
                           style: TextStyle(
                             fontSize: 11,
-                            color: count > 0 ? _DS.accent : _DS.inkMid,
+                            color: count > 0
+                                ? AppColors.accent
+                                : AppColors.inkMid,
                             fontWeight: count > 0
                                 ? FontWeight.w700
                                 : FontWeight.w400,
@@ -1901,7 +1861,7 @@ class _SectionCard extends StatelessWidget {
                 tooltip: 'Edit section',
                 icon: const Icon(
                   Icons.edit_outlined,
-                  color: _DS.primary,
+                  color: AppColors.primary,
                   size: 20,
                 ),
                 onPressed: onEdit,
@@ -1910,7 +1870,7 @@ class _SectionCard extends StatelessWidget {
                 tooltip: 'Delete section',
                 icon: const Icon(
                   Icons.delete_outline_rounded,
-                  color: _DS.red,
+                  color: AppColors.red,
                   size: 20,
                 ),
                 onPressed: onDelete,
@@ -1939,14 +1899,14 @@ class _StudentsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SectionHeader(
+        const _SectionHeader(
           title: 'Students by Section',
           icon: Icons.people_alt_rounded,
         ),
         const SizedBox(height: 6),
         const Text(
           'Tap a section to view or import students.',
-          style: TextStyle(fontSize: 12, color: _DS.inkMid),
+          style: TextStyle(fontSize: 12, color: AppColors.inkMid),
         ),
         const SizedBox(height: 14),
         if (ws.sections.isEmpty)
@@ -2057,9 +2017,11 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                   ? 'Saved ✓ — ${result.imported} student${result.imported == 1 ? "" : "s"} imported'
                   : 'No students found — check your CSV has name/email columns',
             ),
-            backgroundColor: result.imported > 0 ? _DS.accent : _DS.warn,
+            backgroundColor: result.imported > 0
+                ? AppColors.accent
+                : AppColors.warn,
             behavior: SnackBarBehavior.floating,
-            shape: const RoundedRectangleBorder(borderRadius: _DS.r12),
+            shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
           ),
         );
       }
@@ -2089,11 +2051,13 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        color: _DS.surface,
-        borderRadius: _DS.r16,
-        boxShadow: _DS.shadowSm,
+        color: AppColors.surface,
+        borderRadius: AppColors.r16,
+        boxShadow: AppColors.shadowSm,
         border: Border.all(
-          color: _expanded ? _DS.primary.withOpacity(0.4) : _DS.border,
+          color: _expanded
+              ? AppColors.primary.withOpacity(0.4)
+              : AppColors.border,
           width: _expanded ? 1.5 : 1,
         ),
       ),
@@ -2103,12 +2067,12 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
             color: Colors.transparent,
             borderRadius: _expanded
                 ? const BorderRadius.vertical(top: Radius.circular(16))
-                : _DS.r16,
+                : AppColors.r16,
             child: InkWell(
               onTap: _toggle,
               borderRadius: _expanded
                   ? const BorderRadius.vertical(top: Radius.circular(16))
-                  : _DS.r16,
+                  : AppColors.r16,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
                 child: Row(
@@ -2117,12 +2081,14 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: count > 0 ? _DS.accentSoft : _DS.primarySoft,
-                        borderRadius: _DS.r12,
+                        color: count > 0
+                            ? AppColors.accentSoft
+                            : AppColors.primarySoft,
+                        borderRadius: AppColors.r12,
                       ),
                       child: Icon(
                         Icons.groups_2_rounded,
-                        color: count > 0 ? _DS.accent : _DS.primary,
+                        color: count > 0 ? AppColors.accent : AppColors.primary,
                         size: 19,
                       ),
                     ),
@@ -2138,14 +2104,14 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 13,
-                              color: _DS.ink,
+                              color: AppColors.ink,
                             ),
                           ),
                           Text(
                             timeStr,
                             style: const TextStyle(
                               fontSize: 11,
-                              color: _DS.inkMid,
+                              color: AppColors.inkMid,
                             ),
                           ),
                         ],
@@ -2157,16 +2123,18 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: count > 0 ? _DS.accentSoft : _DS.surfaceAlt,
-                        borderRadius: _DS.r20,
+                        color: count > 0
+                            ? AppColors.accentSoft
+                            : AppColors.surfaceAlt,
+                        borderRadius: AppColors.r20,
                       ),
                       child: _importing
                           ? const SizedBox(
                               width: 36,
                               height: 12,
                               child: LinearProgressIndicator(
-                                color: _DS.accent,
-                                backgroundColor: _DS.accentSoft,
+                                color: AppColors.accent,
+                                backgroundColor: AppColors.accentSoft,
                               ),
                             )
                           : Text(
@@ -2174,7 +2142,9 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: count > 0 ? _DS.accent : _DS.inkLight,
+                                color: count > 0
+                                    ? AppColors.accent
+                                    : AppColors.inkLight,
                               ),
                             ),
                     ),
@@ -2184,7 +2154,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                       duration: const Duration(milliseconds: 220),
                       child: const Icon(
                         Icons.keyboard_arrow_down_rounded,
-                        color: _DS.inkLight,
+                        color: AppColors.inkLight,
                         size: 20,
                       ),
                     ),
@@ -2199,32 +2169,32 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
             child: _expanded
                 ? Column(
                     children: [
-                      const Divider(height: 1, color: _DS.border),
+                      const Divider(height: 1, color: AppColors.border),
                       Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           children: [
                             Material(
                               color: _importing
-                                  ? _DS.surfaceAlt
-                                  : _DS.primarySoft,
-                              borderRadius: _DS.r12,
+                                  ? AppColors.surfaceAlt
+                                  : AppColors.primarySoft,
+                              borderRadius: AppColors.r12,
                               child: InkWell(
                                 onTap: _importing
                                     ? null
                                     : () => _import(context),
-                                borderRadius: _DS.r12,
+                                borderRadius: AppColors.r12,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,
                                     vertical: 11,
                                   ),
                                   decoration: BoxDecoration(
-                                    borderRadius: _DS.r12,
+                                    borderRadius: AppColors.r12,
                                     border: Border.all(
                                       color: _importing
-                                          ? _DS.border
-                                          : _DS.primary.withOpacity(0.3),
+                                          ? AppColors.border
+                                          : AppColors.primary.withOpacity(0.3),
                                     ),
                                   ),
                                   child: Row(
@@ -2232,8 +2202,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                       Icon(
                                         Icons.upload_file_rounded,
                                         color: _importing
-                                            ? _DS.inkLight
-                                            : _DS.primary,
+                                            ? AppColors.inkLight
+                                            : AppColors.primary,
                                         size: 17,
                                       ),
                                       const SizedBox(width: 8),
@@ -2244,8 +2214,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                               : 'Import student list (.csv / .xlsx)',
                                           style: TextStyle(
                                             color: _importing
-                                                ? _DS.inkLight
-                                                : _DS.primary,
+                                                ? AppColors.inkLight
+                                                : AppColors.primary,
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -2257,13 +2227,13 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                           height: 14,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: _DS.primary,
+                                            color: AppColors.primary,
                                           ),
                                         )
                                       else
                                         const Icon(
                                           Icons.arrow_forward_ios_rounded,
-                                          color: _DS.primary,
+                                          color: AppColors.primary,
                                           size: 12,
                                         ),
                                     ],
@@ -2276,7 +2246,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                 padding: EdgeInsets.symmetric(vertical: 24),
                                 child: Center(
                                   child: CircularProgressIndicator(
-                                    color: _DS.primary,
+                                    color: AppColors.primary,
                                     strokeWidth: 2,
                                   ),
                                 ),
@@ -2292,12 +2262,12 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                       width: 48,
                                       height: 48,
                                       decoration: const BoxDecoration(
-                                        color: _DS.surfaceAlt,
-                                        borderRadius: _DS.r12,
+                                        color: AppColors.surfaceAlt,
+                                        borderRadius: AppColors.r12,
                                       ),
                                       child: const Icon(
                                         Icons.people_outline_rounded,
-                                        color: _DS.inkLight,
+                                        color: AppColors.inkLight,
                                         size: 24,
                                       ),
                                     ),
@@ -2307,7 +2277,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 13,
-                                        color: _DS.inkMid,
+                                        color: AppColors.inkMid,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -2316,7 +2286,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: _DS.inkLight,
+                                        color: AppColors.inkLight,
                                         height: 1.4,
                                       ),
                                     ),
@@ -2330,24 +2300,24 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                 onChanged: (v) => setState(() => _search = v),
                                 style: const TextStyle(
                                   fontSize: 13,
-                                  color: _DS.ink,
+                                  color: AppColors.ink,
                                 ),
                                 decoration: InputDecoration(
                                   hintText: 'Search students…',
                                   hintStyle: const TextStyle(
-                                    color: _DS.inkLight,
+                                    color: AppColors.inkLight,
                                     fontSize: 12,
                                   ),
                                   prefixIcon: const Icon(
                                     Icons.search_rounded,
-                                    color: _DS.inkLight,
+                                    color: AppColors.inkLight,
                                     size: 18,
                                   ),
                                   suffixIcon: _search.isNotEmpty
                                       ? IconButton(
                                           icon: const Icon(
                                             Icons.clear_rounded,
-                                            color: _DS.inkLight,
+                                            color: AppColors.inkLight,
                                             size: 16,
                                           ),
                                           onPressed: () {
@@ -2357,9 +2327,9 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                         )
                                       : null,
                                   filled: true,
-                                  fillColor: _DS.surfaceAlt,
+                                  fillColor: AppColors.surfaceAlt,
                                   border: OutlineInputBorder(
-                                    borderRadius: _DS.r12,
+                                    borderRadius: AppColors.r12,
                                     borderSide: BorderSide.none,
                                   ),
                                   contentPadding: const EdgeInsets.symmetric(
@@ -2375,7 +2345,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                 return Container(
                                   color: i.isEven
                                       ? Colors.transparent
-                                      : _DS.surfaceAlt.withOpacity(0.45),
+                                      : AppColors.surfaceAlt.withOpacity(0.45),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 4,
                                     vertical: 9,
@@ -2388,7 +2358,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                           '${i + 1}',
                                           style: const TextStyle(
                                             fontSize: 11,
-                                            color: _DS.inkLight,
+                                            color: AppColors.inkLight,
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -2399,7 +2369,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                           s.name.isEmpty ? '—' : s.name,
                                           style: const TextStyle(
                                             fontSize: 12,
-                                            color: _DS.ink,
+                                            color: AppColors.ink,
                                             fontWeight: FontWeight.w600,
                                           ),
                                           overflow: TextOverflow.ellipsis,
@@ -2411,7 +2381,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                           s.email.isEmpty ? '—' : s.email,
                                           style: const TextStyle(
                                             fontSize: 11,
-                                            color: _DS.inkMid,
+                                            color: AppColors.inkMid,
                                           ),
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -2424,7 +2394,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                               : s.studentNo,
                                           style: const TextStyle(
                                             fontSize: 11,
-                                            color: _DS.inkLight,
+                                            color: AppColors.inkLight,
                                           ),
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -2442,7 +2412,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                       : '${_students.length} student${_students.length == 1 ? "" : "s"} total',
                                   style: const TextStyle(
                                     fontSize: 11,
-                                    color: _DS.inkLight,
+                                    color: AppColors.inkLight,
                                   ),
                                 ),
                               ),
@@ -2483,28 +2453,28 @@ class _AskTab extends StatelessWidget {
       children: [
         Container(
           width: double.infinity,
-          color: _DS.surfaceAlt,
+          color: AppColors.surfaceAlt,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           child: Row(
             children: [
               const Icon(
                 Icons.picture_as_pdf_rounded,
-                color: _DS.primary,
+                color: AppColors.primary,
                 size: 15,
               ),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
                   "If AI isn't answering, re-upload the PDF.",
-                  style: TextStyle(fontSize: 11, color: _DS.inkMid),
+                  style: TextStyle(fontSize: 11, color: AppColors.inkMid),
                 ),
               ),
               Material(
-                color: _DS.primary,
-                borderRadius: _DS.r8,
+                color: AppColors.primary,
+                borderRadius: AppColors.r8,
                 child: InkWell(
                   onTap: onReupload,
-                  borderRadius: _DS.r8,
+                  borderRadius: AppColors.r8,
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     child: Text(
@@ -2536,8 +2506,8 @@ class _AskTab extends StatelessWidget {
         ),
         Container(
           decoration: const BoxDecoration(
-            color: _DS.surface,
-            border: Border(top: BorderSide(color: _DS.border)),
+            color: AppColors.surface,
+            border: Border(top: BorderSide(color: AppColors.border)),
           ),
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
           child: Row(
@@ -2545,14 +2515,14 @@ class _AskTab extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: ctrl,
-                  style: const TextStyle(color: _DS.ink, fontSize: 13),
+                  style: const TextStyle(color: AppColors.ink, fontSize: 13),
                   decoration: InputDecoration(
                     hintText: 'Ask about the syllabus…',
-                    hintStyle: const TextStyle(color: _DS.inkLight),
+                    hintStyle: const TextStyle(color: AppColors.inkLight),
                     filled: true,
-                    fillColor: _DS.surfaceAlt,
+                    fillColor: AppColors.surfaceAlt,
                     border: OutlineInputBorder(
-                      borderRadius: _DS.r20,
+                      borderRadius: AppColors.r20,
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
@@ -2572,8 +2542,8 @@ class _AskTab extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: asking ? _DS.inkLight : _DS.primary,
-                    borderRadius: _DS.r20,
+                    color: asking ? AppColors.inkLight : AppColors.primary,
+                    borderRadius: AppColors.r20,
                   ),
                   child: asking
                       ? const Center(
@@ -2623,7 +2593,7 @@ class _AskEmptyState extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: _DS.r20,
+            borderRadius: AppColors.r20,
           ),
           child: Column(
             children: [
@@ -2632,7 +2602,7 @@ class _AskEmptyState extends StatelessWidget {
                 height: 54,
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.15),
-                  borderRadius: _DS.r16,
+                  borderRadius: AppColors.r16,
                 ),
                 child: const Icon(
                   Icons.auto_awesome_rounded,
@@ -2669,7 +2639,7 @@ class _AskEmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: _DS.inkMid,
+              color: AppColors.inkMid,
             ),
           ),
         ),
@@ -2677,19 +2647,19 @@ class _AskEmptyState extends StatelessWidget {
           (q) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: _DS.surface,
-              borderRadius: _DS.r12,
+              color: AppColors.surface,
+              borderRadius: AppColors.r12,
               child: InkWell(
                 onTap: () => onAsk(q),
-                borderRadius: _DS.r12,
+                borderRadius: AppColors.r12,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 13,
                   ),
                   decoration: BoxDecoration(
-                    borderRadius: _DS.r12,
-                    border: Border.all(color: _DS.border),
+                    borderRadius: AppColors.r12,
+                    border: Border.all(color: AppColors.border),
                   ),
                   child: Row(
                     children: [
@@ -2697,12 +2667,12 @@ class _AskEmptyState extends StatelessWidget {
                         width: 30,
                         height: 30,
                         decoration: const BoxDecoration(
-                          color: _DS.primarySoft,
-                          borderRadius: _DS.r8,
+                          color: AppColors.primarySoft,
+                          borderRadius: AppColors.r8,
                         ),
                         child: const Icon(
                           Icons.lightbulb_outline_rounded,
-                          color: _DS.primary,
+                          color: AppColors.primary,
                           size: 15,
                         ),
                       ),
@@ -2711,7 +2681,7 @@ class _AskEmptyState extends StatelessWidget {
                         child: Text(
                           q,
                           style: const TextStyle(
-                            color: _DS.ink,
+                            color: AppColors.ink,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
@@ -2720,7 +2690,7 @@ class _AskEmptyState extends StatelessWidget {
                       const Icon(
                         Icons.arrow_forward_ios_rounded,
                         size: 11,
-                        color: _DS.inkLight,
+                        color: AppColors.inkLight,
                       ),
                     ],
                   ),
@@ -2748,20 +2718,20 @@ class _ChatBubble extends StatelessWidget {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
       decoration: BoxDecoration(
-        color: msg.isUser ? _DS.primary : _DS.surface,
+        color: msg.isUser ? AppColors.primary : AppColors.surface,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(14),
           topRight: const Radius.circular(14),
           bottomLeft: Radius.circular(msg.isUser ? 14 : 3),
           bottomRight: Radius.circular(msg.isUser ? 3 : 14),
         ),
-        boxShadow: _DS.shadowSm,
-        border: msg.isUser ? null : Border.all(color: _DS.border),
+        boxShadow: AppColors.shadowSm,
+        border: msg.isUser ? null : Border.all(color: AppColors.border),
       ),
       child: Text(
         msg.text,
         style: TextStyle(
-          color: msg.isUser ? Colors.white : _DS.ink,
+          color: msg.isUser ? Colors.white : AppColors.ink,
           fontSize: 13,
           height: 1.5,
         ),
@@ -2780,24 +2750,24 @@ class _TypingIndicator extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       decoration: BoxDecoration(
-        color: _DS.surface,
+        color: AppColors.surface,
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(14),
           topRight: Radius.circular(14),
           bottomRight: Radius.circular(14),
           bottomLeft: Radius.circular(3),
         ),
-        border: Border.all(color: _DS.border),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: const [
-          Icon(Icons.auto_awesome_rounded, size: 13, color: _DS.primary),
+          Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.primary),
           SizedBox(width: 5),
           Text(
             'Thinking…',
             style: TextStyle(
-              color: _DS.inkLight,
+              color: AppColors.inkLight,
               fontSize: 12,
               fontStyle: FontStyle.italic,
             ),
@@ -2864,12 +2834,12 @@ class _SectionTimePickerState extends State<_SectionTimePicker> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         decoration: BoxDecoration(
-          color: isEmpty ? _DS.warnSoft : _DS.primarySoft,
-          borderRadius: _DS.r12,
+          color: isEmpty ? AppColors.warnSoft : AppColors.primarySoft,
+          borderRadius: AppColors.r12,
           border: Border.all(
             color: isEmpty
-                ? _DS.warn.withOpacity(0.3)
-                : _DS.primary.withOpacity(0.25),
+                ? AppColors.warn.withOpacity(0.3)
+                : AppColors.primary.withOpacity(0.25),
           ),
         ),
         child: Column(
@@ -2878,7 +2848,7 @@ class _SectionTimePickerState extends State<_SectionTimePicker> {
             Text(
               widget.label,
               style: TextStyle(
-                color: isEmpty ? _DS.warn : _DS.inkMid,
+                color: isEmpty ? AppColors.warn : AppColors.inkMid,
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
@@ -2889,14 +2859,14 @@ class _SectionTimePickerState extends State<_SectionTimePicker> {
                 Icon(
                   Icons.schedule_rounded,
                   size: 14,
-                  color: isEmpty ? _DS.warn : _DS.primary,
+                  color: isEmpty ? AppColors.warn : AppColors.primary,
                 ),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
                     isEmpty ? 'Tap to set…' : text,
                     style: TextStyle(
-                      color: isEmpty ? _DS.inkLight : _DS.ink,
+                      color: isEmpty ? AppColors.inkLight : AppColors.ink,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
@@ -2906,7 +2876,7 @@ class _SectionTimePickerState extends State<_SectionTimePicker> {
                 Icon(
                   Icons.edit_outlined,
                   size: 13,
-                  color: isEmpty ? _DS.warn : _DS.inkLight,
+                  color: isEmpty ? AppColors.warn : AppColors.inkLight,
                 ),
               ],
             ),
@@ -2931,14 +2901,14 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Icon(icon, color: _DS.primary, size: 17),
+      Icon(icon, color: AppColors.primary, size: 17),
       const SizedBox(width: 7),
       Text(
         title,
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w800,
-          color: _DS.ink,
+          color: AppColors.ink,
         ),
       ),
       const Spacer(),
@@ -2954,11 +2924,11 @@ class _PillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: _DS.primary,
-    borderRadius: _DS.r20,
+    color: AppColors.primary,
+    borderRadius: AppColors.r20,
     child: InkWell(
       onTap: onTap,
-      borderRadius: _DS.r20,
+      borderRadius: AppColors.r20,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
         child: Text(
@@ -2987,24 +2957,24 @@ class _FormField extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TextField(
     controller: ctrl,
-    style: const TextStyle(color: _DS.ink, fontSize: 13),
+    style: const TextStyle(color: AppColors.ink, fontSize: 13),
     decoration: InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: _DS.inkMid, fontSize: 12),
-      prefixIcon: Icon(icon, color: _DS.primary, size: 15),
+      labelStyle: const TextStyle(color: AppColors.inkMid, fontSize: 12),
+      prefixIcon: Icon(icon, color: AppColors.primary, size: 15),
       filled: true,
-      fillColor: _DS.surfaceAlt,
+      fillColor: AppColors.surfaceAlt,
       border: OutlineInputBorder(
-        borderRadius: _DS.r12,
+        borderRadius: AppColors.r12,
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: _DS.r12,
-        borderSide: const BorderSide(color: _DS.border),
+        borderRadius: AppColors.r12,
+        borderSide: const BorderSide(color: AppColors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: _DS.r12,
-        borderSide: const BorderSide(color: _DS.primary, width: 2),
+        borderRadius: AppColors.r12,
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
     ),
@@ -3031,10 +3001,10 @@ class _EmptyState extends StatelessWidget {
             width: 72,
             height: 72,
             decoration: const BoxDecoration(
-              color: _DS.primarySoft,
-              borderRadius: _DS.r20,
+              color: AppColors.primarySoft,
+              borderRadius: AppColors.r20,
             ),
-            child: Icon(icon, color: _DS.primary, size: 34),
+            child: Icon(icon, color: AppColors.primary, size: 34),
           ),
           const SizedBox(height: 16),
           Text(
@@ -3042,7 +3012,7 @@ class _EmptyState extends StatelessWidget {
             style: const TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 16,
-              color: _DS.ink,
+              color: AppColors.ink,
             ),
           ),
           const SizedBox(height: 8),
@@ -3050,7 +3020,7 @@ class _EmptyState extends StatelessWidget {
             subtitle,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: _DS.inkLight,
+              color: AppColors.inkLight,
               fontSize: 13,
               height: 1.5,
             ),
