@@ -76,7 +76,7 @@ class WorkspaceService:
             result = self.converter.convert(
                 pdf_path=str(tmp_pdf),
                 output_dir=str(ws_dir),
-                template_csv_path="backend/templates/default_template.csv",
+                template_csv_path="templates/default_template.csv",
                 output_base_name="chunks",
             )
 
