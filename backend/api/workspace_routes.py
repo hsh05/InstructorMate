@@ -1,6 +1,9 @@
 # backend/api/workspace_routes.py
 
+import csv as _csv
 import logging
+import os
+import tempfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -57,7 +60,7 @@ def get_workspace_service(
     )
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     d = ws.to_dict()
@@ -67,6 +70,31 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     d["sections"] = sections
     d["students_count"] = sum(s["students_count"] for s in sections)
     return d
+
+
+def _validate_pdf(content: bytes, filename: str) -> None:
+    """Raise HTTPException if the uploaded bytes don't look like a complete PDF."""
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file received.")
+
+    if not content.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{filename}' does not appear to be a valid PDF (missing %PDF header).",
+        )
+
+    # PDF spec requires %%EOF near the end — search last 2 KB to allow for
+    # trailing whitespace/comments that some exporters add.
+    if b"%%EOF" not in content[-2048:]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"'{filename}' appears to be truncated or corrupted "
+                "(missing %%EOF marker). Please re-export or re-upload the file."
+            ),
+        )
+
+    logger.debug("PDF validation passed for '%s' (%d bytes)", filename, len(content))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -94,10 +122,20 @@ async def import_workspace(
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
 ):
     content = await file.read()
-    result  = workspace_service.create_from_file(file.filename, content)
-    ws      = result["workspace"]
-    logger.info("Workspace uploaded id=%s already_uploaded=%s",
-                ws.workspace_id, result["already_uploaded"])
+
+    # Validate PDF integrity before touching the DB or converter
+    _validate_pdf(content, file.filename or "upload")
+
+    try:
+        result = workspace_service.create_from_file(file.filename, content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    ws = result["workspace"]
+    logger.info(
+        "Workspace uploaded id=%s already_uploaded=%s",
+        ws.workspace_id, result["already_uploaded"],
+    )
     return {
         "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo),
         "already_uploaded": result["already_uploaded"],
@@ -155,13 +193,13 @@ async def ask_workspace_question(
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # Try DB chunks first (survives Render restarts)
-    # Fall back to file if DB is empty (local dev)
+    # Try DB chunks first (survives Render restarts),
+    # fall back to file if DB is empty (local dev or first upload before fix)
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
+    chunks_path = None
+    tmp_created = False
 
     if chunks_from_db:
-        # Write a temp CSV for AskPipeline to read
-        import tempfile, csv as _csv, os
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
         )
@@ -171,8 +209,8 @@ async def ask_workspace_question(
             writer.writerow({"chunk_id": c["chunk_id"], "page": c["page"], "text": c["content"]})
         tmp.close()
         chunks_path = tmp.name
+        tmp_created = True
     else:
-        # Fallback to file
         chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
         if not chunks_path_obj.exists():
             raise HTTPException(
@@ -189,8 +227,35 @@ async def ask_workspace_question(
         )
         answer = pipeline.run(req.question)
     finally:
-        # Clean up temp file if we created one
-        if chunks_from_db:
+        if tmp_created and chunks_path and os.path.exists(chunks_path):
             os.unlink(chunks_path)
 
     return {"answer": answer}
+
+
+@router.post("/workspaces/{workspace_id}/reupload")
+async def reupload_syllabus(
+    workspace_id: str,
+    file: UploadFile = File(...),
+    workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
+    section_repo:      PgSectionRepository   = Depends(get_section_repo),
+    student_repo:      PgStudentRepository   = Depends(get_student_repo),
+    workspace_service: WorkspaceService       = Depends(get_workspace_service),
+):
+    ws = workspace_repo.get_by_id(workspace_id)
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    content = await file.read()
+
+    # Validate PDF integrity before re-running the converter
+    _validate_pdf(content, file.filename or "upload")
+
+    try:
+        workspace_service.reprocess_pdf(workspace_id, content)
+    except Exception as e:
+        logger.error("Reupload failed workspace=%s: %s", workspace_id, e)
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {e}")
+
+    ws = workspace_repo.get_by_id(workspace_id)
+    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}

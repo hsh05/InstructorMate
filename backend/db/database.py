@@ -7,7 +7,7 @@ import os
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("postgresql://neondb_owner:npg_89WpUScBKVao@ep-dawn-scene-agqmedcc-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set in .env")
 

@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import shutil
 import uuid
 from pathlib import Path
 
@@ -35,7 +36,10 @@ class WorkspaceService:
             None,
         )
         if existing:
-            logger.info("Duplicate upload detected, returning existing workspace id=%s", existing.workspace_id)
+            logger.info(
+                "Duplicate upload detected, returning existing workspace id=%s",
+                existing.workspace_id,
+            )
             return {"already_uploaded": True, "workspace": existing}
 
         workspace = Workspace(
@@ -83,12 +87,19 @@ class WorkspaceService:
             # ── Save chunks to Postgres ───────────────────────────────────
             chunks_src = Path(result.chunks_csv)
             if chunks_src.exists():
-                # Save to DB so chunks survive Render restarts
-                self.repo.save_chunks(workspace_id, chunks_src)
-                # Also copy to expected path for AskPipeline file fallback
+                # Save to DB — non-fatal if it fails, file fallback still works
+                try:
+                    self.repo.save_chunks(workspace_id, chunks_src)
+                except Exception as chunk_err:
+                    logger.error(
+                        "Failed to save chunks to DB for workspace=%s: %s — "
+                        "file fallback will be used for /ask",
+                        workspace_id, chunk_err,
+                    )
+
+                # Always copy to file path so /ask file-fallback works too
                 chunks_dst = self.repo.get_chunks_csv_path(workspace_id)
                 if chunks_src != chunks_dst:
-                    import shutil
                     shutil.copy2(str(chunks_src), str(chunks_dst))
 
             # ── Auto-fill workspace fields from extracted single row ───────
@@ -104,7 +115,10 @@ class WorkspaceService:
                     if updates:
                         workspace.update_fields(updates)
                         self.repo.save(workspace)
-                        logger.info("Auto-filled fields %s for workspace=%s", list(updates.keys()), workspace_id)
+                        logger.info(
+                            "Auto-filled fields %s for workspace=%s",
+                            list(updates.keys()), workspace_id,
+                        )
 
         except Exception as e:
             logger.error("Converter failed for workspace=%s: %s", workspace_id, e)

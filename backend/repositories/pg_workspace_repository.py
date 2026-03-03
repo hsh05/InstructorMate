@@ -94,19 +94,31 @@ class PgWorkspaceRepository:
         ).delete()
         self.db.commit()
 
-        # Insert new chunks from CSV
+        inserted = 0
         with open(chunks_csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
+                # Guard against bad chunk_id values from the converter
+                try:
+                    chunk_index = int(row.get("chunk_id") or 0)
+                except (ValueError, TypeError):
+                    chunk_index = 0
+
+                content = (row.get("text") or "").strip()
+                if not content:
+                    # Skip blank rows — they would produce useless chunks
+                    continue
+
                 chunk = SyllabusChunkModel(
-                    workspace_id = workspace_id,
-                    chunk_index  = int(row.get("chunk_id", 0)),
-                    content      = row.get("text", ""),
+                    workspace_id=workspace_id,
+                    chunk_index=chunk_index,
+                    content=content,
                 )
                 self.db.add(chunk)
+                inserted += 1
 
         self.db.commit()
-        logger.info("Saved chunks to DB for workspace=%s", workspace_id)
+        logger.info("Saved %d chunks to DB for workspace=%s", inserted, workspace_id)
 
     def get_chunks_for_ask(self, workspace_id: str) -> List[dict]:
         """Load chunks from Postgres for the AskPipeline."""
@@ -123,8 +135,8 @@ class PgWorkspaceRepository:
 
     def _to_domain(self, row: WorkspaceModel) -> Workspace:
         return Workspace(
-            workspace_id = row.workspace_id,
-            pdf_hash     = row.pdf_hash or "",
-            status       = WorkspaceStatus(row.status or "draft"),
-            fields       = {name: getattr(row, name, "") or "" for name in WORKSPACE_FIELD_NAMES},
+            workspace_id=row.workspace_id,
+            pdf_hash=row.pdf_hash or "",
+            status=WorkspaceStatus(row.status or "draft"),
+            fields={name: getattr(row, name, "") or "" for name in WORKSPACE_FIELD_NAMES},
         )

@@ -9,8 +9,6 @@ from db.database import Base
 
 
 # ── TEAMMATES' TABLES ─────────────────────────────────────────────────────────
-# Defined here so SQLAlchemy knows about them for relationships/FK validation.
-# DO NOT change these — they match the schema your teammates already created.
 
 class Course(Base):
     __tablename__ = "courses"
@@ -36,7 +34,7 @@ class Material(Base):
 
 class StudentFace(Base):
     """Teammates' student table (face recognition). Named StudentFace here
-    to avoid collision with your own Student model below."""
+    to avoid collision with my Student model below."""
     __tablename__ = "student"
 
     student_id    = Column(Text, primary_key=True)
