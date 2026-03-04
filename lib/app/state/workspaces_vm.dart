@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
 import '../api_client.dart';
+import '../../services/log_buffer.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
 import '../workspace_models.dart';
@@ -336,7 +337,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         await NotificationScheduler.rescheduleAll(full);
       }
     } catch (e) {
-      debugPrint('[VM] _initNotifications error: $e');
+      AppLog.e('[VM] _initNotifications error: $e');
     }
   }
 
@@ -379,7 +380,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         await NotificationScheduler.rescheduleAll(all);
       }
     } catch (e) {
-      debugPrint('[VM] reschedule failed: $e');
+      AppLog.e('[VM] reschedule failed: $e');
     }
   }
 }

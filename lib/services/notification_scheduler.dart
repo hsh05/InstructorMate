@@ -14,7 +14,7 @@
 // section change, so notifications stay current.
 
 import 'log_buffer.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../app/workspace_models.dart';
@@ -38,7 +38,10 @@ class NotificationScheduler {
     AppLog.d(
       '[Scheduler] rescheduleAll START — ${workspaces.length} workspaces',
     );
-    await NotificationService.instance.cancelAll();
+    // FIX: cancelAll() crashes with "Missing type parameter" because it calls
+    // loadScheduledNotifications internally — same as zonedSchedule.
+    // Use the native purge channel instead which deletes the XML file directly.
+    await NotificationService.instance.nativePurgeAndCancel();
 
     for (final ws in workspaces) {
       for (final section in ws.sections) {

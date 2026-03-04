@@ -1,7 +1,7 @@
 // lib/services/notification_service.dart
 
 import 'log_buffer.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -39,27 +39,34 @@ class NotificationService {
   Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
 
-    // ── ONE-TIME PURGE of corrupted legacy notifications ──────────────────
-    // Old builds used matchDateTimeComponents (repeating, type=2).
-    // The flutter_local_notifications Java deserializer crashes with
-    // "Missing type parameter" when it tries to load those stored entries
-    // during zonedSchedule → saveScheduledNotification → loadScheduledNotifications.
-    // Fix: on the very first run of this build, wipe ALL stored notification
-    // data via cancelAll() BEFORE initialize() deserializes anything.
-    // After the purge we set a flag so we never wipe again (rescheduleAll
-    // will repopulate with clean one-shot type=1 entries).
+    // ── ONE-TIME NUCLEAR PURGE of corrupted legacy notifications ────────────
+    // Old builds stored repeating notifications as type=2 in SharedPreferences.
+    // The new plugin's Java deserializer crashes on type=2 entries — and even
+    // cancelAll() is broken because it calls loadScheduledNotifications first.
+    //
+    // FIX: call a native MethodChannel method that DIRECTLY DELETES the XML
+    // file from the filesystem, bypassing the broken Java deserializer entirely.
+    // This runs once on first launch of the new build, then never again.
     try {
       final prefs = await SharedPreferences.getInstance();
-      final purged = prefs.getBool('notif_purge_v2') ?? false;
+      final purged = prefs.getBool('notif_purge_v3') ?? false;
       if (!purged) {
-        AppLog.d('[NS] First run — purging legacy corrupted notifications...');
-        // cancelAll via the raw plugin before initialize to avoid deserialization
-        await _plugin.cancelAll();
-        await prefs.setBool('notif_purge_v2', true);
-        AppLog.d('[NS] Purge complete — legacy entries wiped.');
+        AppLog.d(
+          '[NS] First run — nuclear purge of legacy notification storage...',
+        );
+        try {
+          final result = await _channel.invokeMethod(
+            'purgeCorruptedNotifications',
+          );
+          AppLog.d('[NS] Native purge result: $result');
+        } catch (e) {
+          AppLog.d('[NS] Native purge failed (non-fatal): $e');
+        }
+        await prefs.setBool('notif_purge_v3', true);
+        AppLog.d('[NS] Purge flag set — will not purge again.');
       }
     } catch (e) {
-      AppLog.d('[NS] Purge step failed (non-fatal): $e');
+      AppLog.d('[NS] Purge step error (non-fatal): $e');
     }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -201,13 +208,14 @@ class NotificationService {
       // Happens when old repeating notifications (type=2) are still stored.
       // Self-heal: wipe ALL stored data and retry once with a clean slate.
       if (msg.contains('missing type parameter')) {
-        AppLog.d(
-          '[NS] !!! Missing type parameter on id=$id — wiping and retrying...',
+        AppLog.e(
+          '[NS] Missing type parameter on id=$id — running native purge and retrying...',
         );
         try {
-          await _plugin.cancelAll();
+          // cancelAll() is also broken — use native purge instead
+          await _channel.invokeMethod('purgeCorruptedNotifications');
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('notif_purge_v2', true);
+          await prefs.setBool('notif_purge_v3', true);
           await _plugin.zonedSchedule(
             id,
             title,
@@ -246,6 +254,19 @@ class NotificationService {
       } else {
         AppLog.e('[NS] Schedule failed id=$id: $e');
       }
+    }
+  }
+
+  // ── Native purge — bypasses broken loadScheduledNotifications ───────────
+  // Use this instead of cancelAll() everywhere. Deletes the SharedPreferences
+  // XML file directly so the Java deserializer never runs.
+  Future<void> nativePurgeAndCancel() async {
+    if (!_supported) return;
+    try {
+      final result = await _channel.invokeMethod('purgeCorruptedNotifications');
+      AppLog.d('[NS] nativePurgeAndCancel: $result');
+    } catch (e) {
+      AppLog.e('[NS] nativePurgeAndCancel failed: $e');
     }
   }
 

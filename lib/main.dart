@@ -6,6 +6,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'services/log_buffer.dart';
 import 'app/api_client.dart';
 import 'services/notification_service.dart';
 import 'app/state/workspaces_vm.dart';
@@ -22,15 +23,20 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   tz_data.initializeTimeZones();
+  AppLog.d('[Main] App starting — initializeTimeZones done');
   if (!kIsWeb) {
     try {
       final deviceTz = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(deviceTz));
-    } catch (_) {
+      AppLog.d('[Main] Timezone set to $deviceTz');
+    } catch (e) {
       tz.setLocalLocation(tz.UTC);
+      AppLog.e('[Main] Timezone failed, using UTC: $e');
     }
 
+    AppLog.d('[Main] Calling NotificationService.init()...');
     await NotificationService.instance.init();
+    AppLog.d('[Main] NotificationService.init() complete');
   }
 
   runApp(const _Bootstrap());
