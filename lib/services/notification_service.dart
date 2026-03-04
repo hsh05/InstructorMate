@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
+import 'mobile_toast_service.dart';
 
 class NotificationService {
   NotificationService._();
@@ -158,6 +159,8 @@ class NotificationService {
       ),
     );
 
+    // Encode title+body as payload so foreground callback can show toast
+    final payload = '$title||$body';
     try {
       await _plugin.zonedSchedule(
         id,
@@ -165,6 +168,7 @@ class NotificationService {
         body,
         when,
         details,
+        payload: payload,
         androidScheduleMode: AndroidScheduleMode.alarmClock,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
@@ -183,6 +187,7 @@ class NotificationService {
             body,
             when,
             details,
+            payload: payload,
             androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
@@ -213,7 +218,14 @@ class NotificationService {
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
-    debugPrint('[NS] Tapped id=${response.id}');
+    debugPrint('[NS] Notification received id=${response.id}');
+    // Show in-app popup when notification fires while app is foregrounded.
+    // Title and body are encoded in payload as "title||body".
+    final payload = response.payload ?? '';
+    final sep = payload.indexOf('||');
+    final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
+    final body = sep >= 0 ? payload.substring(sep + 2) : '';
+    MobileToastService.show(title: title, body: body);
   }
 
   Future<void> showImmediateTest() async {
