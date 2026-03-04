@@ -2,6 +2,7 @@
 
 import 'log_buffer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -38,6 +39,29 @@ class NotificationService {
   Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
 
+    // ── ONE-TIME PURGE of corrupted legacy notifications ──────────────────
+    // Old builds used matchDateTimeComponents (repeating, type=2).
+    // The flutter_local_notifications Java deserializer crashes with
+    // "Missing type parameter" when it tries to load those stored entries
+    // during zonedSchedule → saveScheduledNotification → loadScheduledNotifications.
+    // Fix: on the very first run of this build, wipe ALL stored notification
+    // data via cancelAll() BEFORE initialize() deserializes anything.
+    // After the purge we set a flag so we never wipe again (rescheduleAll
+    // will repopulate with clean one-shot type=1 entries).
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final purged = prefs.getBool('notif_purge_v2') ?? false;
+      if (!purged) {
+        AppLog.d('[NS] First run — purging legacy corrupted notifications...');
+        // cancelAll via the raw plugin before initialize to avoid deserialization
+        await _plugin.cancelAll();
+        await prefs.setBool('notif_purge_v2', true);
+        AppLog.d('[NS] Purge complete — legacy entries wiped.');
+      }
+    } catch (e) {
+      AppLog.d('[NS] Purge step failed (non-fatal): $e');
+    }
+
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -49,11 +73,6 @@ class NotificationService {
       const InitializationSettings(android: android, iOS: ios),
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
-
-    // NOTE: Do NOT call cancelAll() here.
-    // Calling it on every init wipes all scheduled alarms before
-    // rescheduleAll() has re-added them. The scheduler handles its own
-    // cancelAll() immediately before re-adding, which is the right place.
 
     _initialized = true;
 
@@ -177,7 +196,34 @@ class NotificationService {
       AppLog.d('[NS] Scheduled id=$id at $when');
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      if (msg.contains('exact') ||
+
+      // ── "Missing type parameter" — corrupted legacy data in storage ───────
+      // Happens when old repeating notifications (type=2) are still stored.
+      // Self-heal: wipe ALL stored data and retry once with a clean slate.
+      if (msg.contains('missing type parameter')) {
+        AppLog.d(
+          '[NS] !!! Missing type parameter on id=$id — wiping and retrying...',
+        );
+        try {
+          await _plugin.cancelAll();
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('notif_purge_v2', true);
+          await _plugin.zonedSchedule(
+            id,
+            title,
+            body,
+            when,
+            details,
+            payload: payload,
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+          );
+          AppLog.d('[NS] Retry after purge succeeded id=$id');
+        } catch (e2) {
+          AppLog.e('[NS] Retry after purge also failed id=$id: $e2');
+        }
+      } else if (msg.contains('exact') ||
           msg.contains('schedule_exact') ||
           msg.contains('platformexception')) {
         AppLog.d('[NS] Exact blocked, trying inexact id=$id');
@@ -195,10 +241,10 @@ class NotificationService {
           );
           AppLog.d('[NS] Scheduled inexact id=$id');
         } catch (e2) {
-          AppLog.d('[NS] Both exact and inexact failed id=$id: $e2');
+          AppLog.e('[NS] Both exact and inexact failed id=$id: $e2');
         }
       } else {
-        AppLog.d('[NS] Schedule failed id=$id: $e');
+        AppLog.e('[NS] Schedule failed id=$id: $e');
       }
     }
   }
