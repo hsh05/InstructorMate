@@ -60,7 +60,12 @@ flutter clean
 flutter pub get
 flutter build apk --release
 
+flutter clean
+flutter pub get
+flutter run
+
+
 https://instructormate1.onrender.com
 
-
+flutter run
 
