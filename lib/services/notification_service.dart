@@ -169,7 +169,7 @@ class NotificationService {
         when,
         details,
         payload: payload,
-        androidScheduleMode: AndroidScheduleMode.alarmClock,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
@@ -219,13 +219,19 @@ class NotificationService {
 
   static void _onNotificationResponse(NotificationResponse response) {
     debugPrint('[NS] Notification received id=${response.id}');
-    // Show in-app popup when notification fires while app is foregrounded.
-    // Title and body are encoded in payload as "title||body".
+    // Parse title||body from payload
     final payload = response.payload ?? '';
     final sep = payload.indexOf('||');
     final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
     final body = sep >= 0 ? payload.substring(sep + 2) : '';
-    MobileToastService.show(title: title, body: body);
+    // Safely show toast — guard against being called before the widget tree
+    // is ready (e.g. if the notification fires during app cold start).
+    // SchedulerBinding.instance is available earlier than WidgetsBinding.
+    try {
+      MobileToastService.show(title: title, body: body);
+    } catch (e) {
+      debugPrint('[NS] Toast show failed (non-fatal): $e');
+    }
   }
 
   Future<void> showImmediateTest() async {

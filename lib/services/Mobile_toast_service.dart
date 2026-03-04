@@ -1,42 +1,51 @@
 // lib/services/mobile_toast_service.dart
-//
-// Shows the same in-app popup toast on mobile that web shows via the bell.
-// Called from NotificationService when flutter_local_notifications delivers
-// a notification while the app is in the FOREGROUND.
-//
-// Flutter_local_notifications behaviour by platform:
-//   Android: foreground notifications are suppressed by default — the OS
-//            calls onDidReceiveNotificationResponse only if you set
-//            android.showWhen=true AND the app handles it. We intercept here.
-//   iOS:     foreground notifications show a banner AND call the callback.
-//            We additionally show our in-app popup for consistency.
-//
-// Usage: MobileToastService.show(title, body) from anywhere.
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import '../main.dart' show navigatorKey;
 import '../ui/widgets/notification_toast.dart';
 
 class MobileToastService {
   MobileToastService._();
 
-  /// Show the in-app notification popup on mobile.
-  /// Safe to call from any isolate context — posts to the UI thread.
   static void show({required String title, required String body}) {
-    if (kIsWeb) return; // web uses NotificationBell.onChanged instead
+    if (kIsWeb) return;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final overlay = navigatorKey.currentState?.overlay;
-      if (overlay == null) {
-        debugPrint('[MobileToast] overlay not ready — toast skipped');
-        return;
+    // Use SchedulerBinding which is available earlier than WidgetsBinding.
+    // addPostFrameCallback fires after the current frame completes —
+    // safe even if called during app startup or from a notification callback.
+    void doShow() {
+      try {
+        final overlay = navigatorKey.currentState?.overlay;
+        if (overlay == null) {
+          debugPrint('[MobileToast] overlay not ready — skipped');
+          return;
+        }
+        // Play sound — wrapped separately so a sound failure never blocks the toast
+        try {
+          SystemSound.play(SystemSoundType.alert);
+        } catch (e) {
+          debugPrint('[MobileToast] sound failed (non-fatal): $e');
+        }
+        showNotifToast(overlay: overlay, title: title, body: body);
+        debugPrint('[MobileToast] Showed: $title');
+      } catch (e) {
+        debugPrint('[MobileToast] show failed: $e');
       }
-      debugPrint('[MobileToast] Showing toast: $title');
-      // Play system alert sound — works on Android + iOS, no extra package needed
-      SystemSound.play(SystemSoundType.alert);
-      showNotifToast(overlay: overlay, title: title, body: body);
-    });
+    }
+
+    // If the scheduler is already in a frame, post to next frame.
+    // If not (e.g. cold start), post immediately via addPostFrameCallback.
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase == SchedulerPhase.idle) {
+      // No frame is running — safe to call after next frame
+      scheduler.addPostFrameCallback((_) => doShow());
+      // Ensure a frame is scheduled so the callback actually runs
+      WidgetsBinding.instance.ensureVisualUpdate();
+    } else {
+      scheduler.addPostFrameCallback((_) => doShow());
+    }
   }
 }
