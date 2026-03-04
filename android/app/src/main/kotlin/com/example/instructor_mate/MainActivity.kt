@@ -1,6 +1,4 @@
-// android/app/src/main/kotlin/com/instructormate/instructor_mate/MainActivity.kt
-
-package com.instructormate.instructor_mate
+package com.example.instructor_mate
 
 import android.content.Intent
 import android.net.Uri
@@ -13,45 +11,45 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
-    private val BATTERY_CHANNEL = "com.instructormate/battery"
+    private val CHANNEL = "com.instructormate/battery"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            BATTERY_CHANNEL,
+            CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
 
                 "requestIgnoreBatteryOptimizations" -> {
-                    try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         val pm = getSystemService(POWER_SERVICE) as PowerManager
-                        val pkg = packageName
-                        if (!pm.isIgnoringBatteryOptimizations(pkg)) {
+                        val pkgName = packageName
+                        if (!pm.isIgnoringBatteryOptimizations(pkgName)) {
                             val intent = Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:$pkg"),
-                            )
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                            ).apply {
+                                data = Uri.parse("package:$pkgName")
+                            }
                             startActivity(intent)
+                            result.success("requested")
+                        } else {
+                            result.success("already_exempt")
                         }
-                        result.success(null)
-                    } catch (e: Exception) {
-                        result.error("BATTERY_OPT", e.message, null)
+                    } else {
+                        result.success("not_required")
                     }
                 }
 
                 "openBatterySettings" -> {
-                    try {
-                        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        startActivity(
                             Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                        } else {
-                            Intent(Settings.ACTION_SETTINGS)
-                        }
-                        startActivity(intent)
+                        )
                         result.success(null)
-                    } catch (e: Exception) {
-                        result.error("BATTERY_SETTINGS", e.message, null)
+                    } else {
+                        result.success(null)
                     }
                 }
 
