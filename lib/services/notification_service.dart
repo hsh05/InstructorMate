@@ -14,9 +14,6 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
-  // Native method channel — used to request battery optimization exemption.
-  // This is the fix for Samsung Device Care killing AlarmManager alarms
-  // within seconds of the user pressing the home button.
   static const _channel = MethodChannel('com.instructormate/battery');
 
   bool _initialized = false;
@@ -24,7 +21,6 @@ class NotificationService {
   bool _alarmGranted = false;
 
   Future<bool>? _initFuture;
-
   bool get _supported => !kIsWeb;
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -37,61 +33,66 @@ class NotificationService {
 
   Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
+    AppLog.d('[NS] _doInit starting...');
 
-    // Purge of corrupted legacy notifications is handled in MainActivity.onCreate()
-    // before the Flutter engine starts — nothing needed here.
+    try {
+      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const ios = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
 
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const ios = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-
-    final didInit = await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: ios),
-      onDidReceiveNotificationResponse: _onNotificationResponse,
-    );
+      await _plugin.initialize(
+        const InitializationSettings(android: android, iOS: ios),
+        onDidReceiveNotificationResponse: _onNotificationResponse,
+      );
+      AppLog.d('[NS] plugin.initialize() succeeded');
+    } catch (e) {
+      AppLog.e('[NS] plugin.initialize() FAILED: $e');
+      // Do not rethrow — app must not crash if notifications are broken
+      _initialized = true;
+      return false;
+    }
 
     _initialized = true;
 
-    final androidImpl = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    try {
+      final androidImpl = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
 
-    if (androidImpl != null) {
-      _notifGranted =
-          await androidImpl.requestNotificationsPermission() ?? false;
-      _alarmGranted = await androidImpl.requestExactAlarmsPermission() ?? false;
-      AppLog.d('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
-
-      // REQUEST BATTERY OPTIMIZATION EXEMPTION.
-      // Without this, Samsung Device Care suspends AlarmManager alarms
-      // within seconds of the app being backgrounded. The system shows a
-      // one-time dialog — user taps "Allow" and it persists permanently.
-      await _requestBatteryOptimizationExemption();
-    } else {
-      _notifGranted = didInit ?? true;
-      _alarmGranted = _notifGranted;
+      if (androidImpl != null) {
+        _notifGranted =
+            await androidImpl.requestNotificationsPermission() ?? false;
+        _alarmGranted =
+            await androidImpl.requestExactAlarmsPermission() ?? false;
+        AppLog.d('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
+        await _requestBatteryOptimizationExemption();
+      } else {
+        _notifGranted = true;
+        _alarmGranted = true;
+      }
+    } catch (e) {
+      AppLog.e('[NS] permission request failed (non-fatal): $e');
+      _notifGranted = true;
     }
 
     return _notifGranted;
   }
 
-  // ── Battery optimization exemption ────────────────────────────────────────
+  // ── Battery optimization ──────────────────────────────────────────────────
 
   Future<void> _requestBatteryOptimizationExemption() async {
     try {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
       AppLog.d('[NS] Battery optimization exemption requested.');
     } catch (e) {
-      AppLog.d('[NS] Battery exemption request failed (non-fatal): $e');
+      AppLog.d('[NS] Battery exemption failed (non-fatal): $e');
     }
   }
 
-  /// Opens the battery settings page so the user can manually whitelist the
-  /// app if they dismissed the initial prompt. Wire to a settings button.
   Future<void> openBatterySettings() async {
     try {
       await _channel.invokeMethod('openBatterySettings');
@@ -105,20 +106,21 @@ class NotificationService {
   Future<bool> hasPermission() async {
     if (!_supported) return false;
     await init();
-
-    final androidImpl = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-
-    if (androidImpl != null) {
-      _notifGranted =
-          await androidImpl.areNotificationsEnabled() ?? _notifGranted;
-      _alarmGranted =
-          await androidImpl.canScheduleExactNotifications() ?? _alarmGranted;
-      return _notifGranted;
+    try {
+      final androidImpl = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      if (androidImpl != null) {
+        _notifGranted =
+            await androidImpl.areNotificationsEnabled() ?? _notifGranted;
+        _alarmGranted =
+            await androidImpl.canScheduleExactNotifications() ?? _alarmGranted;
+        return _notifGranted;
+      }
+    } catch (e) {
+      AppLog.e('[NS] hasPermission failed: $e');
     }
-
     return _notifGranted;
   }
 
@@ -132,7 +134,6 @@ class NotificationService {
   }) async {
     if (!_supported) return;
     await init();
-
     if (!_notifGranted) {
       AppLog.d('[NS] No permission — skipping id=$id');
       return;
@@ -158,7 +159,6 @@ class NotificationService {
       ),
     );
 
-    // Encode title+body as payload so foreground callback can show toast
     final payload = '$title||$body';
     try {
       await _plugin.zonedSchedule(
@@ -175,36 +175,8 @@ class NotificationService {
       AppLog.d('[NS] Scheduled id=$id at $when');
     } catch (e) {
       final msg = e.toString().toLowerCase();
-
-      // ── "Missing type parameter" — corrupted legacy data in storage ───────
-      // Happens when old repeating notifications (type=2) are still stored.
-      // Self-heal: wipe ALL stored data and retry once with a clean slate.
-      if (msg.contains('missing type parameter')) {
-        AppLog.e(
-          '[NS] Missing type parameter on id=$id — running native purge and retrying...',
-        );
-        try {
-          // cancelAll() is also broken — use native purge instead
-          await _channel.invokeMethod('purgeCorruptedNotifications');
-          await _plugin.zonedSchedule(
-            id,
-            title,
-            body,
-            when,
-            details,
-            payload: payload,
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-          );
-          AppLog.d('[NS] Retry after purge succeeded id=$id');
-        } catch (e2) {
-          AppLog.e('[NS] Retry after purge also failed id=$id: $e2');
-        }
-      } else if (msg.contains('exact') ||
-          msg.contains('schedule_exact') ||
-          msg.contains('platformexception')) {
-        AppLog.d('[NS] Exact blocked, trying inexact id=$id');
+      AppLog.e('[NS] zonedSchedule failed id=$id: $e');
+      if (msg.contains('exact') || msg.contains('platformexception')) {
         try {
           await _plugin.zonedSchedule(
             id,
@@ -219,68 +191,55 @@ class NotificationService {
           );
           AppLog.d('[NS] Scheduled inexact id=$id');
         } catch (e2) {
-          AppLog.e('[NS] Both exact and inexact failed id=$id: $e2');
+          AppLog.e('[NS] inexact also failed id=$id: $e2');
         }
-      } else {
-        AppLog.e('[NS] Schedule failed id=$id: $e');
       }
     }
   }
 
-  // ── Native purge — bypasses broken loadScheduledNotifications ───────────
-  // Use this instead of cancelAll() everywhere. Deletes the notification XML files
-  // XML file directly so the Java deserializer never runs.
+  // ── Native purge (bypass broken plugin cancelAll) ─────────────────────────
+
   Future<void> nativePurgeAndCancel() async {
     if (!_supported) return;
-    try {
-      final result = await _channel.invokeMethod('purgeCorruptedNotifications');
-      AppLog.d('[NS] nativePurgeAndCancel: $result');
-    } catch (e) {
-      AppLog.e('[NS] nativePurgeAndCancel failed: $e');
-    }
+    AppLog.d('[NS] nativePurgeAndCancel — no-op (purge done in MainActivity)');
   }
 
   Future<void> cancel(int id) async {
     if (!_supported) return;
-    await _plugin.cancel(id);
+    try {
+      await _plugin.cancel(id);
+    } catch (_) {}
   }
 
   Future<void> cancelAll() async {
     if (!_supported) return;
     try {
       await _plugin.cancelAll();
-      AppLog.d('[NS] All cancelled.');
+      AppLog.d('[NS] cancelAll done');
     } catch (e) {
-      AppLog.d('[NS] cancelAll failed: $e');
+      AppLog.e('[NS] cancelAll failed: $e');
     }
   }
 
+  // ── Notification response ─────────────────────────────────────────────────
+
   static void _onNotificationResponse(NotificationResponse response) {
-    AppLog.d('[NS] >>> onNotificationResponse CALLED');
-    AppLog.d('[NS]     actionId=${response.actionId}');
-    AppLog.d('[NS]     notifResponseType=${response.notificationResponseType}');
-    AppLog.d('[NS]     id=${response.id}');
-    AppLog.d('[NS]     payload="${response.payload}"');
+    AppLog.d('[NS] >>> onNotificationResponse id=${response.id}');
     try {
       final payload = response.payload ?? '';
-      AppLog.d('[NS] Step 1 — payload parsed ok: "$payload"');
       final sep = payload.indexOf('||');
       final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
       final body = sep >= 0 ? payload.substring(sep + 2) : '';
-      AppLog.d('[NS] Step 2 — title="$title" body="$body"');
-      AppLog.d('[NS] Step 3 — calling MobileToastService.show...');
+      AppLog.d('[NS] Toast: title="$title"');
       MobileToastService.show(title: title, body: body);
-      AppLog.d('[NS] Step 4 — MobileToastService.show returned ok');
     } catch (e, stack) {
-      AppLog.d('[NS] !!! CRASH in onNotificationResponse: $e');
-      AppLog.d('[NS] !!! STACK: $stack');
+      AppLog.e('[NS] onNotificationResponse crash: $e\n$stack');
     }
   }
 
   Future<void> showImmediateTest() async {
     if (!_supported) return;
     await init();
-
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'class_reminders',
@@ -290,12 +249,6 @@ class NotificationService {
       ),
       iOS: DarwinNotificationDetails(),
     );
-
-    await _plugin.show(
-      11111,
-      '🚀 Immediate Notification',
-      'If you see this, notifications are working.',
-      details,
-    );
+    await _plugin.show(11111, '🚀 Test', 'Notifications working!', details);
   }
 }
