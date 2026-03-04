@@ -1,11 +1,10 @@
 // lib/ui/workspaces_home.dart
+// CHANGES: Removed debug bug-icon button and LogViewerScreen import.
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../app/state/workspaces_vm.dart';
-import '../services/log_buffer.dart';
-import 'log_viewer_screen.dart';
 import 'widgets/notification_bell.dart';
 
 class WorkspacesHome extends StatefulWidget {
@@ -48,22 +47,6 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           ),
           centerTitle: true,
           actions: [
-            // Debug log viewer — mobile only, tap to see all [NS]/[Toast]/[Scheduler] logs
-            if (!kIsWeb)
-              IconButton(
-                tooltip: 'Debug logs',
-                icon: const Icon(
-                  Icons.bug_report_rounded,
-                  color: Colors.white70,
-                ),
-                onPressed: () {
-                  AppLog.d('[UI] Log viewer opened');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LogViewerScreen()),
-                  );
-                },
-              ),
             const NotificationBell(),
             IconButton(
               tooltip: 'Import syllabus',

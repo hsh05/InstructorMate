@@ -1,7 +1,9 @@
 // lib/ui/widgets/notification_bell.dart
 //
-// Bell icon shown only on web (returns empty on mobile).
-// No dart:js_interop — safe for APK builds.
+// Works on BOTH web and mobile — NO kIsWeb guard in build().
+// Web:    populated by WebNotificationService timer ticker.
+// Mobile: populated by MobileToastService calling addMobileNotif().
+// Placed in: workspaces_home AppBar  AND  workspace_detail SliverAppBar.
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -39,32 +41,37 @@ class _NotificationBellState extends State<NotificationBell>
       TweenSequenceItem(tween: Tween(begin: 6.0, end: 0.0), weight: 1),
     ]).animate(CurvedAnimation(parent: _shake, curve: Curves.easeInOut));
 
-    // Unlock audio on the very first user interaction with the bell.
-    // Browser autoplay policy requires this before AudioContext can play.
-    WebNotificationService.instance.unlockAudio();
+    if (kIsWeb) WebNotificationService.instance.unlockAudio();
 
-    WebNotificationService.instance.onChanged = () {
-      if (!mounted) return;
-      setState(() {});
-      _shake.forward(from: 0);
+    // Register with the universal listener list — safe for multiple
+    // bells mounted at once (home + workspace detail).
+    WebNotificationService.instance.addListener(_onNotifChanged);
+  }
+
+  void _onNotifChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _shake.forward(from: 0);
+    // On web: trigger overlay toast from the bell.
+    // On mobile: toast already shown by MobileToastService — skip to avoid double.
+    if (kIsWeb) {
       final notifs = WebNotificationService.instance.activeNotifications;
-      if (notifs.isNotEmpty) _showToast(notifs.first);
-    };
+      if (notifs.isNotEmpty) _showWebToast(notifs.first);
+    }
   }
 
   @override
   void dispose() {
     _dropdown?.remove();
     _shake.dispose();
-    WebNotificationService.instance.onChanged = null;
+    WebNotificationService.instance.removeListener(_onNotifChanged);
     super.dispose();
   }
 
-  void _showToast(PendingNotification notif) {
+  void _showWebToast(PendingNotification notif) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final overlay = navigatorKey.currentState?.overlay;
       if (overlay == null) return;
-      // Use the shared NotifToast widget (also used by mobile)
       showNotifToast(overlay: overlay, title: notif.title, body: notif.body);
     });
   }
@@ -113,7 +120,7 @@ class _NotificationBellState extends State<NotificationBell>
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb) return const SizedBox.shrink();
+    // ✅ NO kIsWeb guard — bell renders on BOTH web and mobile
     final count = WebNotificationService.instance.unreadCount;
     return AnimatedBuilder(
       animation: _shakeAnim,
@@ -124,7 +131,7 @@ class _NotificationBellState extends State<NotificationBell>
       child: GestureDetector(
         key: _overlayKey,
         onTap: () {
-          WebNotificationService.instance.unlockAudio();
+          if (kIsWeb) WebNotificationService.instance.unlockAudio();
           _toggleDropdown();
         },
         child: Padding(
@@ -213,15 +220,16 @@ class _DropdownPanel extends StatelessWidget {
                     size: 18,
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Upcoming Classes',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      color: AppColors.ink,
+                  const Expanded(
+                    child: Text(
+                      'Notifications',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AppColors.ink,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   if (notifs.isNotEmpty)
                     GestureDetector(
                       onTap: onClearAll,
@@ -250,11 +258,21 @@ class _DropdownPanel extends StatelessWidget {
                     ),
                     SizedBox(height: 10),
                     Text(
-                      'No upcoming reminders',
+                      'No notifications yet',
                       style: TextStyle(
                         color: AppColors.inkLight,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Reminders will appear here when they fire.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.inkLight,
+                        fontSize: 11,
+                        height: 1.4,
                       ),
                     ),
                   ],
@@ -278,17 +296,25 @@ class _DropdownPanel extends StatelessWidget {
   }
 }
 
+// ─── Notification tile ────────────────────────────────────────────────────────
 class _NotifTile extends StatelessWidget {
   const _NotifTile({required this.notif});
   final PendingNotification notif;
 
+  String _timeAgo(DateTime fireAt) {
+    final diff = DateTime.now().difference(fireAt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final h = notif.fireAt.hour.toString().padLeft(2, '0');
-    final m = notif.fireAt.minute.toString().padLeft(2, '0');
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 40,
@@ -298,7 +324,7 @@ class _NotifTile extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.schedule_rounded,
+              Icons.notifications_active_rounded,
               color: AppColors.primary,
               size: 20,
             ),
@@ -319,11 +345,15 @@ class _NotifTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   notif.body,
-                  style: const TextStyle(fontSize: 12, color: AppColors.inkMid),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.inkMid,
+                    height: 1.3,
+                  ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
-                  'Notified at $h:$m',
+                  _timeAgo(notif.fireAt),
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.inkLight,

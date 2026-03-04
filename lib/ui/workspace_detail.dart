@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
 import '../config/app_colors.dart';
+import 'widgets/notification_bell.dart';
 
 const _fieldLabels = {
   'course_name': 'Course Name',
@@ -299,6 +300,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       pinned: true,
       backgroundColor: AppColors.primaryDark,
       foregroundColor: Colors.white,
+      actions: const [NotificationBell(), SizedBox(width: 4)],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(
@@ -1807,25 +1809,35 @@ class _SectionCard extends StatelessWidget {
                           color: AppColors.inkLight,
                         ),
                         const SizedBox(width: 3),
-                        Text(
-                          days,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.inkMid,
+                        Flexible(
+                          child: Text(
+                            days,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMid,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
                         const Icon(
                           Icons.schedule_rounded,
                           size: 11,
                           color: AppColors.inkLight,
                         ),
                         const SizedBox(width: 3),
-                        Text(
-                          time,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.inkMid,
+                        Flexible(
+                          child: Text(
+                            time,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMid,
+                            ),
                           ),
                         ),
                       ],

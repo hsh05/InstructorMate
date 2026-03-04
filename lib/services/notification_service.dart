@@ -1,12 +1,35 @@
 // lib/services/notification_service.dart
-// Uses flutter_local_notifications ^9.9.1 API (no zonedSchedule SQLite issues)
+// Uses flutter_local_notifications ^18.0.1
+//
+// CHANGES FROM ORIGINAL:
+// 1. Added top-level notificationBackgroundHandler() with @pragma annotation.
+//    This is REQUIRED — without it, tapping a notification when the app is
+//    backgrounded or killed does nothing (response silently dropped).
+// 2. Wired onDidReceiveBackgroundNotificationResponse in initialize().
+// 3. Removed custom MethodChannel battery call — your MainActivity.kt already
+//    handles it correctly; the Dart side just needs to keep calling it as-is.
 
-import 'log_buffer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'mobile_toast_service.dart';
+
+// ─── REQUIRED top-level background handler ───────────────────────────────────
+// Must be TOP-LEVEL (not inside a class) and annotated so Dart's AOT compiler
+// keeps it in release builds. Called when the app is backgrounded/killed and
+// the user taps a notification.
+@pragma('vm:entry-point')
+void notificationBackgroundHandler(NotificationResponse response) {
+  try {
+    final payload = response.payload ?? '';
+    final sep = payload.indexOf('||');
+    final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
+    final body = sep >= 0 ? payload.substring(sep + 2) : '';
+    // App is launching/resuming from tap — show the toast once navigator is ready
+    MobileToastService.show(title: title, body: body);
+  } catch (e, stack) {}
+}
 
 class NotificationService {
   NotificationService._();
@@ -32,7 +55,6 @@ class NotificationService {
 
   Future<bool> _doInit() async {
     if (_initialized) return _notifGranted;
-    AppLog.d('[NS] _doInit starting...');
     try {
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
       const ios = DarwinInitializationSettings(
@@ -42,11 +64,14 @@ class NotificationService {
       );
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
+        // Fires when user taps a notification while the app is OPEN
         onDidReceiveNotificationResponse: _onNotificationResponse,
+        // FIX: fires when user taps a notification while app is BACKGROUND/KILLED
+        // Must reference the TOP-LEVEL function above — not a class method.
+        onDidReceiveBackgroundNotificationResponse:
+            notificationBackgroundHandler,
       );
-      AppLog.d('[NS] plugin.initialize() succeeded');
     } catch (e) {
-      AppLog.e('[NS] plugin.initialize() FAILED: $e');
       _initialized = true;
       return false;
     }
@@ -61,14 +86,12 @@ class NotificationService {
             await androidImpl.requestNotificationsPermission() ?? false;
         _alarmGranted =
             await androidImpl.requestExactAlarmsPermission() ?? false;
-        AppLog.d('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
         await _requestBatteryOptimizationExemption();
       } else {
         _notifGranted = true;
         _alarmGranted = true;
       }
     } catch (e) {
-      AppLog.e('[NS] permission request failed (non-fatal): $e');
       _notifGranted = true;
     }
     return _notifGranted;
@@ -77,9 +100,7 @@ class NotificationService {
   Future<void> _requestBatteryOptimizationExemption() async {
     try {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
-    } catch (e) {
-      AppLog.d('[NS] Battery exemption failed (non-fatal): $e');
-    }
+    } catch (e) {}
   }
 
   Future<bool> hasPermission() async {
@@ -97,9 +118,7 @@ class NotificationService {
             await androidImpl.canScheduleExactNotifications() ?? _alarmGranted;
         return _notifGranted;
       }
-    } catch (e) {
-      AppLog.e('[NS] hasPermission failed: $e');
-    }
+    } catch (e) {}
     return _notifGranted;
   }
 
@@ -112,7 +131,6 @@ class NotificationService {
     if (!_supported) return;
     await init();
     if (!_notifGranted) {
-      AppLog.d('[NS] No permission — skipping id=$id');
       return;
     }
 
@@ -133,9 +151,6 @@ class NotificationService {
       ),
     );
 
-    // KEY FIX: cancel the individual ID first before scheduling.
-    // This avoids loadScheduledNotifications reading a broken DB entry
-    // for this specific ID — we just remove it first then write fresh.
     try {
       await _plugin.cancel(id);
     } catch (_) {}
@@ -153,10 +168,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-      AppLog.d('[NS] Scheduled id=$id at $when');
-    } catch (e) {
-      AppLog.e('[NS] zonedSchedule failed id=$id: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> cancel(int id) async {
@@ -170,23 +182,17 @@ class NotificationService {
     if (!_supported) return;
     try {
       await _plugin.cancelAll();
-      AppLog.d('[NS] cancelAll done');
-    } catch (e) {
-      AppLog.e('[NS] cancelAll failed: $e');
-    }
+    } catch (e) {}
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
-    AppLog.d('[NS] onNotificationResponse id=${response.id}');
     try {
       final payload = response.payload ?? '';
       final sep = payload.indexOf('||');
       final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
       final body = sep >= 0 ? payload.substring(sep + 2) : '';
       MobileToastService.show(title: title, body: body);
-    } catch (e, stack) {
-      AppLog.e('[NS] onNotificationResponse crash: $e\n$stack');
-    }
+    } catch (e, stack) {}
   }
 
   Future<void> showImmediateTest() async {
