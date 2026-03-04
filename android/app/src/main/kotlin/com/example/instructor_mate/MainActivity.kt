@@ -2,7 +2,6 @@
 
 package com.instructormate.instructor_mate
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -17,6 +16,73 @@ class MainActivity : FlutterActivity() {
 
     private val BATTERY_CHANNEL = "com.instructormate/battery"
 
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        // ── NUCLEAR PURGE before Flutter engine starts ───────────────────────
+        // flutter_local_notifications v17+ stores scheduled notifications in
+        // TWO places:
+        //   1. SharedPreferences XML files (older versions)
+        //   2. SQLite database: databases/notifications.db (v17+, PRIMARY)
+        //
+        // Old builds used matchDateTimeComponents (type=2 repeating).
+        // The new plugin's Java deserializer crashes on type=2 in BOTH stores.
+        // Even initialize(), cancelAll(), and zonedSchedule() all crash because
+        // they call loadScheduledNotifications which reads the SQLite DB first.
+        //
+        // We MUST delete BOTH stores here, before super.onCreate() starts
+        // the Flutter engine, so the plugin starts with a completely clean slate.
+        purgeAllNotificationStorage()
+        super.onCreate(savedInstanceState)
+    }
+
+    private fun purgeAllNotificationStorage() {
+        try {
+            val flagFile = File(applicationContext.filesDir, "notif_purge_v4.flag")
+            if (flagFile.exists()) return  // already purged on a previous launch
+
+            var log = ""
+
+            // ── 1. Delete SQLite database (PRIMARY store in v17+) ─────────────
+            val dbDir = applicationContext.getDatabasePath("notifications.db").parentFile
+            val dbTargets = listOf(
+                "notifications.db",
+                "notifications.db-shm",
+                "notifications.db-wal",
+                "notifications.db-journal",
+            )
+            for (name in dbTargets) {
+                val f = if (dbDir != null) File(dbDir, name)
+                        else applicationContext.getDatabasePath(name)
+                if (f.exists()) {
+                    val ok = f.delete()
+                    log += "DB $name deleted=$ok; "
+                }
+            }
+
+            // ── 2. Delete SharedPreferences XML files (fallback/older store) ──
+            val prefsDir = File(applicationContext.dataDir, "shared_prefs")
+            val xmlTargets = listOf(
+                "notification_plugin_cache.xml",
+                "com.dexterous.flutterlocalnotifications.xml",
+                "scheduled_notifications.xml",
+                "notification_appLaunch.xml",
+            )
+            for (name in xmlTargets) {
+                val f = File(prefsDir, name)
+                if (f.exists()) {
+                    val ok = f.delete()
+                    log += "XML $name deleted=$ok; "
+                }
+            }
+
+            // ── 3. Set flag so purge never runs again ─────────────────────────
+            flagFile.createNewFile()
+            android.util.Log.d("InstructorMate", "Purge complete: $log")
+
+        } catch (e: Exception) {
+            android.util.Log.e("InstructorMate", "Purge error (non-fatal): ${e.message}")
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -26,45 +92,14 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
 
-                // ── NUCLEAR FIX for "Missing type parameter" ──────────────
-                // flutter_local_notifications stores scheduled notifications
-                // in a SharedPreferences XML file. Old builds used type=2
-                // (repeating) which the new plugin can't deserialize —
-                // even cancelAll() crashes because it calls
-                // loadScheduledNotifications first.
-                //
-                // Solution: delete the XML file directly from the filesystem,
-                // completely bypassing the broken Java deserializer.
-                // After this, the plugin starts with a clean slate and
-                // rescheduleAll() repopulates with valid type=1 one-shot entries.
                 "purgeCorruptedNotifications" -> {
+                    // Reset the flag so purge runs again on next launch
                     try {
-                        val deleted = mutableListOf<String>()
-                        val failed  = mutableListOf<String>()
-
-                        // flutter_local_notifications SharedPrefs file
-                        val prefsDir = File(applicationContext.dataDir, "shared_prefs")
-                        val targets = listOf(
-                            "notification_plugin_cache.xml",
-                            "com.dexterous.flutterlocalnotifications.xml",
-                            "scheduled_notifications.xml",
-                        )
-                        for (name in targets) {
-                            val f = File(prefsDir, name)
-                            if (f.exists()) {
-                                if (f.delete()) deleted.add(name)
-                                else failed.add(name)
-                            }
-                        }
-
-                        // Also cancel via AlarmManager directly (no plugin involved)
-                        // by clearing the alarms using the system alarm service.
-                        // We do this by iterating notification IDs 0..2000 and
-                        // cancelling each PendingIntent — safest nuclear option.
-
-                        result.success("deleted=$deleted failed=$failed")
+                        File(applicationContext.filesDir, "notif_purge_v4.flag").delete()
+                        purgeAllNotificationStorage()
+                        result.success("purge complete")
                     } catch (e: Exception) {
-                        result.error("PURGE_FAILED", e.message, null)
+                        result.error("PURGE", e.message, null)
                     }
                 }
 
