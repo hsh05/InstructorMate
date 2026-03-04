@@ -38,10 +38,7 @@ class NotificationScheduler {
     AppLog.d(
       '[Scheduler] rescheduleAll START — ${workspaces.length} workspaces',
     );
-    // FIX: cancelAll() crashes with "Missing type parameter" because it calls
-    // loadScheduledNotifications internally — same as zonedSchedule.
-    // Use the native purge channel instead which deletes the XML file directly.
-    await NotificationService.instance.nativePurgeAndCancel();
+    await NotificationService.instance.cancelAll();
 
     for (final ws in workspaces) {
       for (final section in ws.sections) {
