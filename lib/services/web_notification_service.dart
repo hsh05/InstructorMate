@@ -1,6 +1,7 @@
 // lib/services/web_notification_service.dart
 
 import 'dart:async';
+import 'log_buffer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback, debugPrint;
 
 import '../app/workspace_models.dart';
@@ -89,7 +90,7 @@ class WebNotificationService {
   void _checkNow() {
     if (!kIsWeb) return;
     final now = DateTime.now();
-    debugPrint(
+    AppLog.d(
       '[WebNotif] CHECK at $now — watching ${_workspaces.length} workspaces',
     );
 
@@ -100,7 +101,7 @@ class WebNotificationService {
 
         final parsed = _parseHHmm(sch.startTime);
         if (parsed == null) {
-          debugPrint(
+          AppLog.d(
             '[WebNotif] SKIP ${section.name} — unparseable startTime="${sch.startTime}"',
           );
           continue;
@@ -122,7 +123,7 @@ class WebNotificationService {
           );
 
           final diff = now.difference(fireAt).inSeconds;
-          debugPrint(
+          AppLog.d(
             '[WebNotif] ${section.name} day=$day | nextFire=$fireAt | diff=${diff}s',
           );
 
@@ -192,7 +193,7 @@ class WebNotificationService {
           n.fireAt.difference(notif.fireAt).inSeconds.abs() < 60,
     );
     if (already) return;
-    debugPrint('[WebNotif] FIRED: ${notif.title}');
+    AppLog.d('[WebNotif] FIRED: ${notif.title}');
     activeNotifications.insert(0, notif);
     if (kIsWeb) playBellChime(); // web-only, stub on mobile
     onChanged?.call();

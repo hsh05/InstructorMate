@@ -1,5 +1,6 @@
 // lib/services/notification_service.dart
 
+import 'log_buffer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -65,7 +66,7 @@ class NotificationService {
       _notifGranted =
           await androidImpl.requestNotificationsPermission() ?? false;
       _alarmGranted = await androidImpl.requestExactAlarmsPermission() ?? false;
-      debugPrint('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
+      AppLog.d('[NS] granted=$_notifGranted exactAlarm=$_alarmGranted');
 
       // REQUEST BATTERY OPTIMIZATION EXEMPTION.
       // Without this, Samsung Device Care suspends AlarmManager alarms
@@ -85,9 +86,9 @@ class NotificationService {
   Future<void> _requestBatteryOptimizationExemption() async {
     try {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
-      debugPrint('[NS] Battery optimization exemption requested.');
+      AppLog.d('[NS] Battery optimization exemption requested.');
     } catch (e) {
-      debugPrint('[NS] Battery exemption request failed (non-fatal): $e');
+      AppLog.d('[NS] Battery exemption request failed (non-fatal): $e');
     }
   }
 
@@ -97,7 +98,7 @@ class NotificationService {
     try {
       await _channel.invokeMethod('openBatterySettings');
     } catch (e) {
-      debugPrint('[NS] openBatterySettings failed: $e');
+      AppLog.d('[NS] openBatterySettings failed: $e');
     }
   }
 
@@ -135,7 +136,7 @@ class NotificationService {
     await init();
 
     if (!_notifGranted) {
-      debugPrint('[NS] No permission — skipping id=$id');
+      AppLog.d('[NS] No permission — skipping id=$id');
       return;
     }
 
@@ -173,13 +174,13 @@ class NotificationService {
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-      debugPrint('[NS] Scheduled id=$id at $when');
+      AppLog.d('[NS] Scheduled id=$id at $when');
     } catch (e) {
       final msg = e.toString().toLowerCase();
       if (msg.contains('exact') ||
           msg.contains('schedule_exact') ||
           msg.contains('platformexception')) {
-        debugPrint('[NS] Exact blocked, trying inexact id=$id');
+        AppLog.d('[NS] Exact blocked, trying inexact id=$id');
         try {
           await _plugin.zonedSchedule(
             id,
@@ -192,12 +193,12 @@ class NotificationService {
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
           );
-          debugPrint('[NS] Scheduled inexact id=$id');
+          AppLog.d('[NS] Scheduled inexact id=$id');
         } catch (e2) {
-          debugPrint('[NS] Both exact and inexact failed id=$id: $e2');
+          AppLog.d('[NS] Both exact and inexact failed id=$id: $e2');
         }
       } else {
-        debugPrint('[NS] Schedule failed id=$id: $e');
+        AppLog.d('[NS] Schedule failed id=$id: $e');
       }
     }
   }
@@ -211,33 +212,31 @@ class NotificationService {
     if (!_supported) return;
     try {
       await _plugin.cancelAll();
-      debugPrint('[NS] All cancelled.');
+      AppLog.d('[NS] All cancelled.');
     } catch (e) {
-      debugPrint('[NS] cancelAll failed: $e');
+      AppLog.d('[NS] cancelAll failed: $e');
     }
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
-    debugPrint('[NS] >>> onNotificationResponse CALLED');
-    debugPrint('[NS]     actionId=${response.actionId}');
-    debugPrint(
-      '[NS]     notifResponseType=${response.notificationResponseType}',
-    );
-    debugPrint('[NS]     id=${response.id}');
-    debugPrint('[NS]     payload="${response.payload}"');
+    AppLog.d('[NS] >>> onNotificationResponse CALLED');
+    AppLog.d('[NS]     actionId=${response.actionId}');
+    AppLog.d('[NS]     notifResponseType=${response.notificationResponseType}');
+    AppLog.d('[NS]     id=${response.id}');
+    AppLog.d('[NS]     payload="${response.payload}"');
     try {
       final payload = response.payload ?? '';
-      debugPrint('[NS] Step 1 — payload parsed ok: "$payload"');
+      AppLog.d('[NS] Step 1 — payload parsed ok: "$payload"');
       final sep = payload.indexOf('||');
       final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
       final body = sep >= 0 ? payload.substring(sep + 2) : '';
-      debugPrint('[NS] Step 2 — title="$title" body="$body"');
-      debugPrint('[NS] Step 3 — calling MobileToastService.show...');
+      AppLog.d('[NS] Step 2 — title="$title" body="$body"');
+      AppLog.d('[NS] Step 3 — calling MobileToastService.show...');
       MobileToastService.show(title: title, body: body);
-      debugPrint('[NS] Step 4 — MobileToastService.show returned ok');
+      AppLog.d('[NS] Step 4 — MobileToastService.show returned ok');
     } catch (e, stack) {
-      debugPrint('[NS] !!! CRASH in onNotificationResponse: $e');
-      debugPrint('[NS] !!! STACK: $stack');
+      AppLog.d('[NS] !!! CRASH in onNotificationResponse: $e');
+      AppLog.d('[NS] !!! STACK: $stack');
     }
   }
 

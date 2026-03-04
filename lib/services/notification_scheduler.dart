@@ -13,6 +13,7 @@
 // rescheduleAll() is already called on every app launch and after every
 // section change, so notifications stay current.
 
+import 'log_buffer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -30,11 +31,11 @@ class NotificationScheduler {
 
     final hasPermission = await NotificationService.instance.hasPermission();
     if (!hasPermission) {
-      debugPrint('[Scheduler] No permission — skipping.');
+      AppLog.d('[Scheduler] No permission — skipping.');
       return;
     }
 
-    debugPrint(
+    AppLog.d(
       '[Scheduler] rescheduleAll START — ${workspaces.length} workspaces',
     );
     await NotificationService.instance.cancelAll();
@@ -48,7 +49,7 @@ class NotificationScheduler {
         );
       }
     }
-    debugPrint(
+    AppLog.d(
       '[Scheduler] rescheduleAll DONE for ${workspaces.length} workspaces.',
     );
   }
@@ -79,7 +80,7 @@ class NotificationScheduler {
     // FIX: log clearly when skipping so you can see it in the debug console
     // instead of silently returning with no trace.
     if (sch.startTime.isEmpty) {
-      debugPrint(
+      AppLog.d(
         '[Scheduler] SKIP section "${section.name}" — startTime is empty.',
       );
       return;
@@ -89,7 +90,7 @@ class NotificationScheduler {
     // AM/PM suffix: "00 AM" → int.tryParse → null → section skipped with no alarm.
     final parsed = _parseHHmm(sch.startTime);
     if (parsed == null) {
-      debugPrint(
+      AppLog.d(
         '[Scheduler] SKIP section "${section.name}" — unparseable startTime="${sch.startTime}"',
       );
       return;
@@ -111,7 +112,7 @@ class NotificationScheduler {
       final dayTrimmed = day.trim();
       final weekday = ScheduleUtils.weekdayFor(dayTrimmed);
       if (weekday == null) {
-        debugPrint(
+        AppLog.d(
           '[Scheduler] SKIP day "$day" in section "${section.name}" — unrecognised. '
           'Expected Mon/Tue/Wed/Thu/Fri/Sat/Sun.',
         );
@@ -127,14 +128,14 @@ class NotificationScheduler {
         reminderMinutes: reminderMinutes,
       );
 
-      debugPrint(
+      AppLog.d(
         '[Scheduler] "${section.name}" $day → firstFire=$firstOccurrence remind=${reminderMinutes}min',
       );
       // Schedule _weeksAhead individual one-time notifications
       for (int week = 0; week < _weeksAhead; week++) {
         final fireTime = firstOccurrence.add(Duration(days: week * 7));
         final notifId = _notifId(workspaceId, section.id, day, week);
-        debugPrint('[Scheduler]   week=$week id=$notifId fireTime=$fireTime');
+        AppLog.d('[Scheduler]   week=$week id=$notifId fireTime=$fireTime');
         await NotificationService.instance.scheduleClassReminder(
           id: notifId,
           title: '⏰ $courseName starts in ${reminderMinutes}min',
