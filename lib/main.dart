@@ -6,37 +6,35 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
-import 'services/log_buffer.dart';
 import 'app/api_client.dart';
-import 'services/notification_service.dart';
 import 'app/state/workspaces_vm.dart';
 import 'config/app_config.dart';
 import 'config/app_colors.dart';
 import 'ui/workspaces_home.dart';
 import 'ui/workspace_detail.dart';
+import 'services/notification_service.dart';
 
-// Global navigator key so the toast can insert into the overlay
-// from anywhere — even when WorkspacesHome is not in the tree.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Timezone setup
   tz_data.initializeTimeZones();
-  AppLog.d('[Main] App starting — initializeTimeZones done');
   if (!kIsWeb) {
     try {
       final deviceTz = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(deviceTz));
-      AppLog.d('[Main] Timezone set to $deviceTz');
-    } catch (e) {
+    } catch (_) {
       tz.setLocalLocation(tz.UTC);
-      AppLog.e('[Main] Timezone failed, using UTC: $e');
     }
 
-    AppLog.d('[Main] Calling NotificationService.init()...');
-    await NotificationService.instance.init();
-    AppLog.d('[Main] NotificationService.init() complete');
+    // Init notifications — fully wrapped, NEVER crashes the app
+    try {
+      await NotificationService.instance.init();
+    } catch (_) {
+      // Notifications unavailable — app still works
+    }
   }
 
   runApp(const _Bootstrap());
@@ -44,7 +42,6 @@ void main() async {
 
 class _Bootstrap extends StatefulWidget {
   const _Bootstrap({super.key});
-
   @override
   State<_Bootstrap> createState() => _BootstrapState();
 }
@@ -59,8 +56,6 @@ class _BootstrapState extends State<_Bootstrap> {
     _api = ApiClient(baseUrl: AppConfig.baseUrl);
     _vm = WorkspacesViewModel(api: _api);
     _vm.load();
-
-    // Toast is triggered from NotificationBell.onChanged — see notification_bell.dart
   }
 
   @override

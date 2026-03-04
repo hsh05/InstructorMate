@@ -25,9 +25,11 @@ class AppLog {
   // ── File handle — opened once on first write ──────────────────────────────
   static File? _file;
   static bool _fileReady = false;
+  static bool _fileAttempted = false; // only try once — never block the app
 
   static Future<void> _ensureFile() async {
-    if (_fileReady || kIsWeb) return;
+    if (_fileReady || _fileAttempted || kIsWeb) return;
+    _fileAttempted = true;
     try {
       final dir = await getApplicationDocumentsDirectory();
       _file = File('${dir.path}/instructormate_debug.log');
