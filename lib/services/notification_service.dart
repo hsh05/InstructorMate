@@ -218,19 +218,26 @@ class NotificationService {
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
-    debugPrint('[NS] Notification received id=${response.id}');
-    // Parse title||body from payload
-    final payload = response.payload ?? '';
-    final sep = payload.indexOf('||');
-    final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
-    final body = sep >= 0 ? payload.substring(sep + 2) : '';
-    // Safely show toast — guard against being called before the widget tree
-    // is ready (e.g. if the notification fires during app cold start).
-    // SchedulerBinding.instance is available earlier than WidgetsBinding.
+    debugPrint('[NS] >>> onNotificationResponse CALLED');
+    debugPrint('[NS]     actionId=${response.actionId}');
+    debugPrint(
+      '[NS]     notifResponseType=${response.notificationResponseType}',
+    );
+    debugPrint('[NS]     id=${response.id}');
+    debugPrint('[NS]     payload="${response.payload}"');
     try {
+      final payload = response.payload ?? '';
+      debugPrint('[NS] Step 1 — payload parsed ok: "$payload"');
+      final sep = payload.indexOf('||');
+      final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
+      final body = sep >= 0 ? payload.substring(sep + 2) : '';
+      debugPrint('[NS] Step 2 — title="$title" body="$body"');
+      debugPrint('[NS] Step 3 — calling MobileToastService.show...');
       MobileToastService.show(title: title, body: body);
-    } catch (e) {
-      debugPrint('[NS] Toast show failed (non-fatal): $e');
+      debugPrint('[NS] Step 4 — MobileToastService.show returned ok');
+    } catch (e, stack) {
+      debugPrint('[NS] !!! CRASH in onNotificationResponse: $e');
+      debugPrint('[NS] !!! STACK: $stack');
     }
   }
 

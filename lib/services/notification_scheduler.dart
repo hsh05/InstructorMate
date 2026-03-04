@@ -34,6 +34,9 @@ class NotificationScheduler {
       return;
     }
 
+    debugPrint(
+      '[Scheduler] rescheduleAll START — ${workspaces.length} workspaces',
+    );
     await NotificationService.instance.cancelAll();
 
     for (final ws in workspaces) {
@@ -45,7 +48,9 @@ class NotificationScheduler {
         );
       }
     }
-    debugPrint('[Scheduler] Done for ${workspaces.length} workspaces.');
+    debugPrint(
+      '[Scheduler] rescheduleAll DONE for ${workspaces.length} workspaces.',
+    );
   }
 
   // Stable ID from workspace + section + day + week offset.
@@ -75,26 +80,22 @@ class NotificationScheduler {
     // instead of silently returning with no trace.
     if (sch.startTime.isEmpty) {
       debugPrint(
-        '[Scheduler] SKIP section "${section.name}" — startTime is empty. '
-        'Edit the section and set a start time.',
+        '[Scheduler] SKIP section "${section.name}" — startTime is empty.',
       );
       return;
     }
-    final timeParts = sch.startTime.split(':');
-    if (timeParts.length < 2) {
+    // FIX: Use robust parser — handles "9:00", "09:00", "9:00 AM", "9:00 PM".
+    // The old split(':') + int.tryParse failed silently for any time with an
+    // AM/PM suffix: "00 AM" → int.tryParse → null → section skipped with no alarm.
+    final parsed = _parseHHmm(sch.startTime);
+    if (parsed == null) {
       debugPrint(
-        '[Scheduler] SKIP section "${section.name}" — bad startTime format: "${sch.startTime}"',
+        '[Scheduler] SKIP section "${section.name}" — unparseable startTime="${sch.startTime}"',
       );
       return;
     }
-    final hour = int.tryParse(timeParts[0]);
-    final minute = int.tryParse(timeParts[1]);
-    if (hour == null || minute == null) {
-      debugPrint(
-        '[Scheduler] SKIP section "${section.name}" — non-numeric time: "${sch.startTime}"',
-      );
-      return;
-    }
+    final hour = parsed.hour;
+    final minute = parsed.minute;
     final location = tz.local;
 
     final reminderMinutes = sch.reminderMinutes > 0 ? sch.reminderMinutes : 10;
@@ -126,18 +127,45 @@ class NotificationScheduler {
         reminderMinutes: reminderMinutes,
       );
 
+      debugPrint(
+        '[Scheduler] "${section.name}" $day → firstFire=$firstOccurrence remind=${reminderMinutes}min',
+      );
       // Schedule _weeksAhead individual one-time notifications
       for (int week = 0; week < _weeksAhead; week++) {
         final fireTime = firstOccurrence.add(Duration(days: week * 7));
-
+        final notifId = _notifId(workspaceId, section.id, day, week);
+        debugPrint('[Scheduler]   week=$week id=$notifId fireTime=$fireTime');
         await NotificationService.instance.scheduleClassReminder(
-          id: _notifId(workspaceId, section.id, day, week),
+          id: notifId,
           title: '⏰ $courseName starts in ${reminderMinutes}min',
           body: '$sectionLabel$locationStr — $friendlyTime',
           when: fireTime,
         );
       }
     }
+  }
+
+  // FIX: Robust time parser — identical to web_notification_service._parseHHmm.
+  // Handles "HH:mm", "H:mm", "H:mm AM", "H:mm PM", "12:00 PM"→12, "12:00 AM"→0.
+  static ({int hour, int minute})? _parseHHmm(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final upper = s.toUpperCase();
+    final isPM = upper.contains('PM');
+    final isAM = upper.contains('AM');
+    final timeOnly = s
+        .replaceAll(RegExp(r'[AaPp][Mm]', caseSensitive: false), '')
+        .trim();
+    final parts = timeOnly.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0].trim());
+    final m = int.tryParse(parts[1].trim());
+    if (h == null || m == null) return null;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    int hour24 = h;
+    if (isPM && h != 12) hour24 = h + 12;
+    if (isAM && h == 12) hour24 = 0;
+    return (hour: hour24, minute: m);
   }
 
   static tz.TZDateTime _nextOccurrence({

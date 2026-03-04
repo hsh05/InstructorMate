@@ -11,41 +11,59 @@ class MobileToastService {
   MobileToastService._();
 
   static void show({required String title, required String body}) {
-    if (kIsWeb) return;
+    debugPrint('[Toast] >>> show() called title="$title"');
+    if (kIsWeb) {
+      debugPrint('[Toast] kIsWeb=true — skipping (web uses bell)');
+      return;
+    }
 
-    // Use SchedulerBinding which is available earlier than WidgetsBinding.
-    // addPostFrameCallback fires after the current frame completes —
-    // safe even if called during app startup or from a notification callback.
     void doShow() {
+      debugPrint('[Toast] doShow() executing on frame callback');
       try {
-        final overlay = navigatorKey.currentState?.overlay;
-        if (overlay == null) {
-          debugPrint('[MobileToast] overlay not ready — skipped');
+        debugPrint('[Toast] Step A — checking navigatorKey...');
+        final navState = navigatorKey.currentState;
+        debugPrint('[Toast] Step B — navState=$navState');
+        if (navState == null) {
+          debugPrint(
+            '[Toast] !!! navigatorKey.currentState is NULL — toast skipped',
+          );
           return;
         }
-        // Play sound — wrapped separately so a sound failure never blocks the toast
+        final overlay = navState.overlay;
+        debugPrint('[Toast] Step C — overlay=$overlay');
+        if (overlay == null) {
+          debugPrint('[Toast] !!! overlay is NULL — toast skipped');
+          return;
+        }
+
+        debugPrint('[Toast] Step D — playing sound...');
         try {
           SystemSound.play(SystemSoundType.alert);
+          debugPrint('[Toast] Step D — sound ok');
         } catch (e) {
-          debugPrint('[MobileToast] sound failed (non-fatal): $e');
+          debugPrint('[Toast] Step D — sound failed (non-fatal): $e');
         }
+
+        debugPrint('[Toast] Step E — inserting overlay entry...');
         showNotifToast(overlay: overlay, title: title, body: body);
-        debugPrint('[MobileToast] Showed: $title');
-      } catch (e) {
-        debugPrint('[MobileToast] show failed: $e');
+        debugPrint('[Toast] Step F — toast inserted successfully ✓');
+      } catch (e, stack) {
+        debugPrint('[Toast] !!! CRASH in doShow: $e');
+        debugPrint('[Toast] !!! STACK: $stack');
       }
     }
 
-    // If the scheduler is already in a frame, post to next frame.
-    // If not (e.g. cold start), post immediately via addPostFrameCallback.
-    final scheduler = SchedulerBinding.instance;
-    if (scheduler.schedulerPhase == SchedulerPhase.idle) {
-      // No frame is running — safe to call after next frame
+    try {
+      debugPrint('[Toast] Step 1 — getting SchedulerBinding...');
+      final scheduler = SchedulerBinding.instance;
+      debugPrint('[Toast] Step 2 — phase=${scheduler.schedulerPhase}');
       scheduler.addPostFrameCallback((_) => doShow());
-      // Ensure a frame is scheduled so the callback actually runs
+      debugPrint('[Toast] Step 3 — postFrameCallback registered');
       WidgetsBinding.instance.ensureVisualUpdate();
-    } else {
-      scheduler.addPostFrameCallback((_) => doShow());
+      debugPrint('[Toast] Step 4 — ensureVisualUpdate called');
+    } catch (e, stack) {
+      debugPrint('[Toast] !!! CRASH registering callback: $e');
+      debugPrint('[Toast] !!! STACK: $stack');
     }
   }
 }
