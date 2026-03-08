@@ -6,9 +6,6 @@ Future<void> main() async {
   // Ensure Flutter widgets are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load the .env file
-  await dotenv.load();
-
   // Run the app
   runApp(const InstructorMateApp());
 }

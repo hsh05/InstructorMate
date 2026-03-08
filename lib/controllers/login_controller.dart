@@ -1,42 +1,33 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
+import 'package:http/http.dart' as http;
 
 class LoginController {
-  final TextEditingController email, password;
+  final TextEditingController email;
+  final TextEditingController password;
 
   LoginController(this.email, this.password);
 
   Future<bool> login() async {
+    final apiUrl = 'http://10.0.2.2:8000/auth/login'; // Change to your backend URL if needed
     try {
-      final csv = await rootBundle.loadString('lib/assets/users.csv');
-      final inputEmail = email.text.trim().toLowerCase();
-      final inputPassword = password.text.trim();
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email.text.trim(),
+          'password': password.text.trim(),
+        }),
+      );
 
-      // Split and clean lines properly
-      final lines = csv.split('\n')
-        .map((line) => line.trim())  // Remove whitespace from each line
-        .where((line) => line.isNotEmpty)  // Remove empty lines
-        .toList();
-
-      // Skip header and check each line
-      for (int i = 1; i < lines.length; i++) {
-        final fields = lines[i].split(',');
-        
-        if (fields.length >= 2) {
-          final csvEmail = fields[0].trim().toLowerCase();
-          final csvPassword = fields[1].trim();
-          
-          if (csvEmail == inputEmail && csvPassword == inputPassword) {
-            debugPrint('✅ Login successful for: $inputEmail');
-            return true;
-          }
-        }
+      if (response.statusCode == 200) {
+        // Optionally parse response JSON for tokens or user info
+        debugPrint('✅ Login successful: ${response.body}');
+        return true;
+      } else {
+        debugPrint('❌ Login failed: ${response.body}');
+        return false;
       }
-      
-      debugPrint('❌ Login failed - no match found');
-      return false;
-      
     } catch (e) {
       debugPrint('❌ Login error: $e');
       return false;
