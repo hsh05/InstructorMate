@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:instructor_mate/screens/login_screen.dart';
-void main() {
+
+Future<void> main() async {
+  // Ensure Flutter widgets are initialized
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Run the app
   runApp(const InstructorMateApp());
 }
 
@@ -11,7 +17,7 @@ class InstructorMateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-home: LoginScreen(),
+      home: LoginScreen(),
     );
   }
 }
