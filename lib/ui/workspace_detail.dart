@@ -57,6 +57,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     _tabs = TabController(length: 4, vsync: this);
     _syncControllersFromWorkspace();
     _loadOhSlots();
+    _tabs.addListener(() {
+      if (_tabs.index == 2 && !_tabs.indexIsChanging) {
+        widget.vm.openWorkspace(widget.vm.current!.id);
+      }
+    });
   }
 
   void _loadOhSlots() {
@@ -2112,7 +2117,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
 
   void _toggle() {
     setState(() => _expanded = !_expanded);
-    if (_expanded && _students.isEmpty) _loadRoster();
+    if (_expanded) _loadRoster();
   }
 
   Future<void> _import(BuildContext ctx) async {

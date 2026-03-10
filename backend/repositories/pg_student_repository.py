@@ -2,14 +2,18 @@
 #
 # SCHEMA NOTE (normalized)
 # ────────────────────────
-# Student table no longer has a section_id column.
-# The Student <-> Section relationship is now via the StudentSection join table:
-#   StudentSection: id, student_id, section_id
+# Student table has no section_id column.
+# Student <-> Section relationship is via StudentSection join table.
 #
-# list_by_section / count_by_section join through StudentSection.
-# import_students creates a StudentSection row for each student.
+# DEDUPLICATION
+# ─────────────
+# Students are deduplicated by (workspace_id, email) as a natural key.
+# If a student with the same email already exists in this workspace,
+# save() reuses their existing student_id instead of creating a duplicate.
+# Falls back to (workspace_id, student_no) if email is blank.
 
 import logging
+import uuid
 from typing import List
 
 from sqlalchemy.orm import Session
@@ -40,8 +44,8 @@ class PgStudentRepository:
             .join(StudentSectionModel,
                   StudentSectionModel.student_id == StudentModel.student_id)
             .filter(
-                StudentModel.workspace_id        == workspace_id,
-                StudentSectionModel.section_id   == section_id,
+                StudentModel.workspace_id      == workspace_id,
+                StudentSectionModel.section_id == section_id,
             )
             .all()
         )
@@ -53,8 +57,8 @@ class PgStudentRepository:
             .join(StudentSectionModel,
                   StudentSectionModel.student_id == StudentModel.student_id)
             .filter(
-                StudentModel.workspace_id        == workspace_id,
-                StudentSectionModel.section_id   == section_id,
+                StudentModel.workspace_id      == workspace_id,
+                StudentSectionModel.section_id == section_id,
             )
             .count()
         )
@@ -63,45 +67,77 @@ class PgStudentRepository:
 
     def save(self, student) -> None:
         """
-        Save a student row and, if section_id is provided, create a
-        StudentSection link. Uses merge so re-importing the same student_id
-        (same email within workspace) updates rather than duplicates.
+        Upsert student by natural key (workspace_id + email), or
+        (workspace_id + student_no) if email is blank.
+        Reuses existing student_id to avoid duplicates on re-import.
+        Then creates a StudentSection link if not already present.
         """
-        row = StudentModel(
-            student_id   = student.student_id,
-            workspace_id = student.workspace_id,
-            student_no   = getattr(student, "student_no", "") or "",
-            name         = student.name,
-            email        = student.email,
-        )
-        self.db.merge(row)
+        email      = (getattr(student, "email",      "") or "").strip()
+        student_no = (getattr(student, "student_no", "") or "").strip()
+        section_id = (getattr(student, "section_id", "") or "").strip()
+
+        # Look up existing student by natural key
+        existing = None
+        if email:
+            existing = self.db.query(StudentModel).filter(
+                StudentModel.workspace_id == student.workspace_id,
+                StudentModel.email        == email,
+            ).first()
+        if not existing and student_no:
+            existing = self.db.query(StudentModel).filter(
+                StudentModel.workspace_id == student.workspace_id,
+                StudentModel.student_no   == student_no,
+            ).first()
+
+        if existing:
+            # Update fields in case name/student_no changed
+            existing.name       = student.name or existing.name
+            existing.student_no = student_no   or existing.student_no
+            existing.email      = email        or existing.email
+            actual_id = existing.student_id
+        else:
+            # New student — use the id from the domain object (uuid already set)
+            row = StudentModel(
+                student_id   = student.student_id,
+                workspace_id = student.workspace_id,
+                student_no   = student_no,
+                name         = student.name,
+                email        = email,
+            )
+            self.db.add(row)
+            actual_id = student.student_id
+
         self.db.flush()
 
-        section_id = getattr(student, "section_id", "") or ""
+        # Create StudentSection link if not already present
         if section_id:
-            # Upsert StudentSection (ignore if already linked)
-            existing = self.db.query(StudentSectionModel).filter(
-                StudentSectionModel.student_id == student.student_id,
+            exists = self.db.query(StudentSectionModel).filter(
+                StudentSectionModel.student_id == actual_id,
                 StudentSectionModel.section_id == section_id,
             ).first()
-            if not existing:
+            if not exists:
                 self.db.add(StudentSectionModel(
-                    student_id = student.student_id,
+                    student_id = actual_id,
                     section_id = section_id,
                 ))
 
         self.db.commit()
-        logger.info("Saved student id=%s workspace=%s section=%s",
-                    student.student_id, student.workspace_id, section_id)
+        logger.debug("Saved student id=%s workspace=%s section=%s",
+                     actual_id, student.workspace_id, section_id)
 
     def delete_by_section(self, section_id: str) -> int:
-        """Remove all StudentSection links for a section (used when replacing roster)."""
+        """
+        Remove all StudentSection links for this section so the roster
+        can be replaced on re-import. Student rows are intentionally kept
+        so that email/student_no deduplication works correctly on re-import.
+        Returns number of StudentSection rows removed.
+        """
         deleted = self.db.query(StudentSectionModel).filter(
             StudentSectionModel.section_id == section_id
         ).delete()
         self.db.commit()
+        logger.info("Removed %d section links for section=%s", deleted, section_id)
         return deleted
-
     # ── Private ───────────────────────────────────────────────────────────────
 
     def _to_dict(self, row: StudentModel, section_id: str = "") -> dict:
