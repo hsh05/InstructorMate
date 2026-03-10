@@ -63,6 +63,41 @@ class PgSectionRepository:
         self.db.commit()
         logger.info("Saved section id=%s workspace=%s", row.section_id, workspace_id)
 
+    def update(self, workspace_id: str, section_id: str, section_data: Dict) -> bool:
+        """
+        Update an existing section IN-PLACE, preserving its section_id.
+        This keeps all students associated with this section intact.
+        Returns True if the row was found and updated, False if not found.
+        """
+        row = self.db.query(SectionModel).filter(
+            SectionModel.workspace_id == workspace_id,
+            SectionModel.section_id   == section_id,
+        ).first()
+        if not row:
+            return False
+
+        schedule = section_data.get("schedule", {})
+
+        days_raw = schedule.get("days", [])
+        days_str = ",".join(days_raw) if isinstance(days_raw, list) else days_raw
+
+        end_time = schedule.get("end_time", "")
+        timezone = schedule.get("timezone", row.timezone or "UTC")
+        if end_time and end_time == timezone:
+            end_time = ""
+
+        row.name             = section_data.get("name", row.name)
+        row.location         = section_data.get("location", row.location)
+        row.days             = days_str
+        row.start_time       = schedule.get("start_time", row.start_time)
+        row.end_time         = end_time
+        row.timezone         = timezone
+        row.reminder_minutes = schedule.get("reminder_minutes", row.reminder_minutes)
+
+        self.db.commit()
+        logger.info("Updated section id=%s workspace=%s", section_id, workspace_id)
+        return True
+
     def delete(self, workspace_id: str, section_id: str) -> bool:
         row = self.db.query(SectionModel).filter(
             SectionModel.workspace_id == workspace_id,

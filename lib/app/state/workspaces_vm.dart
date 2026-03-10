@@ -288,6 +288,8 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.updateWorkspaceFields(ws.id, payload);
+      // Sync the WorkspaceSummary in the list so home status badge updates instantly
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -310,6 +312,28 @@ class WorkspacesViewModel extends ChangeNotifier {
       // No separate GET needed.
       _current = await api.createSection(ws.id, draft);
       await rescheduleNotificationsForCurrent();
+      _syncCurrentToList();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  // ── Update section (in-place, preserves students) ────────────────────────
+  // Calls the backend PATCH endpoint so section_id stays the same and all
+  // students linked to this section are preserved in the database.
+  Future<void> updateSection(String sectionId, SectionDraft draft) async {
+    final ws = _current;
+    if (ws == null) return;
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      _current = await api.updateSection(ws.id, sectionId, draft);
+      await rescheduleNotificationsForCurrent();
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -380,6 +404,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       _current = await api.deleteSection(ws.id, sectionId);
       sectionStudentCounts.remove(sectionId);
       await rescheduleNotificationsForCurrent();
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -424,6 +449,25 @@ class WorkspacesViewModel extends ChangeNotifier {
       notifyListeners();
       return null;
     }
+  }
+
+  // ── Sync current workspace status → summary list ─────────────────────────
+  // Keeps the home screen status badge up-to-date immediately after any field
+  // update, without requiring a full load() round-trip to the server.
+  void _syncCurrentToList() {
+    final ws = _current;
+    if (ws == null) return;
+    final idx = workspaces.indexWhere((s) => s.id == ws.id);
+    if (idx == -1) return;
+    final old = workspaces[idx];
+    workspaces[idx] = WorkspaceSummary(
+      id: old.id,
+      createdAt: old.createdAt,
+      originalFilename: old.originalFilename,
+      pdfHash: old.pdfHash,
+      title: ws.title.isNotEmpty ? ws.title : old.title,
+      status: ws.isReady ? 'ready' : 'draft',
+    );
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────

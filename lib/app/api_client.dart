@@ -132,10 +132,34 @@ class ApiClient {
       throw Exception(_extractDetail(resp));
     }
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    // Use workspace from response if present; otherwise fall back to GET
     if (map['workspace'] != null) {
       return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
     }
+    return getWorkspace(wid);
+  }
+
+  /// Update an existing section in-place (PATCH).
+  /// Preserves the section_id so all students linked to it stay intact.
+  /// Backend route: PATCH /workspaces/{wid}/sections/{sectionId}
+  /// Expected response: {"workspace": {...}} or {"section": ..., "workspace": ...}
+  Future<Workspace> updateSection(
+    String wid,
+    String sectionId,
+    SectionDraft d,
+  ) async {
+    final resp = await http
+        .patch(
+          _u('/workspaces/$wid/sections/$sectionId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(d.toJson()),
+        )
+        .timeout(AppConfig.shortTimeout);
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (map['workspace'] != null) {
+      return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
+    }
+    // Fallback: fetch the workspace if backend doesn't return it inline
     return getWorkspace(wid);
   }
 

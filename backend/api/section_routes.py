@@ -68,7 +68,7 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     return d
 
 
-# ── Routes (unchanged) ────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/workspaces/{workspace_id}/sections", status_code=201)
 def create_section(
@@ -89,6 +89,31 @@ def create_section(
     ws = workspace_repo.get_by_id(workspace_id)
     logger.info("Created section in workspace=%s", workspace_id)
     return {"section": section, "workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
+
+
+@router.patch("/workspaces/{workspace_id}/sections/{section_id}")
+def update_section(
+    workspace_id: str,
+    section_id:   str,
+    body: SectionCreateRequest,
+    section_repo:   PgSectionRepository   = Depends(get_section_repo),
+    student_repo:   PgStudentRepository   = Depends(get_student_repo),
+    workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
+):
+    """
+    Update a section in-place, preserving section_id.
+    All students linked to this section remain intact.
+    """
+    if not workspace_repo.get_by_id(workspace_id):
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    updated = section_repo.update(workspace_id, section_id, body.model_dump())
+    if not updated:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    ws = workspace_repo.get_by_id(workspace_id)
+    logger.info("Updated section=%s in workspace=%s", section_id, workspace_id)
+    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
 
 
 @router.delete("/workspaces/{workspace_id}/sections/{section_id}")

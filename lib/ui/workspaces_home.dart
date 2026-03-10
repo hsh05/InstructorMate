@@ -221,34 +221,103 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     if (!mounted) return;
 
     // ── Duplicate upload detection ──────────────────────────────────────────
-    // Show a friendly info banner instead of silently opening the same
-    // workspace again with no feedback.
     if (widget.vm.lastImportWasDuplicate) {
-      // Reset the flag so subsequent uploads start clean.
       widget.vm.lastImportWasDuplicate = false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
+      final ws = widget.vm.current;
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
             children: const [
-              Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
-              SizedBox(width: 10),
-              Expanded(
+              Icon(Icons.info_outline_rounded, color: _primary, size: 20),
+              SizedBox(width: 8),
+              Flexible(
                 child: Text(
-                  '⚠️ Already Imported — this syllabus was uploaded before. Opening the existing workspace.',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                  'Already Imported',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
             ],
           ),
-          backgroundColor: _warn,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This PDF has already been imported as:',
+                style: const TextStyle(fontSize: 13, color: _textSecondary),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDE8FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _primary.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.school_rounded, color: _primary, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        ws?.title ?? filename,
+                        style: const TextStyle(
+                          color: _primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.open_in_new_rounded, size: 16),
+              label: const Text(
+                'Open Workspace',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (ws != null && mounted) {
+                  Navigator.of(context).pushNamed('/workspace');
+                }
+              },
+            ),
+          ],
         ),
       );
-      return; // Don't also show the error snackbar below.
+      return;
     }
 
     // ── Generic error ───────────────────────────────────────────────────────

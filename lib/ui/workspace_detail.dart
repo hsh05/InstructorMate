@@ -1670,21 +1670,15 @@ class _SectionsTabState extends State<_SectionsTab>
                                 ..endTime = endStr
                                 ..reminderMinutes = selReminderMins;
 
-                              Workspace updated;
                               if (editing != null) {
-                                await widget.vm.api.deleteSection(
-                                  widget.ws.id,
+                                // UPDATE in-place: preserves section_id → students stay intact
+                                await widget.vm.updateSection(
                                   editing.id,
+                                  draft,
                                 );
+                              } else {
+                                await widget.vm.createSection(draft);
                               }
-                              updated = await widget.vm.api.createSection(
-                                widget.ws.id,
-                                draft,
-                              );
-                              widget.vm.current = updated;
-                              widget.vm.notifyListeners();
-                              await widget.vm
-                                  .rescheduleNotificationsForCurrent();
 
                               if (bsCtx.mounted) Navigator.pop(bsCtx);
                               if (mounted) {
@@ -2134,6 +2128,82 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       widget.onError('File has no data.');
       return;
     }
+
+    // Confirm if students already exist
+    final existingCount = _students.length;
+    final vmCount = widget.vm.countForSection(widget.section.id);
+    final displayCount = existingCount > 0 ? existingCount : vmCount;
+    if (displayCount > 0 && ctx.mounted) {
+      final replace =
+          await showDialog<bool>(
+            context: ctx,
+            builder: (_) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: const [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppColors.warn,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Replace Student List?',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: Text(
+                'This section already has $displayCount '
+                'student${displayCount == 1 ? "" : "s"}.\n\n'
+                'Uploading "${f.name}" will replace the existing list.'
+                ' This cannot be undone.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.inkMid,
+                  height: 1.5,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: AppColors.inkLight,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.warn,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text(
+                    'Replace',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!replace) return;
+    }
+
     setState(() => _importing = true);
     try {
       final result = await widget.vm.api.importStudents(
