@@ -1,20 +1,23 @@
 # backend/repositories/pg_section_repository.py
 #
+# SCHEMA NOTE (normalized)
+# ────────────────────────
+# Section table no longer has 'days' or 'timezone' columns.
+# Days are stored in the SectionDay table (one row per day per section).
+# Timezone is not persisted — always returned as "UTC" placeholder;
+# the actual timezone context lives in the Flutter app.
+#
 # TIME FORMAT NOTE
 # ────────────────
-# start_time / end_time are stored as-is from the Flutter app.
-# New format:  "9:00 AM", "2:30 PM"  (12h + AM/PM)
-# Legacy format: "09:00", "14:30"    (24h, no AM/PM)
-# Both formats are stored and returned unchanged.
-# The Flutter app's _timeToMins() handles both on the client side.
+# start_time / end_time stored as-is from Flutter ("9:00 AM" or "09:00").
 
 import logging
 from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
-from db.models import Section as SectionModel
 from repositories.pg_workspace_repository import PgWorkspaceRepository
+from db.models import Section as SectionModel, SectionDay as SectionDayModel
 
 logger = logging.getLogger(__name__)
 
@@ -38,37 +41,24 @@ class PgSectionRepository:
     def save(self, workspace_id: str, section_data: Dict) -> None:
         schedule = section_data.get("schedule", {})
 
-        # Serialise days list → "Mon,Wed,Fri"
-        days_raw = schedule.get("days", [])
-        days_str = ",".join(days_raw) if isinstance(days_raw, list) else days_raw
-
-        # Guard: never store timezone string in end_time
-        end_time = schedule.get("end_time", "")
-        timezone = schedule.get("timezone", "UTC")
-        if end_time and end_time == timezone:
-            end_time = ""
-
         row = SectionModel(
             section_id       = section_data["section_id"],
             workspace_id     = workspace_id,
             name             = section_data.get("name", ""),
             location         = section_data.get("location", ""),
-            days             = days_str,
             start_time       = schedule.get("start_time", ""),
-            end_time         = end_time,
-            timezone         = timezone,
+            end_time         = schedule.get("end_time", ""),
             reminder_minutes = schedule.get("reminder_minutes", 10),
         )
         self.db.add(row)
+        self.db.flush()  # write section_id to DB before inserting days
+
+        self._replace_days(row.section_id, schedule.get("days", []))
         self.db.commit()
         logger.info("Saved section id=%s workspace=%s", row.section_id, workspace_id)
 
     def update(self, workspace_id: str, section_id: str, section_data: Dict) -> bool:
-        """
-        Update an existing section IN-PLACE, preserving its section_id.
-        This keeps all students associated with this section intact.
-        Returns True if the row was found and updated, False if not found.
-        """
+        """Update section in-place, preserving section_id and all linked students."""
         row = self.db.query(SectionModel).filter(
             SectionModel.workspace_id == workspace_id,
             SectionModel.section_id   == section_id,
@@ -78,21 +68,14 @@ class PgSectionRepository:
 
         schedule = section_data.get("schedule", {})
 
-        days_raw = schedule.get("days", [])
-        days_str = ",".join(days_raw) if isinstance(days_raw, list) else days_raw
-
-        end_time = schedule.get("end_time", "")
-        timezone = schedule.get("timezone", row.timezone or "UTC")
-        if end_time and end_time == timezone:
-            end_time = ""
-
         row.name             = section_data.get("name", row.name)
         row.location         = section_data.get("location", row.location)
-        row.days             = days_str
         row.start_time       = schedule.get("start_time", row.start_time)
-        row.end_time         = end_time
-        row.timezone         = timezone
+        row.end_time         = schedule.get("end_time", row.end_time)
         row.reminder_minutes = schedule.get("reminder_minutes", row.reminder_minutes)
+
+        # Replace days entirely
+        self._replace_days(section_id, schedule.get("days", []))
 
         self.db.commit()
         logger.info("Updated section id=%s workspace=%s", section_id, workspace_id)
@@ -105,21 +88,28 @@ class PgSectionRepository:
         ).first()
         if not row:
             return False
-        self.db.delete(row)
+        self.db.delete(row)  # SectionDay rows cascade via FK
         self.db.commit()
         logger.info("Deleted section id=%s workspace=%s", section_id, workspace_id)
         return True
 
     # ── Private ───────────────────────────────────────────────────────────────
 
-    def _to_dict(self, row: SectionModel) -> Dict:
-        days_raw = row.days or ""
-        days = [d.strip() for d in days_raw.split(",") if d.strip()]
+    def _replace_days(self, section_id: str, days: list) -> None:
+        """Delete existing SectionDay rows and insert fresh ones."""
+        self.db.query(SectionDayModel).filter(
+            SectionDayModel.section_id == section_id
+        ).delete()
+        for day in days:
+            day = day.strip()
+            if day:
+                self.db.add(SectionDayModel(section_id=section_id, day=day))
 
-        end_time     = (row.end_time or "").strip()
-        timezone_val = (row.timezone or "UTC").strip() or "UTC"
-        if end_time and end_time == timezone_val:
-            end_time = ""
+    def _to_dict(self, row: SectionModel) -> Dict:
+        day_rows = self.db.query(SectionDayModel).filter(
+            SectionDayModel.section_id == row.section_id
+        ).all()
+        days = [d.day for d in day_rows]
 
         try:
             reminder = int(row.reminder_minutes or 10)
@@ -134,8 +124,8 @@ class PgSectionRepository:
             "schedule": {
                 "days":             days,
                 "start_time":       (row.start_time or "").strip(),
-                "end_time":         end_time,
-                "timezone":         timezone_val,
+                "end_time":         (row.end_time or "").strip(),
+                "timezone":         "UTC",
                 "reminder_minutes": reminder,
             },
         }

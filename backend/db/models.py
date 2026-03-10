@@ -2,7 +2,7 @@
 
 from sqlalchemy import (
     Column, Text, Integer, String,
-    ForeignKey, TIMESTAMP, func
+    ForeignKey, TIMESTAMP, func, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from db.database import Base
@@ -65,7 +65,6 @@ class Workspace(Base):
     status           = Column(Text, nullable=False, default="draft")  # 'draft' | 'ready'
     course_title     = Column(Text, nullable=False, default="")
     semester         = Column(Text, nullable=False, default="")
-    office_hours     = Column(Text, nullable=False, default="")
     instructor_email = Column(Text, nullable=False, default="")
     course_code      = Column(Text, nullable=False, default="")
     course_name      = Column(Text, nullable=False, default="")
@@ -77,7 +76,16 @@ class Workspace(Base):
                                     cascade="all, delete-orphan")
     chunks           = relationship("SyllabusChunk", back_populates="workspace",
                                     cascade="all, delete-orphan")
+    
 
+class OfficeHour(Base):
+    __tablename__ = "office_hours"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Text, ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False)
+    day          = Column(Text, nullable=False)
+    start_time   = Column(Text, nullable=False, default="")
+    end_time     = Column(Text, nullable=False, default="")
 
 class Section(Base):
     __tablename__ = "sections"
@@ -87,17 +95,20 @@ class Section(Base):
                                nullable=False)
     name             = Column(Text, nullable=False, default="")
     location         = Column(Text, nullable=False, default="")
-    days             = Column(Text, nullable=False, default="")   # "Mon,Wed,Fri"
     start_time       = Column(Text, nullable=False, default="")
     end_time         = Column(Text, nullable=False, default="")
-    timezone         = Column(Text, nullable=False, default="UTC")
     reminder_minutes = Column(Integer, nullable=False, default=10)
     created_at       = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     workspace        = relationship("Workspace", back_populates="sections")
-    students         = relationship("Student", back_populates="section",
-                                    cascade="all, delete-orphan")
+    students = relationship("StudentSection", cascade="all, delete-orphan")
 
+class SectionDay(Base):
+    __tablename__ = "section_days"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    section_id = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"), nullable=False)
+    day        = Column(Text, nullable=False)
 
 class Student(Base):
     __tablename__ = "students"
@@ -105,17 +116,29 @@ class Student(Base):
     student_id   = Column(Text, primary_key=True)
     workspace_id = Column(Text, ForeignKey("workspaces.workspace_id", ondelete="CASCADE"),
                           nullable=False)
-    section_id   = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"),
-                          nullable=False, default="")
     student_no   = Column(Text, nullable=False, default="")
     name         = Column(Text, nullable=False, default="")
     email        = Column(Text, nullable=False, default="")
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     workspace    = relationship("Workspace", back_populates="students")
-    section      = relationship("Section", back_populates="students")
+    sections     = relationship("StudentSection", cascade="all, delete-orphan")
 
 
+class StudentSection(Base):
+    __tablename__ = "student_sections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    student_id = Column(Text, ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
+    section_id = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"), nullable=False)
+
+    student = relationship("Student")
+    section = relationship("Section")
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "section_id", name="uq_student_section"),
+    )
 class SyllabusChunk(Base):
     __tablename__ = "syllabus_chunks"
 
