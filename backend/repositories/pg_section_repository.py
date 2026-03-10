@@ -1,4 +1,12 @@
 # backend/repositories/pg_section_repository.py
+#
+# TIME FORMAT NOTE
+# ────────────────
+# start_time / end_time are stored as-is from the Flutter app.
+# New format:  "9:00 AM", "2:30 PM"  (12h + AM/PM)
+# Legacy format: "09:00", "14:30"    (24h, no AM/PM)
+# Both formats are stored and returned unchanged.
+# The Flutter app's _timeToMins() handles both on the client side.
 
 import logging
 from typing import Dict, List
@@ -15,7 +23,7 @@ class PgSectionRepository:
 
     def __init__(self, db: Session, ws_repo: PgWorkspaceRepository):
         self.db      = db
-        self.ws_repo = ws_repo  # kept so SectionService interface stays identical
+        self.ws_repo = ws_repo
 
     # ── Read ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +38,7 @@ class PgSectionRepository:
     def save(self, workspace_id: str, section_data: Dict) -> None:
         schedule = section_data.get("schedule", {})
 
-        # Serialise days list → "Mon,Wed,Fri" (matches existing behaviour)
+        # Serialise days list → "Mon,Wed,Fri"
         days_raw = schedule.get("days", [])
         days_str = ",".join(days_raw) if isinstance(days_raw, list) else days_raw
 

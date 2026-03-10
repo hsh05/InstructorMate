@@ -1,4 +1,18 @@
 # backend/repositories/pg_workspace_repository.py
+#
+# OFFICE HOURS STORAGE
+# ────────────────────
+# The DB has a single 'office_hours' text column.
+#
+# New multi-slot format stored there:
+#   "Mon,Wed|9:00 AM|11:00 AM;Fri|2:00 PM|4:00 PM"
+#   (slots separated by ';', each slot: "days|start|end")
+#
+# Legacy single-slot format (existing rows):
+#   "09:00 – 11:00"  or  "09:00"
+#
+# The Flutter app detects new vs legacy by presence of '|'.
+# No schema change or migration required.
 
 import csv
 import logging
@@ -88,7 +102,6 @@ class PgWorkspaceRepository:
         """Read chunks CSV and save all rows to the syllabus_chunks table.
         Deletes existing chunks for this workspace first so re-upload is safe."""
 
-        # Delete existing chunks for this workspace
         self.db.query(SyllabusChunkModel).filter(
             SyllabusChunkModel.workspace_id == workspace_id
         ).delete()
@@ -98,7 +111,6 @@ class PgWorkspaceRepository:
         with open(chunks_csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                # Guard against bad chunk_id values from the converter
                 try:
                     chunk_index = int(row.get("chunk_id") or 0)
                 except (ValueError, TypeError):
@@ -106,7 +118,6 @@ class PgWorkspaceRepository:
 
                 content = (row.get("text") or "").strip()
                 if not content:
-                    # Skip blank rows — they would produce useless chunks
                     continue
 
                 chunk = SyllabusChunkModel(

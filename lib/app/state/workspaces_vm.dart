@@ -1,10 +1,4 @@
 // lib/app/state/workspaces_vm.dart
-//
-// CHANGE: Added _mobileTicker — a Dart-side Timer.periodic that fires every
-// minute on mobile, exactly mirroring WebNotificationService on web.
-// This makes the in-app toast appear automatically when the app is open and
-// a class reminder fires, WITHOUT requiring the user to tap the status-bar
-// notification. The OS alarm still fires independently for when the app is closed.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -16,8 +10,8 @@ import '../api_client.dart';
 import '../../services/mobile_toast_service.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
-import '../../utils/schedule_utils.dart';
 import '../workspace_models.dart';
+import '../../utils/schedule_utils.dart';
 
 class WorkspacesViewModel extends ChangeNotifier {
   WorkspacesViewModel({required this.api});
@@ -40,20 +34,26 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   final Map<String, int> sectionStudentCounts = {};
 
-  // ── Mobile foreground ticker ───────────────────────────────────────────────
-  // Mirrors WebNotificationService._startTicker() — checks every minute
-  // whether a reminder should fire right now, and if so shows the in-app toast.
+  void recordImport(String sectionId, int count) {
+    sectionStudentCounts[sectionId] = count;
+    notifyListeners();
+  }
+
+  int get totalStudentsCount =>
+      sectionStudentCounts.values.fold(0, (a, b) => a + b);
+
+  int countForSection(String sectionId) => sectionStudentCounts[sectionId] ?? 0;
+
+  // ── Mobile foreground ticker ──────────────────────────────────────────────
+  // Fires every minute — shows in-app toast automatically when app is open.
   Timer? _mobileTicker;
   List<Workspace> _allWorkspaces = [];
-
-  // Tracks which (sectionName + fireAt minute) we've already shown so we
-  // never fire the same toast twice in the same minute window.
   final Set<String> _firedKeys = {};
 
   void _startMobileTicker() {
     if (kIsWeb) return;
     _mobileTicker?.cancel();
-    _checkMobileToasts(); // check immediately on start
+    _checkMobileToasts();
     _mobileTicker = Timer.periodic(
       const Duration(minutes: 1),
       (_) => _checkMobileToasts(),
@@ -63,21 +63,16 @@ class WorkspacesViewModel extends ChangeNotifier {
   void _checkMobileToasts() {
     if (kIsWeb || _allWorkspaces.isEmpty) return;
     final now = DateTime.now();
-
     for (final ws in _allWorkspaces) {
       for (final section in ws.sections) {
         final sch = section.schedule;
         if (sch.startTime.isEmpty) continue;
-
         final parsed = _parseHHmm(sch.startTime);
         if (parsed == null) continue;
-
         final remind = sch.reminderMinutes > 0 ? sch.reminderMinutes : 10;
-
         for (final day in sch.days) {
           final weekday = ScheduleUtils.weekdayFor(day.trim());
           if (weekday == null) continue;
-
           final fireAt = _nextFireAt(
             now: now,
             weekday: weekday,
@@ -85,38 +80,31 @@ class WorkspacesViewModel extends ChangeNotifier {
             minute: parsed.$2,
             reminderMinutes: remind,
           );
-
           final diff = now.difference(fireAt).inSeconds;
           if (diff >= 0 && diff < 60) {
             final key =
                 '${section.name}:${fireAt.year}-${fireAt.month}-${fireAt.day}-${fireAt.hour}-${fireAt.minute}';
             if (_firedKeys.contains(key)) continue;
             _firedKeys.add(key);
-
-            // Trim old keys (keep last 100)
-            if (_firedKeys.length > 100) {
-              _firedKeys.remove(_firedKeys.first);
-            }
-
+            if (_firedKeys.length > 100) _firedKeys.remove(_firedKeys.first);
             final loc = section.location.isNotEmpty
                 ? ' @ ${section.location}'
                 : '';
-            final friendlyTime = ScheduleUtils.formatTime(sch.startTime);
-            final sectionLabel = section.name.isNotEmpty
-                ? section.name
-                : 'Class';
-
-            MobileToastService.show(
-              title: '⏰ ${ws.title} starts in ${remind}min',
-              body: '$sectionLabel$loc — $friendlyTime',
+            final notifTitle = '⏰ ${ws.title} starts in ${remind}min';
+            final notifBody =
+                '${section.name.isNotEmpty ? section.name : "Class"}$loc — ${ScheduleUtils.formatTime(sch.startTime)}';
+            // Record in bell history BEFORE showing toast
+            WebNotificationService.instance.addMobileNotif(
+              title: notifTitle,
+              body: notifBody,
+              fireAt: DateTime.now(),
             );
+            MobileToastService.show(title: notifTitle, body: notifBody);
           }
         }
       }
     }
   }
-
-  // ── Helpers (mirrors WebNotificationService) ───────────────────────────────
 
   static (int, int)? _parseHHmm(String raw) {
     final s = raw.trim();
@@ -153,8 +141,8 @@ class WorkspacesViewModel extends ChangeNotifier {
       safety++;
     }
     var fireAt = classTime.subtract(Duration(minutes: reminderMinutes));
-    final secondsPast = now.difference(fireAt).inSeconds;
-    if (secondsPast >= 60) fireAt = fireAt.add(const Duration(days: 7));
+    if (now.difference(fireAt).inSeconds >= 60)
+      fireAt = fireAt.add(const Duration(days: 7));
     return fireAt;
   }
 
@@ -286,10 +274,13 @@ class WorkspacesViewModel extends ChangeNotifier {
     if (ws == null) return;
 
     final payload = Map<String, String>.from(fields);
-    final start = payload.remove('office_hours_start') ?? '';
-    final end = payload.remove('office_hours_end') ?? '';
-    if (start.isNotEmpty || end.isNotEmpty) {
-      payload['office_hours'] = end.isNotEmpty ? '$start – $end' : start;
+    // office_hours_start holds the full encoded slots string from workspace_detail.
+    // office_hours_end holds a human-readable summary.
+    // The DB has a single 'office_hours' column — store the encoded string there.
+    final ohEncoded = payload.remove('office_hours_start') ?? '';
+    payload.remove('office_hours_end'); // summary not needed in DB
+    if (ohEncoded.isNotEmpty) {
+      payload['office_hours'] = ohEncoded;
     }
 
     loading = true;
@@ -314,6 +305,9 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      // FIX: api.createSection now returns the full updated Workspace directly
+      // from the create response (backend now returns workspace in body).
+      // No separate GET needed.
       _current = await api.createSection(ws.id, draft);
       await rescheduleNotificationsForCurrent();
     } catch (e) {
@@ -353,16 +347,6 @@ class WorkspacesViewModel extends ChangeNotifier {
       notifyListeners();
     }
   }
-
-  void recordImport(String sectionId, int count) {
-    sectionStudentCounts[sectionId] = count;
-    notifyListeners();
-  }
-
-  int get totalStudentsCount =>
-      sectionStudentCounts.values.fold(0, (a, b) => a + b);
-
-  int countForSection(String sectionId) => sectionStudentCounts[sectionId] ?? 0;
 
   // ── Delete workspace ──────────────────────────────────────────────────────
 
@@ -459,14 +443,11 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
 
     if (full.isEmpty) return;
-    _allWorkspaces = List.of(full);
-
     try {
       if (kIsWeb) {
         WebNotificationService.instance.init(full);
       } else {
         await NotificationScheduler.rescheduleAll(full);
-        _startMobileTicker(); // start foreground auto-toast ticker
       }
     } catch (e) {}
   }
@@ -480,18 +461,23 @@ class WorkspacesViewModel extends ChangeNotifier {
       _current = fresh;
 
       if (kIsWeb) {
+        // FIX: rebuild the FULL workspace list for the web ticker.
+        // Previously this passed only [fresh] (one workspace) to updateWorkspaces(),
+        // which meant the ticker stopped watching all other workspaces' sections —
+        // their notifications would silently stop firing after any section edit.
         final all = <Workspace>[];
         for (final summary in workspaces) {
           try {
-            all.add(
-              summary.id == fresh.id
-                  ? fresh
-                  : await api.getWorkspace(summary.id),
-            );
+            if (summary.id == fresh.id) {
+              all.add(fresh); // use the already-fetched fresh copy
+            } else {
+              all.add(await api.getWorkspace(summary.id));
+            }
           } catch (_) {}
         }
         WebNotificationService.instance.updateWorkspaces(all);
       } else {
+        // For mobile: reschedule ALL workspaces so no alarms are lost
         final all = <Workspace>[];
         for (final summary in workspaces) {
           try {
@@ -504,7 +490,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         }
         _allWorkspaces = List.of(all);
         await NotificationScheduler.rescheduleAll(all);
-        _startMobileTicker(); // restart ticker with updated workspace list
+        _startMobileTicker();
       }
     } catch (e) {}
   }

@@ -12,16 +12,12 @@ const _fieldLabels = {
   'course_name': 'Course Name',
   'course_code': 'Course Code',
   'semester': 'Semester',
-  'office_hours_start': 'Office Hours Start',
-  'office_hours_end': 'Office Hours End',
   'instructor_email': 'Instructor Email',
 };
 const _fieldIcons = {
   'course_name': Icons.book_rounded,
   'course_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
-  'office_hours_start': Icons.access_time_rounded,
-  'office_hours_end': Icons.access_time_filled_rounded,
   'instructor_email': Icons.email_outlined,
 };
 
@@ -49,16 +45,112 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     'course_name',
     'course_code',
     'semester',
-    'office_hours_start',
-    'office_hours_end',
     'instructor_email',
   ];
+
+  // Office hours slots: each slot = {days: List<String>, start: String, end: String}
+  List<Map<String, dynamic>> _ohSlots = [];
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
     _syncControllersFromWorkspace();
+    _loadOhSlots();
+  }
+
+  void _loadOhSlots() {
+    final ws = widget.vm.current;
+    if (ws == null) return;
+    const validDays = {'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'};
+    final raw = ws.fields['office_hours'] ?? '';
+    if (raw.contains('|')) {
+      try {
+        final parsed = raw
+            .split(';')
+            .map((slot) {
+              final parts = slot.split('|');
+              final cleanDays =
+                  (parts.isNotEmpty ? parts[0].split(',') : <String>[])
+                      .map((d) => d.trim())
+                      .where((d) => validDays.contains(d))
+                      .toList();
+              return <String, dynamic>{
+                'days': cleanDays,
+                'start': parts.length > 1 ? parts[1].trim() : '',
+                'end': parts.length > 2 ? parts[2].trim() : '',
+              };
+            })
+            .where((s) => (s['start'] as String).isNotEmpty)
+            .toList();
+        if (parsed.isNotEmpty) {
+          _ohSlots = parsed;
+          return;
+        }
+      } catch (_) {}
+    }
+    // Legacy fallback: "09:00" or "09:00 – 11:00"
+    final parts = raw.split(' – ');
+    _ohSlots = [
+      {
+        'days': <String>[],
+        'start': parts[0].trim(),
+        'end': parts.length > 1 ? parts[1].trim() : '',
+      },
+    ];
+  }
+
+  String _encodeOhSlots() {
+    return _ohSlots
+        .map((s) {
+          final days = (s['days'] as List).join(',');
+          final start = s['start'] as String? ?? '';
+          final end = s['end'] as String? ?? '';
+          return '$days|$start|$end';
+        })
+        .join(';');
+  }
+
+  /// Validate all OH slots — returns error string or null
+  String? _validateOhSlots() {
+    if (_ohSlots.isEmpty) return null; // optional field
+    for (int i = 0; i < _ohSlots.length; i++) {
+      final slot = _ohSlots[i];
+      final days = slot['days'] as List;
+      final start = (slot['start'] as String? ?? '').trim();
+      final end = (slot['end'] as String? ?? '').trim();
+
+      if (days.isEmpty) return 'Slot ${i + 1}: please select at least one day.';
+      if (start.isEmpty) return 'Slot ${i + 1}: start time is required.';
+      if (end.isEmpty) return 'Slot ${i + 1}: end time is required.';
+
+      final startMins = _parseTimeToMins(start);
+      final endMins = _parseTimeToMins(end);
+      if (startMins == null)
+        return 'Slot ${i + 1}: invalid start time "$start".';
+      if (endMins == null) return 'Slot ${i + 1}: invalid end time "$end".';
+      if (endMins <= startMins) {
+        return 'Slot ${i + 1}: end time must be after start time ($start → $end).';
+      }
+    }
+    return null;
+  }
+
+  /// Parse "9:30 AM" or "09:30" → total minutes from midnight
+  int? _parseTimeToMins(String val) {
+    if (val.isEmpty) return null;
+    final upper = val.toUpperCase();
+    final isPM = upper.contains('PM');
+    final isAM = upper.contains('AM');
+    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
+    final parts = clean.split(':');
+    if (parts.length < 2) return null;
+    int? h = int.tryParse(parts[0].trim());
+    int? m = int.tryParse(parts[1].trim());
+    if (h == null || m == null) return null;
+    if (isPM && h != 12) h += 12;
+    if (isAM && h == 12) h = 0;
+    return h * 60 + m;
   }
 
   @override
@@ -66,6 +158,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     super.didUpdateWidget(old);
     if (old.vm.current != widget.vm.current) {
       _syncControllersFromWorkspace();
+      _loadOhSlots(); // reload OH slots when workspace changes
     }
   }
 
@@ -74,7 +167,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     if (ws == null) return;
 
     for (final key in _editableKeys) {
-      if (key == 'office_hours_start' || key == 'office_hours_end') continue;
       String value = ws.fields[key] ?? '';
       // FIX: The PDF extractor writes 'course_title' but the UI field is
       // 'course_name'. Fall back to course_title so the field auto-fills.
@@ -87,38 +179,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       } else if (existing.text != value) {
         existing.text = value;
       }
-    }
-
-    final combined = ws.fields['office_hours'] ?? '';
-    final directStart = ws.fields['office_hours_start'] ?? '';
-    final directEnd = ws.fields['office_hours_end'] ?? '';
-
-    String startVal = directStart;
-    String endVal = directEnd;
-    if (startVal.isEmpty && combined.isNotEmpty) {
-      final parts = combined.split(
-        RegExp(r'\s*[-–to]+\s*', caseSensitive: false),
-      );
-      if (parts.length >= 2) {
-        startVal = parts[0].trim();
-        endVal = parts[1].trim();
-      } else {
-        startVal = combined.trim();
-      }
-    }
-
-    final existingStart = _fieldCtrl['office_hours_start'];
-    if (existingStart == null) {
-      _fieldCtrl['office_hours_start'] = TextEditingController(text: startVal);
-    } else if (existingStart.text != startVal) {
-      existingStart.text = startVal;
-    }
-
-    final existingEnd = _fieldCtrl['office_hours_end'];
-    if (existingEnd == null) {
-      _fieldCtrl['office_hours_end'] = TextEditingController(text: endVal);
-    } else if (existingEnd.text != endVal) {
-      existingEnd.text = endVal;
     }
   }
 
@@ -253,6 +313,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                 editableKeys: _editableKeys,
                                 ctrl: _ctrl,
                                 onSave: _onSave,
+                                ohSlots: _ohSlots,
+                                onOhChanged: (slots) =>
+                                    setState(() => _ohSlots = slots),
                               ),
                               _SectionsTab(
                                 ws: ws,
@@ -376,33 +439,35 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      if (code.isNotEmpty) ...[
-                        _StatPill(icon: Icons.tag_rounded, label: code),
-                        const SizedBox(width: 8),
-                      ],
-                      if (semester.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        if (code.isNotEmpty) ...[
+                          _StatPill(icon: Icons.tag_rounded, label: code),
+                          const SizedBox(width: 8),
+                        ],
+                        if (semester.isNotEmpty) ...[
+                          _StatPill(
+                            icon: Icons.calendar_today_rounded,
+                            label: semester,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         _StatPill(
-                          icon: Icons.calendar_today_rounded,
-                          label: semester,
+                          icon: Icons.groups_2_rounded,
+                          label:
+                              '$sectionCount section${sectionCount == 1 ? "" : "s"}',
                         ),
                         const SizedBox(width: 8),
+                        _StatPill(
+                          icon: Icons.people_alt_rounded,
+                          label:
+                              '$totalStudents student${totalStudents == 1 ? "" : "s"}',
+                          highlight: totalStudents > 0,
+                        ),
                       ],
-                      const Spacer(),
-                      _StatPill(
-                        icon: Icons.groups_2_rounded,
-                        label:
-                            '$sectionCount section${sectionCount == 1 ? "" : "s"}',
-                      ),
-                      const SizedBox(width: 8),
-                      _StatPill(
-                        icon: Icons.people_alt_rounded,
-                        label:
-                            '$totalStudents student${totalStudents == 1 ? "" : "s"}',
-                        highlight: totalStudents > 0,
-                      ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -414,8 +479,18 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   }
 
   Future<void> _onSave() async {
+    // Validate OH slots before saving
+    final ohError = _validateOhSlots();
+    if (ohError != null) {
+      _showError(ohError);
+      return;
+    }
+
     final updated = {
       for (final k in _editableKeys) k: (_fieldCtrl[k]?.text.trim() ?? ''),
+      // workspaces_vm.updateFields() picks up 'office_hours_start' and
+      // writes it to the real DB column 'office_hours'.
+      'office_hours_start': _encodeOhSlots(),
     };
     await widget.vm.updateFields(updated);
     if (!mounted) return;
@@ -567,11 +642,15 @@ class _InfoTab extends StatefulWidget {
     required this.editableKeys,
     required this.ctrl,
     required this.onSave,
+    required this.ohSlots,
+    required this.onOhChanged,
   });
   final Workspace ws;
   final List<String> editableKeys;
   final TextEditingController Function(String, String) ctrl;
   final Future<void> Function() onSave;
+  final List<Map<String, dynamic>> ohSlots;
+  final void Function(List<Map<String, dynamic>>) onOhChanged;
 
   @override
   State<_InfoTab> createState() => _InfoTabState();
@@ -583,22 +662,16 @@ String? _validateField(String key, String value) {
   switch (key) {
     case 'instructor_email':
       final emailRe = RegExp(
-        r'^[\w.+-]+@[\w-]+\.[a-z]{2,}$',
+        r'^[\w.+-]+@[\w-]+(\.[\w-]+)+$',
         caseSensitive: false,
       );
       if (!emailRe.hasMatch(v)) return 'Enter a valid email address';
-      break;
-    case 'office_hours_start':
-    case 'office_hours_end':
-      final timeRe = RegExp(r'^\d{1,2}:\d{2}$');
-      if (!timeRe.hasMatch(v)) return 'Use format HH:MM (e.g. 09:00)';
       break;
   }
   return null;
 }
 
 const _numericKeys = {'allow_validation', 'capacity', 'max_students'};
-const _officeHoursPair = {'office_hours_start', 'office_hours_end'};
 
 class _InfoTabState extends State<_InfoTab>
     with AutomaticKeepAliveClientMixin<_InfoTab> {
@@ -618,32 +691,8 @@ class _InfoTabState extends State<_InfoTab>
       final err = _validateField(key, val);
       if (err != null) _errors[key] = err;
     }
-    final startText = widget.ctrl('office_hours_start', '').text.trim();
-    final endText = widget.ctrl('office_hours_end', '').text.trim();
-    if (_errors['office_hours_start'] == null &&
-        _errors['office_hours_end'] == null &&
-        startText.isNotEmpty &&
-        endText.isNotEmpty) {
-      final startMins = _timeToMinutes(startText);
-      final endMins = _timeToMinutes(endText);
-      if (startMins != null && endMins != null) {
-        if (startMins == endMins) {
-          _errors['office_hours_end'] = 'End time must differ from start time';
-        } else if (endMins < startMins) {
-          _errors['office_hours_end'] = 'End time must be after start time';
-        }
-      }
-    }
-    return _errors.isEmpty;
-  }
 
-  int? _timeToMinutes(String t) {
-    final parts = t.split(':');
-    if (parts.length < 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return null;
-    return h * 60 + m;
+    return _errors.isEmpty;
   }
 
   Future<void> _save() async {
@@ -669,7 +718,6 @@ class _InfoTabState extends State<_InfoTab>
   TextInputType _keyboardType(String key) {
     if (_numericKeys.contains(key)) return TextInputType.number;
     if (key == 'instructor_email') return TextInputType.emailAddress;
-    if (_officeHoursPair.contains(key)) return TextInputType.datetime;
     return TextInputType.text;
   }
 
@@ -679,20 +727,8 @@ class _InfoTabState extends State<_InfoTab>
     final hasEdits = _editing.isNotEmpty;
 
     final List<_FieldGroup> groups = [];
-    bool ohStartAdded = false;
     for (final key in widget.editableKeys) {
-      if (key == 'office_hours_start') {
-        ohStartAdded = true;
-        continue;
-      }
-      if (key == 'office_hours_end') {
-        groups.add(_FieldGroup.pair('office_hours_start', 'office_hours_end'));
-        continue;
-      }
       groups.add(_FieldGroup.single(key));
-    }
-    if (ohStartAdded && !groups.any((g) => g.isPair)) {
-      groups.add(_FieldGroup.single('office_hours_start'));
     }
 
     return ListView(
@@ -723,49 +759,27 @@ class _InfoTabState extends State<_InfoTab>
                 final isLast = idx == groups.length - 1;
                 return Column(
                   children: [
-                    if (group.isPair)
-                      _OfficeHoursPairRow(
-                        wsFields: widget.ws.fields,
-                        ctrl: widget.ctrl,
-                        editing: _editing,
-                        errors: _errors,
-                        triedSave: _triedSave,
-                        onEditStart: (k) => setState(() {
-                          _editing.add(k);
-                          _dirty = true;
-                        }),
-                        onEditDone: (k) => setState(() {
-                          _editing.remove(k);
-                          if (_triedSave) {
-                            _errors[k] = _validateField(
-                              k,
-                              widget.ctrl(k, '').text,
-                            );
-                          }
-                        }),
-                      )
-                    else
-                      _InfoFieldRow(
-                        fieldKey: group.key,
-                        value: widget.ws.fields[group.key] ?? '',
-                        ctrl: widget.ctrl,
-                        isEditing: _editing.contains(group.key),
-                        error: _errors[group.key],
-                        keyboardType: _keyboardType(group.key),
-                        onTap: () => setState(() {
-                          _editing.add(group.key);
-                          _dirty = true;
-                        }),
-                        onDone: () => setState(() {
-                          _editing.remove(group.key);
-                          if (_triedSave) {
-                            _errors[group.key] = _validateField(
-                              group.key,
-                              widget.ctrl(group.key, '').text,
-                            );
-                          }
-                        }),
-                      ),
+                    _InfoFieldRow(
+                      fieldKey: group.key,
+                      value: widget.ws.fields[group.key] ?? '',
+                      ctrl: widget.ctrl,
+                      isEditing: _editing.contains(group.key),
+                      error: _errors[group.key],
+                      keyboardType: _keyboardType(group.key),
+                      onTap: () => setState(() {
+                        _editing.add(group.key);
+                        _dirty = true;
+                      }),
+                      onDone: () => setState(() {
+                        _editing.remove(group.key);
+                        if (_triedSave) {
+                          _errors[group.key] = _validateField(
+                            group.key,
+                            widget.ctrl(group.key, '').text,
+                          );
+                        }
+                      }),
+                    ),
                     if (!isLast)
                       const Divider(
                         height: 1,
@@ -776,6 +790,15 @@ class _InfoTabState extends State<_InfoTab>
                   ],
                 );
               }),
+              // ── Office Hours Slots ──────────────────────────────────
+              const Divider(height: 1, color: AppColors.border),
+              _OfficeHoursSlotsWidget(
+                slots: widget.ohSlots,
+                onChanged: (slots) {
+                  widget.onOhChanged(slots);
+                  setState(() => _dirty = true);
+                },
+              ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
@@ -876,9 +899,8 @@ class _InfoTabState extends State<_InfoTab>
 class _FieldGroup {
   final String key;
   final String? secondKey;
-  bool get isPair => secondKey != null;
+  bool get isPair => false;
   const _FieldGroup.single(this.key) : secondKey = null;
-  const _FieldGroup.pair(this.key, this.secondKey);
 }
 
 // ── Single field row ───────────────────────────────────────────────────────────
@@ -1066,253 +1088,6 @@ class _InfoFieldRow extends StatelessWidget {
   }
 }
 
-// ── Office hours pair row ──────────────────────────────────────────────────────
-class _OfficeHoursPairRow extends StatelessWidget {
-  const _OfficeHoursPairRow({
-    required this.wsFields,
-    required this.ctrl,
-    required this.editing,
-    required this.errors,
-    required this.triedSave,
-    required this.onEditStart,
-    required this.onEditDone,
-  });
-  final Map<String, String> wsFields;
-  final TextEditingController Function(String, String) ctrl;
-  final Set<String> editing;
-  final Map<String, String?> errors;
-  final bool triedSave;
-  final void Function(String) onEditStart;
-  final void Function(String) onEditDone;
-
-  @override
-  Widget build(BuildContext context) {
-    const startKey = 'office_hours_start';
-    const endKey = 'office_hours_end';
-    final startVal = ctrl(startKey, wsFields[startKey] ?? '').text;
-    final endVal = ctrl(endKey, wsFields[endKey] ?? '').text;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(
-                Icons.access_time_rounded,
-                color: AppColors.primary,
-                size: 15,
-              ),
-              SizedBox(width: 6),
-              Text(
-                'Office Hours',
-                style: TextStyle(
-                  color: AppColors.inkLight,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _TimePickerField(
-                  label: 'Start time',
-                  fieldKey: startKey,
-                  value: startVal,
-                  ctrl: ctrl,
-                  isEditing: editing.contains(startKey),
-                  error: errors[startKey],
-                  onTap: () => onEditStart(startKey),
-                  onDone: () => onEditDone(startKey),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  '—',
-                  style: const TextStyle(
-                    color: AppColors.inkMid,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _TimePickerField(
-                  label: 'End time',
-                  fieldKey: endKey,
-                  value: endVal,
-                  ctrl: ctrl,
-                  isEditing: editing.contains(endKey),
-                  error: errors[endKey],
-                  onTap: () => onEditStart(endKey),
-                  onDone: () => onEditDone(endKey),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Time picker mini field ─────────────────────────────────────────────────────
-class _TimePickerField extends StatefulWidget {
-  const _TimePickerField({
-    required this.label,
-    required this.fieldKey,
-    required this.value,
-    required this.ctrl,
-    required this.isEditing,
-    required this.error,
-    required this.onTap,
-    required this.onDone,
-  });
-  final String label;
-  final String fieldKey;
-  final String value;
-  final TextEditingController Function(String, String) ctrl;
-  final bool isEditing;
-  final String? error;
-  final VoidCallback onTap;
-  final VoidCallback onDone;
-
-  @override
-  State<_TimePickerField> createState() => _TimePickerFieldState();
-}
-
-class _TimePickerFieldState extends State<_TimePickerField> {
-  late String _displayValue;
-
-  @override
-  void initState() {
-    super.initState();
-    _displayValue = widget.value;
-  }
-
-  @override
-  void didUpdateWidget(_TimePickerField old) {
-    super.didUpdateWidget(old);
-    final ctrlText = widget.ctrl(widget.fieldKey, widget.value).text;
-    if (ctrlText != _displayValue) {
-      _displayValue = ctrlText;
-    }
-  }
-
-  Future<void> _pickTime() async {
-    TimeOfDay initial = TimeOfDay.now();
-    final parts = _displayValue.split(':');
-    if (parts.length == 2) {
-      final h = int.tryParse(parts[0]);
-      final m = int.tryParse(parts[1]);
-      if (h != null && m != null) initial = TimeOfDay(hour: h, minute: m);
-    }
-
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-      initialEntryMode: TimePickerEntryMode.input,
-    );
-
-    if (picked != null) {
-      final formatted =
-          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
-      widget.ctrl(widget.fieldKey, widget.value).text = formatted;
-      setState(() => _displayValue = formatted);
-      widget.onDone();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasError = widget.error != null;
-    final isEmpty = _displayValue.trim().isEmpty;
-
-    return GestureDetector(
-      onTap: () {
-        widget.onTap();
-        _pickTime();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        decoration: BoxDecoration(
-          color: hasError
-              ? AppColors.warnSoft
-              : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
-          borderRadius: AppColors.r12,
-          border: Border.all(
-            color: hasError
-                ? AppColors.warn.withOpacity(0.5)
-                : (isEmpty
-                      ? AppColors.warn.withOpacity(0.3)
-                      : AppColors.primary.withOpacity(0.25)),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.label,
-              style: TextStyle(
-                color: hasError ? AppColors.warn : AppColors.inkMid,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(
-                  Icons.schedule_rounded,
-                  size: 14,
-                  color: hasError
-                      ? AppColors.warn
-                      : (isEmpty ? AppColors.warn : AppColors.primary),
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    isEmpty ? 'Tap to set…' : _displayValue,
-                    style: TextStyle(
-                      color: isEmpty
-                          ? AppColors.inkLight
-                          : (hasError ? AppColors.warn : AppColors.ink),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
-                    ),
-                  ),
-                ),
-                Icon(
-                  Icons.edit_outlined,
-                  size: 13,
-                  color: hasError ? AppColors.warn : AppColors.inkLight,
-                ),
-              ],
-            ),
-            if (hasError) ...[
-              const SizedBox(height: 3),
-              Text(
-                widget.error!,
-                style: const TextStyle(
-                  color: AppColors.warn,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 String _hintFor(String key) {
   switch (key) {
     case 'course_name':
@@ -1348,48 +1123,620 @@ class _SectionsTabState extends State<_SectionsTab>
   @override
   bool get wantKeepAlive => true;
 
-  bool _showForm = false;
-  Section? _editingSection;
-  final _draft = SectionDraft();
-  final _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  final _nameCtrl = TextEditingController();
-  final _locationCtrl = TextEditingController();
-  final _startCtrl = TextEditingController();
-  final _endCtrl = TextEditingController();
-  bool _saving = false;
+  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static final List<String> _minLabels = [
+    '00',
+    '05',
+    '10',
+    '15',
+    '20',
+    '25',
+    '30',
+    '35',
+    '40',
+    '45',
+    '50',
+    '55',
+  ];
 
-  void _startEdit(Section s) {
-    _editingSection = s;
-    _nameCtrl.text = s.name;
-    _locationCtrl.text = s.location;
-    _startCtrl.text = s.schedule.startTime;
-    final rawEnd = s.schedule.endTime.trim();
-    _endCtrl.text =
-        (rawEnd == s.schedule.timezone || rawEnd.toUpperCase() == 'UTC')
-        ? ''
-        : rawEnd;
-    _draft.days = List<String>.from(s.schedule.days);
-    _draft.timezone = s.schedule.timezone;
-    _draft.reminderMinutes = s.schedule.reminderMinutes;
-    setState(() => _showForm = true);
-  }
+  // ── Time helpers ────────────────────────────────────────────────────────────
 
-  void _cancelForm() {
-    _editingSection = null;
-    _nameCtrl.text = '';
-    _locationCtrl.text = '';
-    _startCtrl.text = '';
-    _endCtrl.text = '';
-    _draft.days = const [];
-    setState(() => _showForm = false);
-  }
-
-  @override
-  void dispose() {
-    for (final c in [_nameCtrl, _locationCtrl, _startCtrl, _endCtrl]) {
-      c.dispose();
+  ({int hour, int minIdx, bool isPM}) _parseTime(String val) {
+    if (val.isEmpty) return (hour: 8, minIdx: 0, isPM: false);
+    final upper = val.toUpperCase();
+    final isPM = upper.contains('PM');
+    final isAM = upper.contains('AM');
+    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
+    final parts = clean.split(':');
+    int h = int.tryParse(parts[0].trim()) ?? 8;
+    int m = int.tryParse(parts.length > 1 ? parts[1].trim() : '0') ?? 0;
+    if (h == 0)
+      h = 12;
+    else if (h > 12 && !isPM)
+      h -= 12; // handle 24h legacy input
+    else if (h > 12)
+      h -= 12;
+    // Snap to nearest 5-min slot
+    int minIdx = 0, minDist = 999;
+    for (int j = 0; j < _minLabels.length; j++) {
+      final d = (int.parse(_minLabels[j]) - m).abs();
+      if (d < minDist) {
+        minDist = d;
+        minIdx = j;
+      }
     }
-    super.dispose();
+    return (hour: h.clamp(1, 12), minIdx: minIdx, isPM: isPM);
+  }
+
+  String _formatTime(int hour12, int minIdx, bool isPM) =>
+      '$hour12:${_minLabels[minIdx]} ${isPM ? "PM" : "AM"}';
+
+  int? _timeToMins(String val) {
+    if (val.isEmpty) return null;
+    final upper = val.toUpperCase();
+    final isPM = upper.contains('PM');
+    final isAM = upper.contains('AM');
+    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
+    final parts = clean.split(':');
+    if (parts.length < 2) return null;
+    int? h = int.tryParse(parts[0].trim());
+    int? m = int.tryParse(parts[1].trim());
+    if (h == null || m == null) return null;
+    if (isPM && h != 12) h += 12;
+    if (isAM && h == 12) h = 0;
+    return h * 60 + m;
+  }
+
+  // ── Bottom sheet ────────────────────────────────────────────────────────────
+
+  void _showSectionSheet(BuildContext ctx, {Section? editing}) {
+    // Pre-fill from existing section or defaults
+    String selName = editing?.name ?? '';
+    String selLocation = editing?.location ?? '';
+    List<String> selDays = List.from(editing?.schedule.days ?? []);
+    int selReminderMins = editing?.schedule.reminderMinutes ?? 10;
+
+    final startParsed = _parseTime(editing?.schedule.startTime ?? '');
+    final endParsed = _parseTime(editing?.schedule.endTime ?? '');
+    int startH = startParsed.hour, startMIdx = startParsed.minIdx;
+    bool startPM = startParsed.isPM;
+    int endH = endParsed.hour, endMIdx = endParsed.minIdx;
+    bool endPM = endParsed.isPM;
+
+    final nameCtrl = TextEditingController(text: selName);
+    final locationCtrl = TextEditingController(text: selLocation);
+    bool saving = false;
+    String? sheetError;
+
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (bsCtx, setBS) {
+          Widget sectionLabel(String text) => Padding(
+            padding: const EdgeInsets.only(top: 18, bottom: 8),
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.inkLight,
+                letterSpacing: 1.2,
+              ),
+            ),
+          );
+
+          Widget hourRow(int selHour, void Function(int) onSel) =>
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(12, (idx) {
+                    final h = idx + 1;
+                    final sel = selHour == h;
+                    return GestureDetector(
+                      onTap: () => setBS(() => onSel(h)),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        margin: const EdgeInsets.only(right: 6),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$h',
+                          style: TextStyle(
+                            color: sel ? Colors.white : AppColors.ink,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              );
+
+          Widget minRow(int selMin, void Function(int) onSel) =>
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(_minLabels.length, (idx) {
+                    final sel = selMin == idx;
+                    return GestureDetector(
+                      onTap: () => setBS(() => onSel(idx)),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        child: Text(
+                          ':${_minLabels[idx]}',
+                          style: TextStyle(
+                            color: sel ? Colors.white : AppColors.ink,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              );
+
+          Widget ampmRow(bool isPM, void Function(bool) onSel) => Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt,
+              borderRadius: AppColors.r10,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final pm in [false, true])
+                  GestureDetector(
+                    onTap: () => setBS(() => onSel(pm)),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 110),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isPM == pm
+                            ? AppColors.primary
+                            : Colors.transparent,
+                        borderRadius: AppColors.r10,
+                      ),
+                      child: Text(
+                        pm ? 'PM' : 'AM',
+                        style: TextStyle(
+                          color: isPM == pm ? Colors.white : AppColors.inkMid,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.94,
+            minChildSize: 0.6,
+            maxChildSize: 0.97,
+            builder: (_, scrollCtrl) => ListView(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  editing != null ? 'Edit Section' : 'New Section',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: AppColors.ink,
+                  ),
+                ),
+
+                // ── Name & Location ──────────────────────────────────────────
+                sectionLabel('SECTION NAME'),
+                TextField(
+                  controller: nameCtrl,
+                  onChanged: (v) => setBS(() {
+                    selName = v;
+                    sheetError = null;
+                  }),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Section A',
+                    hintStyle: const TextStyle(
+                      color: AppColors.inkLight,
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.surfaceAlt,
+                    border: OutlineInputBorder(
+                      borderRadius: AppColors.r10,
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: AppColors.r10,
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: AppColors.r10,
+                      borderSide: const BorderSide(
+                        color: AppColors.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+
+                sectionLabel('LOCATION / ROOM'),
+                TextField(
+                  controller: locationCtrl,
+                  onChanged: (v) => setBS(() => selLocation = v),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Room 204',
+                    hintStyle: const TextStyle(
+                      color: AppColors.inkLight,
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.surfaceAlt,
+                    border: OutlineInputBorder(
+                      borderRadius: AppColors.r10,
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: AppColors.r10,
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: AppColors.r10,
+                      borderSide: const BorderSide(
+                        color: AppColors.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+
+                // ── Days ────────────────────────────────────────────────────
+                sectionLabel('DAYS'),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _days.map((d) {
+                    final sel = selDays.contains(d);
+                    return GestureDetector(
+                      onTap: () => setBS(() {
+                        sel ? selDays.remove(d) : selDays.add(d);
+                        sheetError = null;
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        child: Text(
+                          d,
+                          style: TextStyle(
+                            color: sel ? Colors.white : AppColors.inkMid,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                // ── Start time ───────────────────────────────────────────────
+                sectionLabel('START — HOUR'),
+                hourRow(startH, (h) => startH = h),
+                sectionLabel('START — MINUTES'),
+                minRow(startMIdx, (m) => startMIdx = m),
+                sectionLabel('START — PERIOD'),
+                ampmRow(startPM, (pm) => startPM = pm),
+
+                // ── End time ─────────────────────────────────────────────────
+                sectionLabel('END — HOUR'),
+                hourRow(endH, (h) => endH = h),
+                sectionLabel('END — MINUTES'),
+                minRow(endMIdx, (m) => endMIdx = m),
+                sectionLabel('END — PERIOD'),
+                ampmRow(endPM, (pm) => endPM = pm),
+
+                // ── Reminder ─────────────────────────────────────────────────
+                sectionLabel('REMINDER BEFORE CLASS'),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [5, 10, 15, 20, 30].map((mins) {
+                      final sel = selReminderMins == mins;
+                      return GestureDetector(
+                        onTap: () => setBS(() => selReminderMins = mins),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 110),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: sel
+                                ? AppColors.primary
+                                : AppColors.surfaceAlt,
+                            borderRadius: AppColors.r10,
+                            border: Border.all(
+                              color: sel ? AppColors.primary : AppColors.border,
+                            ),
+                          ),
+                          child: Text(
+                            '${mins}min',
+                            style: TextStyle(
+                              color: sel ? Colors.white : AppColors.ink,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Live preview pill ────────────────────────────────────────
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: AppColors.r20,
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Text(
+                      '${selDays.isEmpty ? "No days" : selDays.join(", ")}  ·  '
+                      '${_formatTime(startH, startMIdx, startPM)} → ${_formatTime(endH, endMIdx, endPM)}',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // ── Error ────────────────────────────────────────────────────
+                if (sheetError != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.warnSoft,
+                      borderRadius: AppColors.r10,
+                      border: Border.all(
+                        color: AppColors.warn.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          size: 15,
+                          color: AppColors.warn,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            sheetError!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.warn,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 16),
+
+                // ── Save button ──────────────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: AppColors.r12,
+                      ),
+                    ),
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            // ── Validation ──
+                            final name = nameCtrl.text.trim();
+                            if (name.isEmpty) {
+                              setBS(
+                                () => sheetError = 'Section name is required.',
+                              );
+                              return;
+                            }
+                            if (selDays.isEmpty) {
+                              setBS(
+                                () => sheetError =
+                                    'Please select at least one day.',
+                              );
+                              return;
+                            }
+                            final startStr = _formatTime(
+                              startH,
+                              startMIdx,
+                              startPM,
+                            );
+                            final endStr = _formatTime(endH, endMIdx, endPM);
+                            final startMins = _timeToMins(startStr);
+                            final endMins = _timeToMins(endStr);
+                            if (startMins != null &&
+                                endMins != null &&
+                                endMins <= startMins) {
+                              setBS(
+                                () => sheetError =
+                                    'End time must be after start time ($startStr → $endStr).',
+                              );
+                              return;
+                            }
+
+                            setBS(() => saving = true);
+                            try {
+                              final draft = SectionDraft()
+                                ..name = name
+                                ..location = locationCtrl.text.trim()
+                                ..days = selDays
+                                ..startTime = startStr
+                                ..endTime = endStr
+                                ..reminderMinutes = selReminderMins;
+
+                              Workspace updated;
+                              if (editing != null) {
+                                await widget.vm.api.deleteSection(
+                                  widget.ws.id,
+                                  editing.id,
+                                );
+                              }
+                              updated = await widget.vm.api.createSection(
+                                widget.ws.id,
+                                draft,
+                              );
+                              widget.vm.current = updated;
+                              widget.vm.notifyListeners();
+                              await widget.vm
+                                  .rescheduleNotificationsForCurrent();
+
+                              if (bsCtx.mounted) Navigator.pop(bsCtx);
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      editing != null
+                                          ? 'Section updated ✓'
+                                          : 'Section created ✓',
+                                    ),
+                                    backgroundColor: AppColors.accent,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: AppColors.r12,
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              setBS(() {
+                                saving = false;
+                                sheetError = e.toString();
+                              });
+                            }
+                          },
+                    child: saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            editing != null ? 'Save Changes' : 'Create Section',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      locationCtrl.dispose();
+    });
   }
 
   @override
@@ -1402,24 +1749,18 @@ class _SectionsTabState extends State<_SectionsTab>
         _SectionHeader(
           title: 'Sections (${ws.sections.length})',
           icon: Icons.groups_2_rounded,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!_showForm)
-                _PillButton(
-                  label: '+ Add Section',
-                  onTap: () => setState(() => _showForm = true),
-                ),
-            ],
+          trailing: _PillButton(
+            label: '+ Add Section',
+            onTap: () => _showSectionSheet(context),
           ),
         ),
         const SizedBox(height: 12),
-        if (_showForm) ...[_buildForm(), const SizedBox(height: 14)],
-        if (ws.sections.isEmpty && !_showForm)
+        if (ws.sections.isEmpty)
           const _EmptyState(
             icon: Icons.groups_2_rounded,
             title: 'No sections yet',
-            subtitle: 'Tap "+ Add Section" to create your first class section.',
+            subtitle:
+                'Tap \"+ Add Section\" to create your first class section.',
           )
         else
           ...ws.sections.map(
@@ -1428,7 +1769,7 @@ class _SectionsTabState extends State<_SectionsTab>
               child: _SectionCard(
                 section: s,
                 onDelete: () => _confirmDelete(s),
-                onEdit: () => _startEdit(s),
+                onEdit: () => _showSectionSheet(context, editing: s),
                 vm: widget.vm,
               ),
             ),
@@ -1450,7 +1791,7 @@ class _SectionsTabState extends State<_SectionsTab>
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
             ),
             content: Text(
-              'Delete "${s.name.isNotEmpty ? s.name : 'this section'}"?',
+              'Delete "${s.name.isNotEmpty ? s.name : "this section"}"?',
               style: const TextStyle(fontSize: 13, color: AppColors.inkMid),
             ),
             actions: [
@@ -1484,244 +1825,6 @@ class _SectionsTabState extends State<_SectionsTab>
       await widget.vm.deleteSection(s.id);
       if (widget.vm.error != null) widget.onError(widget.vm.error!);
     }
-  }
-
-  Widget _buildForm() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: AppColors.r16,
-        boxShadow: AppColors.shadow,
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                _editingSection != null
-                    ? Icons.edit_rounded
-                    : Icons.add_circle_rounded,
-                color: AppColors.primary,
-                size: 16,
-              ),
-              const SizedBox(width: 7),
-              Text(
-                _editingSection != null ? 'Edit Section' : 'New Section',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                  color: AppColors.ink,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _FormField(
-            ctrl: _nameCtrl,
-            label: 'Section Name',
-            icon: Icons.label_rounded,
-          ),
-          const SizedBox(height: 10),
-          _FormField(
-            ctrl: _locationCtrl,
-            label: 'Location / Room',
-            icon: Icons.location_on_rounded,
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Schedule',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.inkMid,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _SectionTimePicker(
-                  label: 'Start time',
-                  ctrl: _startCtrl,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SectionTimePicker(label: 'End time', ctrl: _endCtrl),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 6,
-            children: _days.map((d) {
-              final sel = _draft.days.contains(d);
-              return GestureDetector(
-                onTap: () => setState(() {
-                  _draft.days = sel
-                      ? _draft.days.where((x) => x != d).toList()
-                      : [..._draft.days, d];
-                }),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                    borderRadius: AppColors.r8,
-                    border: Border.all(
-                      color: sel ? AppColors.primary : AppColors.border,
-                    ),
-                  ),
-                  child: Text(
-                    d,
-                    style: TextStyle(
-                      color: sel ? Colors.white : AppColors.inkMid,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.inkMid,
-                    side: const BorderSide(color: AppColors.border),
-                    shape: const RoundedRectangleBorder(
-                      borderRadius: AppColors.r12,
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  onPressed: _cancelForm,
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: const RoundedRectangleBorder(
-                      borderRadius: AppColors.r12,
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  onPressed: _saving ? null : _saveSection,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 17,
-                          height: 17,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          _editingSection != null ? 'Save Changes' : 'Create',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _saveSection() async {
-    _draft
-      ..name = _nameCtrl.text.trim()
-      ..location = _locationCtrl.text.trim()
-      ..startTime = _startCtrl.text.trim()
-      ..endTime = _endCtrl.text.trim()
-      ..days = _draft.days
-          .map((d) => d.trim())
-          .where((d) => d.isNotEmpty)
-          .toList();
-
-    if (_draft.name.isEmpty) {
-      widget.onError('Section name is required.');
-      return;
-    }
-    if (_draft.days.isEmpty) {
-      widget.onError('Select at least one day.');
-      return;
-    }
-    if (_draft.startTime.isEmpty) {
-      widget.onError('Start time is required for notifications to work.');
-      return;
-    }
-
-    final startMins = _timeToMinutes(_draft.startTime);
-    final endMins = _timeToMinutes(_draft.endTime);
-    if (_draft.endTime.isNotEmpty && startMins != null && endMins != null) {
-      if (startMins == endMins) {
-        widget.onError('Start and end time cannot be the same.');
-        return;
-      }
-      if (endMins < startMins) {
-        widget.onError('End time must be after start time.');
-        return;
-      }
-    }
-
-    setState(() => _saving = true);
-    final isEditing = _editingSection != null;
-    try {
-      Workspace updated;
-      if (isEditing) {
-        await widget.vm.api.deleteSection(widget.ws.id, _editingSection!.id);
-        updated = await widget.vm.api.createSection(widget.ws.id, _draft);
-      } else {
-        updated = await widget.vm.api.createSection(widget.ws.id, _draft);
-      }
-      widget.vm.current = updated;
-      widget.vm.notifyListeners();
-      await widget.vm.rescheduleNotificationsForCurrent();
-      _cancelForm();
-      setState(() => _saving = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isEditing ? 'Section updated ✓' : 'Section created ✓',
-            ),
-            backgroundColor: AppColors.accent,
-            behavior: SnackBarBehavior.floating,
-            shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => _saving = false);
-      widget.onError(e.toString());
-    }
-  }
-
-  int? _timeToMinutes(String t) {
-    final parts = t.split(':');
-    if (parts.length < 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return null;
-    return h * 60 + m;
   }
 }
 
@@ -1819,11 +1922,7 @@ class _SectionCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
+                        const SizedBox(width: 8),
                         const Icon(
                           Icons.schedule_rounded,
                           size: 11,
@@ -1852,11 +1951,14 @@ class _SectionCard extends StatelessWidget {
                             color: AppColors.inkLight,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            section.location,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkMid,
+                          Flexible(
+                            child: Text(
+                              section.location,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.inkMid,
+                              ),
                             ),
                           ),
                         ],
@@ -1871,16 +1973,19 @@ class _SectionCard extends StatelessWidget {
                           color: AppColors.inkLight,
                         ),
                         const SizedBox(width: 3),
-                        Text(
-                          '$count student${count == 1 ? "" : "s"}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: count > 0
-                                ? AppColors.accent
-                                : AppColors.inkMid,
-                            fontWeight: count > 0
-                                ? FontWeight.w700
-                                : FontWeight.w400,
+                        Flexible(
+                          child: Text(
+                            '$count student${count == 1 ? "" : "s"}',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: count > 0
+                                  ? AppColors.accent
+                                  : AppColors.inkMid,
+                              fontWeight: count > 0
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                            ),
                           ),
                         ),
                       ],
@@ -2809,110 +2914,557 @@ class _TypingIndicator extends StatelessWidget {
   );
 }
 
-// ── Section time picker ────────────────────────────────────────────────────────
-class _SectionTimePicker extends StatefulWidget {
-  const _SectionTimePicker({required this.label, required this.ctrl});
-  final String label;
-  final TextEditingController ctrl;
+// ── Office Hours Slots Widget ─────────────────────────────────────────────────
+// Professional day-picker + time-range per slot, add/remove slots freely.
+class _OfficeHoursSlotsWidget extends StatefulWidget {
+  const _OfficeHoursSlotsWidget({required this.slots, required this.onChanged});
+  final List<Map<String, dynamic>> slots;
+  final void Function(List<Map<String, dynamic>>) onChanged;
 
   @override
-  State<_SectionTimePicker> createState() => _SectionTimePickerState();
+  State<_OfficeHoursSlotsWidget> createState() =>
+      _OfficeHoursSlotsWidgetState();
 }
 
-class _SectionTimePickerState extends State<_SectionTimePicker> {
-  @override
-  void initState() {
-    super.initState();
-    widget.ctrl.addListener(_onCtrlChanged);
+class _OfficeHoursSlotsWidgetState extends State<_OfficeHoursSlotsWidget> {
+  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static final List<String> _minLabels = [
+    '00',
+    '05',
+    '10',
+    '15',
+    '20',
+    '25',
+    '30',
+    '35',
+    '40',
+    '45',
+    '50',
+    '55',
+  ];
+
+  List<Map<String, dynamic>> get _slots => widget.slots;
+  void _notify() => widget.onChanged(List.of(_slots));
+
+  void _addSlot() {
+    setState(() => _slots.add({'days': <String>[], 'start': '', 'end': ''}));
+    _notify();
   }
 
-  @override
-  void dispose() {
-    widget.ctrl.removeListener(_onCtrlChanged);
-    super.dispose();
+  void _removeSlot(int i) {
+    setState(() => _slots.removeAt(i));
+    _notify();
   }
 
-  void _onCtrlChanged() => setState(() {});
-
-  Future<void> _pick() async {
-    final current = widget.ctrl.text.trim();
-    TimeOfDay initial = TimeOfDay.now();
-    if (current.isNotEmpty) {
-      final parts = current.split(':');
-      if (parts.length == 2) {
-        final h = int.tryParse(parts[0]);
-        final m = int.tryParse(parts[1]);
-        if (h != null && m != null) initial = TimeOfDay(hour: h, minute: m);
+  ({int hour, int minIdx, bool isPM}) _parse(String val) {
+    if (val.isEmpty) return (hour: 9, minIdx: 0, isPM: false);
+    final upper = val.toUpperCase();
+    final isPM = upper.contains('PM');
+    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
+    final parts = clean.split(':');
+    int h = int.tryParse(parts[0].trim()) ?? 9;
+    int m = int.tryParse(parts.length > 1 ? parts[1].trim() : '0') ?? 0;
+    if (h == 0)
+      h = 12;
+    else if (h > 12)
+      h -= 12;
+    int minIdx = 0;
+    int minDist = 999;
+    for (int j = 0; j < _minLabels.length; j++) {
+      final d = (int.parse(_minLabels[j]) - m).abs();
+      if (d < minDist) {
+        minDist = d;
+        minIdx = j;
       }
     }
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-      initialEntryMode: TimePickerEntryMode.input,
+    return (hour: h, minIdx: minIdx, isPM: isPM);
+  }
+
+  String _format(int hour12, int minIdx, bool isPM) =>
+      '$hour12:${_minLabels[minIdx]} ${isPM ? "PM" : "AM"}';
+
+  void _setSlot(int i, {List<String>? days, String? start, String? end}) {
+    setState(() {
+      if (days != null) _slots[i]['days'] = days;
+      if (start != null) _slots[i]['start'] = start;
+      if (end != null) _slots[i]['end'] = end;
+    });
+    _notify();
+  }
+
+  void _showSlotSheet(BuildContext ctx, int i) {
+    final slot = _slots[i];
+    List<String> selDays = List<String>.from(slot['days'] as List);
+    final startParsed = _parse(slot['start'] as String? ?? '');
+    final endParsed = _parse(slot['end'] as String? ?? '');
+    int startH = startParsed.hour, startM = startParsed.minIdx;
+    bool startPM = startParsed.isPM;
+    int endH = endParsed.hour, endM = endParsed.minIdx;
+    bool endPM = endParsed.isPM;
+
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (bsCtx, setBS) {
+          Widget sectionLabel(String text) => Padding(
+            padding: const EdgeInsets.only(top: 18, bottom: 8),
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.inkLight,
+                letterSpacing: 1.2,
+              ),
+            ),
+          );
+
+          Widget hourRow(int selHour, void Function(int) onSel) =>
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(12, (idx) {
+                    final h = idx + 1;
+                    final sel = selHour == h;
+                    return GestureDetector(
+                      onTap: () => setBS(() => onSel(h)),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        margin: const EdgeInsets.only(right: 6),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$h',
+                          style: TextStyle(
+                            color: sel ? Colors.white : AppColors.ink,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              );
+
+          Widget minRow(int selMin, void Function(int) onSel) =>
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(_minLabels.length, (idx) {
+                    final sel = selMin == idx;
+                    return GestureDetector(
+                      onTap: () => setBS(() => onSel(idx)),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        child: Text(
+                          ':${_minLabels[idx]}',
+                          style: TextStyle(
+                            color: sel ? Colors.white : AppColors.ink,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              );
+
+          Widget ampmRow(bool isPM, void Function(bool) onSel) => Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt,
+              borderRadius: AppColors.r10,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final pm in [false, true])
+                  GestureDetector(
+                    onTap: () => setBS(() => onSel(pm)),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 110),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isPM == pm
+                            ? AppColors.primary
+                            : Colors.transparent,
+                        borderRadius: AppColors.r10,
+                      ),
+                      child: Text(
+                        pm ? 'PM' : 'AM',
+                        style: TextStyle(
+                          color: isPM == pm ? Colors.white : AppColors.inkMid,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.92,
+            minChildSize: 0.6,
+            maxChildSize: 0.96,
+            builder: (_, scrollCtrl) => ListView(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Slot ${i + 1} — Office Hours',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: AppColors.ink,
+                  ),
+                ),
+                sectionLabel('DAYS'),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _days.map((d) {
+                    final sel = selDays.contains(d);
+                    return GestureDetector(
+                      onTap: () => setBS(() {
+                        sel ? selDays.remove(d) : selDays.add(d);
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: sel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        child: Text(
+                          d,
+                          style: TextStyle(
+                            color: sel ? Colors.white : AppColors.inkMid,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                sectionLabel('START — HOUR'),
+                hourRow(startH, (h) => startH = h),
+                sectionLabel('START — MINUTES'),
+                minRow(startM, (m) => startM = m),
+                sectionLabel('START — PERIOD'),
+                ampmRow(startPM, (pm) => startPM = pm),
+                sectionLabel('END — HOUR'),
+                hourRow(endH, (h) => endH = h),
+                sectionLabel('END — MINUTES'),
+                minRow(endM, (m) => endM = m),
+                sectionLabel('END — PERIOD'),
+                ampmRow(endPM, (pm) => endPM = pm),
+                const SizedBox(height: 24),
+                Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: AppColors.r20,
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Text(
+                      selDays.isEmpty
+                          ? '${_format(startH, startM, startPM)} → ${_format(endH, endM, endPM)}'
+                          : '${selDays.join(", ")}  ·  ${_format(startH, startM, startPM)} → ${_format(endH, endM, endPM)}',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: AppColors.r12,
+                      ),
+                    ),
+                    onPressed: () {
+                      _setSlot(
+                        i,
+                        days: selDays,
+                        start: _format(startH, startM, startPM),
+                        end: _format(endH, endM, endPM),
+                      );
+                      Navigator.pop(bsCtx);
+                    },
+                    child: const Text(
+                      'Save',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
-    if (picked != null) {
-      widget.ctrl.text =
-          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final text = widget.ctrl.text.trim();
-    final isEmpty = text.isEmpty;
-    return GestureDetector(
-      onTap: _pick,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        decoration: BoxDecoration(
-          color: isEmpty ? AppColors.warnSoft : AppColors.primarySoft,
-          borderRadius: AppColors.r12,
-          border: Border.all(
-            color: isEmpty
-                ? AppColors.warn.withOpacity(0.3)
-                : AppColors.primary.withOpacity(0.25),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.label,
-              style: TextStyle(
-                color: isEmpty ? AppColors.warn : AppColors.inkMid,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.access_time_rounded,
+                color: AppColors.primary,
+                size: 15,
               ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(
-                  Icons.schedule_rounded,
-                  size: 14,
-                  color: isEmpty ? AppColors.warn : AppColors.primary,
+              const SizedBox(width: 6),
+              const Text(
+                'Office Hours',
+                style: TextStyle(
+                  color: AppColors.inkLight,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    isEmpty ? 'Tap to set…' : text,
-                    style: TextStyle(
-                      color: isEmpty ? AppColors.inkLight : AppColors.ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _addSlot,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: AppColors.r20,
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.3),
                     ),
                   ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.add_rounded,
+                        size: 13,
+                        color: AppColors.primary,
+                      ),
+                      SizedBox(width: 3),
+                      Text(
+                        'Add slot',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                Icon(
-                  Icons.edit_outlined,
-                  size: 13,
-                  color: isEmpty ? AppColors.warn : AppColors.inkLight,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_slots.isEmpty)
+            GestureDetector(
+              onTap: _addSlot,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: AppColors.r12,
+                  border: Border.all(color: AppColors.border),
                 ),
-              ],
-            ),
-          ],
-        ),
+                child: const Column(
+                  children: [
+                    Icon(
+                      Icons.add_circle_outline_rounded,
+                      color: AppColors.inkLight,
+                      size: 24,
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Tap to add office hours',
+                      style: TextStyle(
+                        color: AppColors.inkLight,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...List.generate(_slots.length, (i) {
+              final slot = _slots[i];
+              final days = List<String>.from(slot['days'] as List);
+              final start = slot['start'] as String? ?? '';
+              final end = slot['end'] as String? ?? '';
+              final hasTime = start.isNotEmpty && end.isNotEmpty;
+              final hasDays = days.isNotEmpty;
+
+              return GestureDetector(
+                onTap: () => _showSlotSheet(context, i),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: AppColors.r12,
+                    border: Border.all(
+                      color: hasTime && hasDays
+                          ? AppColors.primary.withOpacity(0.25)
+                          : AppColors.border,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primarySoft,
+                          borderRadius: AppColors.r10,
+                        ),
+                        child: const Icon(
+                          Icons.access_time_rounded,
+                          color: AppColors.primary,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              hasDays ? days.join(', ') : 'No days selected',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                color: hasDays
+                                    ? AppColors.ink
+                                    : AppColors.inkLight,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              hasTime ? '$start  →  $end' : 'Tap to set time',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: hasTime
+                                    ? AppColors.inkMid
+                                    : AppColors.inkLight,
+                                fontStyle: hasTime
+                                    ? FontStyle.normal
+                                    : FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.edit_outlined,
+                            size: 15,
+                            color: AppColors.inkLight,
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _removeSlot(i),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 16,
+                              color: AppColors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }

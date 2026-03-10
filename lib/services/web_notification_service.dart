@@ -1,17 +1,7 @@
 // lib/services/web_notification_service.dart
-//
-// CHANGE: Now works as a UNIVERSAL notification history store on BOTH
-// platforms, not just web.
-// - Web: timer-based ticker fires toasts automatically (unchanged)
-// - Mobile: MobileToastService.show() and notificationBackgroundHandler
-//   both call WebNotificationService.instance.addMobileNotif() to record
-//   the notification so the bell history is populated on mobile too.
-// - kIsWeb guard removed from _fire() so history is stored on both.
-// - playBellChime() still only called on web (mobile uses ringtone player).
-// - unlockAudio() still web-only.
 
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback;
 
 import '../app/workspace_models.dart';
 import '../utils/schedule_utils.dart';
@@ -72,11 +62,6 @@ class WebNotificationService {
     for (final cb in List.of(_listeners)) cb();
   }
 
-  // Legacy single-setter kept for compatibility — maps into list.
-  set onChanged(VoidCallback? cb) {
-    if (cb != null && !_listeners.contains(cb)) _listeners.add(cb);
-  }
-
   // ── Audio unlock (web only) ────────────────────────────────────────────────
   void unlockAudio() {
     if (!kIsWeb) return;
@@ -84,7 +69,6 @@ class WebNotificationService {
   }
 
   // ── Init / update (web ticker) ─────────────────────────────────────────────
-
   Future<void> init(List<Workspace> workspaces) async {
     if (!kIsWeb) return;
     _workspaces = List.of(workspaces);
@@ -120,11 +104,7 @@ class WebNotificationService {
         if (sch.startTime.isEmpty) continue;
 
         final parsed = _parseHHmm(sch.startTime);
-        if (parsed == null) {
-          continue;
-        }
-        final hour = parsed.$1;
-        final minute = parsed.$2;
+        if (parsed == null) continue;
         final remind = sch.reminderMinutes > 0 ? sch.reminderMinutes : 15;
 
         for (final day in sch.days) {
@@ -134,13 +114,16 @@ class WebNotificationService {
           final fireAt = _nextFireAt(
             now: now,
             weekday: weekday,
-            hour: hour,
-            minute: minute,
+            hour: parsed.$1,
+            minute: parsed.$2,
             reminderMinutes: remind,
           );
 
           final diff = now.difference(fireAt).inSeconds;
-
+          // ignore: avoid_print
+          print(
+            '[WebNotif] \${section.name} \$day | nextFire=\$fireAt | diff=\${diff}s',
+          );
           if (diff >= 0 && diff < 60) {
             _fire(
               PendingNotification(
@@ -158,16 +141,12 @@ class WebNotificationService {
     }
   }
 
-  // ── Called by mobile (MobileToastService + background handler) ─────────────
-  // Records the notification in history so the bell badge appears on mobile.
+  // ── Called by mobile (MobileToastService) to record in bell history ─────────
   void addMobileNotif({
     required String title,
     required String body,
     required DateTime fireAt,
   }) {
-    // Parse title: "⏰ CourseName starts in Nmin"
-    // Parse body:  "SectionName @ Location — HH:MM AM"
-    // We store a synthetic PendingNotification for history display.
     final notif = PendingNotification(
       sectionName: body.split(' — ').first.split(' @ ').first.trim(),
       courseName: title
@@ -190,7 +169,6 @@ class WebNotificationService {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
   static (int, int)? _parseHHmm(String raw) {
     final s = raw.trim();
     if (s.isEmpty) return null;
@@ -239,7 +217,7 @@ class WebNotificationService {
     );
     if (already) return;
     activeNotifications.insert(0, notif);
-    if (kIsWeb) playBellChime(); // web audio only
+    if (kIsWeb) playBellChime();
     _notifyListeners();
   }
 }
