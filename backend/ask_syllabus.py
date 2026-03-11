@@ -161,7 +161,7 @@ class ClarificationDetector:
 # ── LLM answerer ──────────────────────────────────────────────────────────────
 
 class SyllabusChatGPT:
-    def __init__(self, model: str = "gpt-5") -> None:
+    def __init__(self, model: str = "gpt-o4-mini") -> None:
         self.client = OpenAI()
         self.model = model
 
@@ -187,6 +187,7 @@ class SyllabusChatGPT:
         context_text = "\n\n---\n\n".join(parts)
 
         system_msg = {
+            "role": "system",
             "content": (
                 "You are an intelligent teaching assistant for this course.\n"
                 "You have access to the course syllabus as context.\n"
@@ -203,6 +204,7 @@ class SyllabusChatGPT:
                 "- Be concise but thorough. Use bullet points when listing things.\n"
                 "- Do NOT mention chunks or pages.\n"
                 "- Do NOT invent dates or deadlines.\n"
+                f"\nSYLLABUS CONTEXT:\n{context_text}"
             ),
         }
 
@@ -268,7 +270,7 @@ def main() -> None:
     pipeline = AskPipeline(
         store=SyllabusCsvStore(csv_path),
         retriever=LightweightRetriever(top_k=12, score_threshold=2.0),
-        llm=SyllabusChatGPT(model="gpt-5"),
+        llm=SyllabusChatGPT(model="gpt-o4-mini"),
     )
 
     history: List[ChatMessage] = []

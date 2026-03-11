@@ -25,7 +25,7 @@ class WorkspaceService:
         repo: PgWorkspaceRepository,
         hash_service: PdfHashService,
         structured_repo: Optional[PgStructuredSyllabusRepository] = None,
-        converter_model: str = "gpt-5",
+        converter_model: str = "gpt-o4-mini",
     ):
         self.repo            = repo
         self.hash_service    = hash_service

@@ -52,7 +52,7 @@ class StructuredSyllabusData:
 
 class StructuredSyllabusExtractor:
 
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, model: str = "gpt-o4-mini") -> None:
         self.client = OpenAI()
         self.model = model
 
