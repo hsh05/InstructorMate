@@ -121,6 +121,7 @@ class Section {
   final String location;
   final SectionSchedule schedule;
   final int studentsCount;
+  final String lastImportHash;
 
   const Section({
     required this.id,
@@ -129,6 +130,7 @@ class Section {
     required this.location,
     required this.schedule,
     this.studentsCount = 0,
+    this.lastImportHash = '',
   });
 
   factory Section.fromJson(Map<String, dynamic> j) {
@@ -140,12 +142,10 @@ class Section {
       location: (j['location'] ?? '').toString(),
       schedule: SectionSchedule.fromJson(sch),
       studentsCount: int.tryParse((j['students_count'] ?? 0).toString()) ?? 0,
+      lastImportHash: (j['last_import_hash'] ?? '').toString(),
     );
   }
 }
-
-// lib/app/workspace_models.dart
-// (only the changed parts shown — merge into full file)
 
 class SectionSchedule {
   final List<String> days;

@@ -1,5 +1,7 @@
 // lib/ui/workspace_detail.dart
+import 'dart:convert';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -57,11 +59,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     _tabs = TabController(length: 4, vsync: this);
     _syncControllersFromWorkspace();
     _loadOhSlots();
-    _tabs.addListener(() {
-      if (_tabs.index == 2 && !_tabs.indexIsChanging) {
-        widget.vm.openWorkspace(widget.vm.current!.id);
-      }
-    });
   }
 
   void _loadOhSlots() {
@@ -2093,6 +2090,12 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   final _searchCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _loadRoster();
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
@@ -2110,8 +2113,9 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
           _students = list;
           _loadingRoster = false;
         });
-    } catch (_) {
+    } catch (e) {
       if (mounted) setState(() => _loadingRoster = false);
+      widget.onError(e.toString());
     }
   }
 
@@ -2134,81 +2138,31 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       return;
     }
 
-    // Confirm if students already exist
-    final existingCount = _students.length;
-    final vmCount = widget.vm.countForSection(widget.section.id);
-    final displayCount = existingCount > 0 ? existingCount : vmCount;
-    if (displayCount > 0 && ctx.mounted) {
-      final replace =
+    // ── Detect same vs different file using SHA-256 ───────────────────────
+    final newHash = sha256.convert(bytes).toString();
+    final storedHash = widget.section.lastImportHash;
+    final isSameFile = storedHash.isNotEmpty && newHash == storedHash;
+    final existingCount = _students.isNotEmpty
+        ? _students.length
+        : widget.vm.countForSection(widget.section.id);
+    final hasExisting = existingCount > 0;
+
+    if (hasExisting && ctx.mounted) {
+      final confirmed =
           await showDialog<bool>(
             context: ctx,
-            builder: (_) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: const [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: AppColors.warn,
-                    size: 20,
-                  ),
-                  SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'Replace Student List?',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              content: Text(
-                'This section already has $displayCount '
-                'student${displayCount == 1 ? "" : "s"}.\n\n'
-                'Uploading "${f.name}" will replace the existing list.'
-                ' This cannot be undone.',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.inkMid,
-                  height: 1.5,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(
-                      color: AppColors.inkLight,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.warn,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text(
-                    'Replace',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
+            barrierColor: Colors.black.withOpacity(0.55),
+            builder: (_) => _ReplaceRosterDialog(
+              filename: f.name,
+              existingCount: existingCount,
+              isSameFile: isSameFile,
             ),
           ) ??
           false;
-      if (!replace) return;
+      if (!confirmed) return;
     }
 
+    // ── Upload ────────────────────────────────────────────────────────────
     setState(() => _importing = true);
     try {
       final result = await widget.vm.api.importStudents(
@@ -2225,8 +2179,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
           SnackBar(
             content: Text(
               result.imported > 0
-                  ? 'Saved ✓ — ${result.imported} student${result.imported == 1 ? "" : "s"} imported'
-                  : 'No students found — check your CSV has name/email columns',
+                  ? '✓ ${result.imported} student${result.imported == 1 ? "" : "s"} imported successfully'
+                  : 'No students found — check your file has name/email columns',
             ),
             backgroundColor: result.imported > 0
                 ? AppColors.accent
@@ -3693,4 +3647,221 @@ class _ChatMsg {
   const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
+}
+
+// ─── Replace Roster Confirmation Dialog ──────────────────────────────────────
+
+class _ReplaceRosterDialog extends StatelessWidget {
+  const _ReplaceRosterDialog({
+    required this.filename,
+    required this.existingCount,
+    required this.isSameFile,
+  });
+
+  final String filename;
+  final int existingCount;
+  final bool isSameFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.14),
+              blurRadius: 40,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Header ────────────────────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              decoration: BoxDecoration(
+                color: isSameFile
+                    ? const Color(0xFFFFF8ED)
+                    : const Color(0xFFFFF0F0),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSameFile
+                          ? const Color(0xFFFFEDC2)
+                          : const Color(0xFFFFDDDD),
+                      border: Border.all(
+                        color: isSameFile
+                            ? const Color(0xFFFFD080)
+                            : const Color(0xFFFFAAAA),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      isSameFile
+                          ? Icons.file_copy_rounded
+                          : Icons.swap_horiz_rounded,
+                      color: isSameFile
+                          ? const Color(0xFFE6920A)
+                          : const Color(0xFFD93025),
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    isSameFile ? 'Same File Detected' : 'Replace Student List?',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1A1A2E),
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isSameFile
+                        ? 'This file was already imported'
+                        : 'A different roster will replace the current one',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF888888),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Body ──────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7F5FF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE0D9FF)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.insert_drive_file_rounded,
+                          color: Color(0xFF7C5CBF),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            filename,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF2D2640),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    isSameFile
+                        ? 'This appears to be the same file you imported before. '
+                              'Re-importing will refresh the list with $existingCount '
+                              'student${existingCount == 1 ? "" : "s"}.'
+                        : 'This section currently has $existingCount '
+                              'student${existingCount == 1 ? "" : "s"}. '
+                              'Uploading a new file will permanently replace '
+                              'the existing roster. This cannot be undone.',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B6480),
+                      height: 1.55,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Actions ───────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: Color(0xFFE0E0E0)),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: Color(0xFF888888),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isSameFile
+                            ? const Color(0xFFE6920A)
+                            : const Color(0xFFD93025),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: Icon(
+                        isSameFile
+                            ? Icons.refresh_rounded
+                            : Icons.swap_horiz_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        isSameFile ? 'Re-import Anyway' : 'Yes, Replace',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

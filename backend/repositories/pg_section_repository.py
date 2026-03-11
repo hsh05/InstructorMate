@@ -95,6 +95,16 @@ class PgSectionRepository:
 
     # ── Private ───────────────────────────────────────────────────────────────
 
+    def update_import_hash(self, section_id: str, file_hash: str) -> None:
+        """Store the hash of the last successfully imported roster file."""
+        row = self.db.query(SectionModel).filter(
+            SectionModel.section_id == section_id
+        ).first()
+        if row:
+            row.last_import_hash = file_hash
+            self.db.commit()
+            logger.info("Updated import hash for section=%s", section_id)
+
     def _replace_days(self, section_id: str, days: list) -> None:
         """Delete existing SectionDay rows and insert fresh ones."""
         self.db.query(SectionDayModel).filter(
@@ -103,7 +113,7 @@ class PgSectionRepository:
         for day in days:
             day = day.strip()
             if day:
-                self.db.add(SectionDayModel(section_id=section_id, day=day))
+                self.db.add(SectionDayModel(section_id=section_id, day=day))            
 
     def _to_dict(self, row: SectionModel) -> Dict:
         day_rows = self.db.query(SectionDayModel).filter(
@@ -127,5 +137,6 @@ class PgSectionRepository:
                 "end_time":         (row.end_time or "").strip(),
                 "timezone":         "UTC",
                 "reminder_minutes": reminder,
+                "last_import_hash":  row.last_import_hash or "", 
             },
         }

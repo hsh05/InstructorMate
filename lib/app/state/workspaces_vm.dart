@@ -195,15 +195,11 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.getWorkspace(id);
+      // Clear stale counts from any previously opened workspace
+      sectionStudentCounts.clear();
+      // Use studentsCount from workspace JSON — already correct from backend
       for (final s in _current?.sections ?? []) {
-        try {
-          final students = await api.listSectionStudents(id, s.id);
-          sectionStudentCounts[s.id] = students.isNotEmpty
-              ? students.length
-              : 0;
-        } catch (_) {
-          sectionStudentCounts.putIfAbsent(s.id, () => s.studentsCount);
-        }
+        sectionStudentCounts[s.id] = s.studentsCount;
       }
       await rescheduleNotificationsForCurrent();
     } catch (e) {

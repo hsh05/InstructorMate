@@ -99,6 +99,7 @@ class Section(Base):
     end_time         = Column(Text, nullable=False, default="")
     reminder_minutes = Column(Integer, nullable=False, default=10)
     created_at       = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    last_import_hash = Column(String, default="")
 
     workspace        = relationship("Workspace", back_populates="sections")
     students = relationship("StudentSection", cascade="all, delete-orphan")

@@ -12,7 +12,13 @@ import '../app/workspace_models.dart';
 class ImportResult {
   final int imported;
   final String sectionId;
-  const ImportResult({required this.imported, required this.sectionId});
+  final String fileHash;
+
+  const ImportResult({
+    required this.imported,
+    required this.sectionId,
+    this.fileHash = '',
+  });
 }
 
 class ImportWorkspaceResult {
@@ -211,6 +217,7 @@ class ApiClient {
     return ImportResult(
       imported: int.tryParse((map['imported'] ?? 0).toString()) ?? 0,
       sectionId: (map['section_id'] ?? sectionId).toString(),
+      fileHash: (map['file_hash'] ?? '').toString(),
     );
   }
 
