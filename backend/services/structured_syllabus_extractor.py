@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 
-import fitz  # PyMuPDF — already in requirements via syllabus_converter
+from pypdf import PdfReader
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,8 @@ class StructuredSyllabusExtractor:
 
     def _select_pages(self, pdf_path: str) -> str:
         """Return first 3 pages + any pages containing signal keywords (capped)."""
-        doc = fitz.open(pdf_path)
+        reader = PdfReader(pdf_path)
+        pages = reader.pages
         per_page_cap = 1000
         total_cap = 6000
 
@@ -79,20 +80,20 @@ class StructuredSyllabusExtractor:
         seen_indices: set[int] = set()
 
         def add_page(i: int) -> None:
-            if i in seen_indices or i >= len(doc):
+            if i in seen_indices or i >= len(pages):
                 return
             seen_indices.add(i)
-            text = doc[i].get_text()[:per_page_cap]
+            text = (pages[i].extract_text() or "")[:per_page_cap]
             if text.strip():
                 selected.append(text)
 
-        for i in range(min(3, len(doc))):
+        for i in range(min(3, len(pages))):
             add_page(i)
 
-        for i in range(len(doc)):
+        for i in range(len(pages)):
             if i in seen_indices:
                 continue
-            page_text = doc[i].get_text().lower()
+            page_text = (pages[i].extract_text() or "").lower()
             if any(kw in page_text for kw in _SIGNAL_KEYWORDS):
                 add_page(i)
 
