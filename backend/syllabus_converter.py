@@ -141,13 +141,16 @@ class CsvSchemaLoader:
 
 
 class SyllabusFieldExtractor:
-    def __init__(self, model: str = "gpt-5-2025-08-07") -> None:
+    def __init__(self, model: str = "gpt-5") -> None:
         self.client = OpenAI()
         self.model = model
 
     def extract_single_row(self, chunks: List[PdfChunk], columns: List[str]) -> Dict[str, str]:
+        # Smaller cap = faster + cheaper, still enough for most syllabi.
         syllabus_text = self._compact_text(chunks, max_chars=3500)
 
+        # If the syllabus text is too small, avoid paying for an LLM call.
+        # (Usually means broken extraction or near-empty PDF.)
         if len(syllabus_text.strip()) < 250:
             return {col: "" for col in columns}
 
@@ -186,29 +189,27 @@ class SyllabusFieldExtractor:
         last_err: Optional[Exception] = None
         for attempt in range(3):
             try:
-                # ✅ FIX: switched from client.responses.create() to
-                # client.chat.completions.create() — the Responses API
-                # was returning <no output> for GPT-5, causing 500 errors
-                # and "Untitled Course" on retry.
-                resp = self.client.chat.completions.create(
+                resp = self.client.responses.create(
                     model=self.model,
-                    max_completion_tokens=1000,
-                    messages=[{"role": "user", "content": prompt}],
+                    input=[{"role": "user", "content": prompt}],
                 )
-                return (resp.choices[0].message.content or "").strip()
+                return (resp.output_text or "").strip()
             except Exception as e:
                 last_err = e
+                # simple backoff: 1.5s, 3.0s, 4.5s
                 time.sleep(1.5 * (attempt + 1))
         raise RuntimeError(f"OpenAI call failed after retries: {last_err}")
 
     def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:
+        # Most syllabi put the key stuff early
         first_pages = [c for c in chunks if c.page <= 3]
 
+        # “High-signal” pages across the doc
         keywords = (
             "assessment", "grading", "grade", "rubric", "evaluation",
             "office hour", "office hours", "instructor", "email", "contact",
             "schedule", "timeline", "calendar", "weekly", "outline", "topics",
-            "policy", "policies", "attendance", "late", "late work", "textbook",
+            "policy", "policies", "attendance", "late", "late work","textbook",
             "academic integrity", "plagiarism", "exam", "midterm", "final",
             "quiz", "project", "assignment", "learning outcomes", "objectives",
             "prerequisite", "required text", "textbook",
@@ -220,6 +221,7 @@ class SyllabusFieldExtractor:
             if any(k in t for k in keywords):
                 keyword_pages.append(c)
 
+        # Dedupe pages while preserving order
         seen_pages = set()
         selected: List[PdfChunk] = []
         for c in first_pages + keyword_pages:
@@ -227,6 +229,8 @@ class SyllabusFieldExtractor:
                 selected.append(c)
                 seen_pages.add(c.page)
 
+        # IMPORTANT: do NOT include any "[page X]" markers in the model input
+        # Also cap each page text so one huge page doesn’t dominate.
         per_page_cap = 1200
         joined = "\n\n".join((c.text or "")[:per_page_cap] for c in selected)
 
@@ -252,7 +256,7 @@ class CsvFileWriter:
 
 
 class SyllabusConverterService:
-    def __init__(self, model: str = "gpt-5-2025-08-07") -> None:
+    def __init__(self, model: str = "gpt-5") -> None:
         self.extractor = PdfTextExtractor()
         self.schema_loader = CsvSchemaLoader()
         self.field_extractor = SyllabusFieldExtractor(model=model)
@@ -272,18 +276,23 @@ class SyllabusConverterService:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # Load template columns first (fast)
         columns = self.schema_loader.load_columns(template_csv_path)
 
+        # Hashes first (enables true cache hit short-circuit)
         pdf_bytes = pdf.read_bytes()
         pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()[:10]
         header_hash = hashlib.sha256(("|".join(columns)).encode("utf-8")).hexdigest()[:10]
 
         base = output_base_name.strip() if output_base_name and output_base_name.strip() else pdf.stem
+
+        # sanitize base to match doc_id regex [A-Za-z0-9._-]
         base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
         base = base.strip("._-")
         if not base:
             base = "syllabus"
 
+        # cap base so "{base}.{pdf_hash}.{header_hash}" stays within 200 chars
         max_total = 200
         suffix = f".{pdf_hash}.{header_hash}"
         max_base_len = max_total - len(suffix)
@@ -297,14 +306,16 @@ class SyllabusConverterService:
         single_row_path = out_dir / f"{prefix}.single_row.csv"
         chunks_path = out_dir / f"{prefix}.chunks.csv"
 
-        # Cache hit: no extraction, no OpenAI call needed
+        # Cache hit: no extraction, no OpenAI
         if single_row_path.exists() and chunks_path.exists():
             return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))
 
+        # Heavy extraction
         t0 = time.time()
         chunks = self.extractor.extract_chunks(pdf)
         print("extract_chunks sec:", round(time.time() - t0, 2))
 
+        # LLM extraction (slowest)
         t1 = time.time()
         single_row = self.field_extractor.extract_single_row(chunks, columns)
         print("llm sec:", round(time.time() - t1, 2))
@@ -318,7 +329,7 @@ class SyllabusConverterService:
 def convert_pdf_to_csvs(
     pdf_path: str,
     output_dir: str = "output",
-    model: str = "gpt-5-2025-08-07",
+    model: str = "gpt-5",
     template_csv_path: str = "templates/default_template.csv",
     output_base_name: Optional[str] = None,
 ) -> Dict[str, str]:

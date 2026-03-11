@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
-import '../api_client.dart' show ApiClient, AskResult;
+import '../api_client.dart';
 import '../../services/mobile_toast_service.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
@@ -87,9 +87,8 @@ class WorkspacesViewModel extends ChangeNotifier {
             if (_firedKeys.contains(key)) continue;
             _firedKeys.add(key);
             if (_firedKeys.length > 100) _firedKeys.remove(_firedKeys.first);
-            final loc = section.location.isNotEmpty
-                ? ' @ ${section.location}'
-                : '';
+            final loc =
+                section.location.isNotEmpty ? ' @ ${section.location}' : '';
             final notifTitle = '⏰ ${ws.title} starts in ${remind}min';
             final notifBody =
                 '${section.name.isNotEmpty ? section.name : "Class"}$loc — ${ScheduleUtils.formatTime(sch.startTime)}';
@@ -112,9 +111,8 @@ class WorkspacesViewModel extends ChangeNotifier {
     final upper = s.toUpperCase();
     final isPM = upper.contains('PM');
     final isAM = upper.contains('AM');
-    final timeOnly = s
-        .replaceAll(RegExp(r'[AaPp][Mm]', caseSensitive: false), '')
-        .trim();
+    final timeOnly =
+        s.replaceAll(RegExp(r'[AaPp][Mm]', caseSensitive: false), '').trim();
     final parts = timeOnly.split(':');
     if (parts.length < 2) return null;
     final h = int.tryParse(parts[0].trim());
@@ -435,14 +433,11 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   // ── Ask AI ────────────────────────────────────────────────────────────────
 
-  Future<AskResult?> askInWorkspace(
-    String question, {
-    List<Map<String, String>> history = const [],
-  }) async {
+  Future<String?> askInWorkspace(String question) async {
     final ws = _current;
     if (ws == null) return null;
     try {
-      return await api.ask(ws.id, question, history: history);
+      return await api.ask(ws.id, question);
     } catch (e) {
       error = e.toString();
       notifyListeners();

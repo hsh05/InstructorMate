@@ -30,13 +30,6 @@ class ImportWorkspaceResult {
   });
 }
 
-/// Result from the /ask endpoint.
-class AskResult {
-  final String answer;
-  final bool needsClarification;
-  const AskResult({required this.answer, required this.needsClarification});
-}
-
 class ApiClient {
   ApiClient({required String baseUrl}) : baseUri = _normalizeBaseUri(baseUrl);
 
@@ -94,9 +87,8 @@ class ApiClient {
   }
 
   Future<List<WorkspaceSummary>> listWorkspaces() async {
-    final resp = await http
-        .get(_u('/workspaces'))
-        .timeout(AppConfig.shortTimeout);
+    final resp =
+        await http.get(_u('/workspaces')).timeout(AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return (map['workspaces'] as List)
@@ -105,9 +97,8 @@ class ApiClient {
   }
 
   Future<Workspace> getWorkspace(String id) async {
-    final resp = await http
-        .get(_u('/workspaces/$id'))
-        .timeout(AppConfig.shortTimeout);
+    final resp =
+        await http.get(_u('/workspaces/$id')).timeout(AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
@@ -198,25 +189,24 @@ class ApiClient {
     required String filename,
     String sectionId = '',
   }) async {
-    final req =
-        http.MultipartRequest(
-            'POST',
-            _u('/workspaces/$workspaceId/students/import'),
-          )
-          ..fields['section_id'] = sectionId
-          ..files.add(
-            http.MultipartFile.fromBytes(
-              'file',
-              bytes,
-              filename: filename,
-              contentType: filename.toLowerCase().endsWith('.xlsx')
-                  ? MediaType(
-                      'application',
-                      'vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    )
-                  : MediaType('text', 'csv'),
-            ),
-          );
+    final req = http.MultipartRequest(
+      'POST',
+      _u('/workspaces/$workspaceId/students/import'),
+    )
+      ..fields['section_id'] = sectionId
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename,
+          contentType: filename.toLowerCase().endsWith('.xlsx')
+              ? MediaType(
+                  'application',
+                  'vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
+              : MediaType('text', 'csv'),
+        ),
+      );
     final streamed = await req.send().timeout(AppConfig.standardTimeout);
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
@@ -264,39 +254,18 @@ class ApiClient {
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
   }
 
-  /// Send a question with optional conversation history.
-  /// Returns an [AskResult] with the answer and a clarification flag.
-  Future<AskResult> ask(
-    String wid,
-    String question, {
-    List<Map<String, String>> history = const [],
-  }) async {
+  Future<String> ask(String wid, String question) async {
     final resp = await http
         .post(
           _u('/workspaces/$wid/ask'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'question': question, 'history': history}),
+          body: jsonEncode({'question': question}),
         )
         .timeout(AppConfig.standardTimeout);
     if (resp.statusCode == 504) throw Exception('Ask timed out. Try again.');
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    return AskResult(
-      answer: (map['answer'] ?? '').toString(),
-      needsClarification: (map['needs_clarification'] as bool?) ?? false,
-    );
-  }
-
-  /// Fetch upcoming assessment/exam deadline notifications for a workspace.
-  Future<List<Map<String, dynamic>>> getUpcomingNotifications(
-    String wid,
-  ) async {
-    final resp = await http
-        .get(_u('/workspaces/$wid/notifications/upcoming'))
-        .timeout(AppConfig.shortTimeout);
-    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
-    final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    return ((map['notifications'] as List?) ?? []).cast<Map<String, dynamic>>();
+    return (map['answer'] ?? '').toString();
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

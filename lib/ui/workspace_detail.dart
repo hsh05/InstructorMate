@@ -41,10 +41,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askCtrl = TextEditingController();
   final _askScroll = ScrollController();
   final List<_ChatMsg> _chat = [];
-  // Conversation history sent to the backend on each message.
-  // Each entry is {role: "user"|"assistant", content: "..."}.
-  // Clarification exchanges are NOT added here (they would pollute the context).
-  final List<Map<String, String>> _chatHistory = [];
   bool _asking = false;
 
   static const _editableKeys = [
@@ -107,14 +103,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   }
 
   String _encodeOhSlots() {
-    return _ohSlots
-        .map((s) {
-          final days = (s['days'] as List).join(',');
-          final start = s['start'] as String? ?? '';
-          final end = s['end'] as String? ?? '';
-          return '$days|$start|$end';
-        })
-        .join(';');
+    return _ohSlots.map((s) {
+      final days = (s['days'] as List).join(',');
+      final start = s['start'] as String? ?? '';
+      final end = s['end'] as String? ?? '';
+      return '$days|$start|$end';
+    }).join(';');
   }
 
   /// Validate all OH slots — returns error string or null
@@ -432,9 +426,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                             Text(
                               ready ? 'Ready' : 'Draft',
                               style: TextStyle(
-                                color: ready
-                                    ? AppColors.accent
-                                    : AppColors.warn,
+                                color:
+                                    ready ? AppColors.accent : AppColors.warn,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 11,
                               ),
@@ -523,57 +516,39 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     });
     _askCtrl.clear();
     _scrollChat();
-
-    final result = await widget.vm.askInWorkspace(q, history: _chatHistory);
-
+    final answer = await widget.vm.askInWorkspace(q);
     setState(() {
-      final replyText =
-          (widget.vm.error != null && widget.vm.error!.contains('chunks'))
-          ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
-          : (result?.answer ?? "Sorry, I couldn't get an answer.");
-
       _chat.add(
         _ChatMsg(
-          text: replyText,
+          text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
+              ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
+              : (answer ?? "Sorry, I couldn't get an answer."),
           isUser: false,
-          isClarification: result?.needsClarification ?? false,
         ),
       );
-
-      // Only add to history when we got a real answer (not a clarification prompt).
-      // Clarification prompts asking for more detail should not pollute the context.
-      if (result != null && !result.needsClarification) {
-        _chatHistory.add({'role': 'user', 'content': q});
-        _chatHistory.add({'role': 'assistant', 'content': result.answer});
-        // Keep last 6 messages (3 turns) to avoid bloating requests
-        if (_chatHistory.length > 6) {
-          _chatHistory.removeRange(0, _chatHistory.length - 6);
-        }
-      }
-
       _asking = false;
     });
     _scrollChat();
   }
 
   void _scrollChat() => WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (_askScroll.hasClients) {
-      _askScroll.animateTo(
-        _askScroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
-  });
+        if (_askScroll.hasClients) {
+          _askScroll.animateTo(
+            _askScroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.red,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
-    ),
-  );
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
+        ),
+      );
 }
 
 // ── Stat pill ──────────────────────────────────────────────────────────────────
@@ -589,38 +564,38 @@ class _StatPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-    decoration: BoxDecoration(
-      color: highlight
-          ? AppColors.accent.withOpacity(0.2)
-          : Colors.white.withOpacity(0.15),
-      borderRadius: AppColors.r20,
-      border: Border.all(
-        color: highlight
-            ? AppColors.accent.withOpacity(0.5)
-            : Colors.white.withOpacity(0.25),
-      ),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          icon,
-          color: highlight ? AppColors.accent : Colors.white,
-          size: 11,
-        ),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: TextStyle(
-            color: highlight ? AppColors.accent : Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: highlight
+              ? AppColors.accent.withOpacity(0.2)
+              : Colors.white.withOpacity(0.15),
+          borderRadius: AppColors.r20,
+          border: Border.all(
+            color: highlight
+                ? AppColors.accent.withOpacity(0.5)
+                : Colors.white.withOpacity(0.25),
           ),
         ),
-      ],
-    ),
-  );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: highlight ? AppColors.accent : Colors.white,
+              size: 11,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: highlight ? AppColors.accent : Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 // ─── Missing banner ───────────────────────────────────────────────────────────
@@ -999,9 +974,8 @@ class _InfoFieldRow extends StatelessWidget {
                   fontSize: 13,
                 ),
                 filled: true,
-                fillColor: hasError
-                    ? AppColors.warnSoft
-                    : AppColors.primarySoft,
+                fillColor:
+                    hasError ? AppColors.warnSoft : AppColors.primarySoft,
                 border: OutlineInputBorder(
                   borderRadius: AppColors.r12,
                   borderSide: BorderSide.none,
@@ -1178,8 +1152,7 @@ class _SectionsTabState extends State<_SectionsTab>
       h = 12;
     else if (h > 12 && !isPM)
       h -= 12; // handle 24h legacy input
-    else if (h > 12)
-      h -= 12;
+    else if (h > 12) h -= 12;
     // Snap to nearest 5-min slot
     int minIdx = 0, minDist = 999;
     for (int j = 0; j < _minLabels.length; j++) {
@@ -1242,17 +1215,17 @@ class _SectionsTabState extends State<_SectionsTab>
       builder: (_) => StatefulBuilder(
         builder: (bsCtx, setBS) {
           Widget sectionLabel(String text) => Padding(
-            padding: const EdgeInsets.only(top: 18, bottom: 8),
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: AppColors.inkLight,
-                letterSpacing: 1.2,
-              ),
-            ),
-          );
+                padding: const EdgeInsets.only(top: 18, bottom: 8),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.inkLight,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              );
 
           Widget hourRow(int selHour, void Function(int) onSel) =>
               SingleChildScrollView(
@@ -1327,42 +1300,43 @@ class _SectionsTabState extends State<_SectionsTab>
               );
 
           Widget ampmRow(bool isPM, void Function(bool) onSel) => Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceAlt,
-              borderRadius: AppColors.r10,
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final pm in [false, true])
-                  GestureDetector(
-                    onTap: () => setBS(() => onSel(pm)),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 110),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 11,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isPM == pm
-                            ? AppColors.primary
-                            : Colors.transparent,
-                        borderRadius: AppColors.r10,
-                      ),
-                      child: Text(
-                        pm ? 'PM' : 'AM',
-                        style: TextStyle(
-                          color: isPM == pm ? Colors.white : AppColors.inkMid,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: AppColors.r10,
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final pm in [false, true])
+                      GestureDetector(
+                        onTap: () => setBS(() => onSel(pm)),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 110),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 28,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isPM == pm
+                                ? AppColors.primary
+                                : Colors.transparent,
+                            borderRadius: AppColors.r10,
+                          ),
+                          child: Text(
+                            pm ? 'PM' : 'AM',
+                            style: TextStyle(
+                              color:
+                                  isPM == pm ? Colors.white : AppColors.inkMid,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          );
+                  ],
+                ),
+              );
 
           return DraggableScrollableSheet(
             expand: false,
@@ -1545,9 +1519,8 @@ class _SectionsTabState extends State<_SectionsTab>
                             vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color: sel
-                                ? AppColors.primary
-                                : AppColors.surfaceAlt,
+                            color:
+                                sel ? AppColors.primary : AppColors.surfaceAlt,
                             borderRadius: AppColors.r10,
                             border: Border.all(
                               color: sel ? AppColors.primary : AppColors.border,
@@ -1797,8 +1770,7 @@ class _SectionsTabState extends State<_SectionsTab>
   }
 
   Future<void> _confirmDelete(Section s) async {
-    final ok =
-        await showDialog<bool>(
+    final ok = await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
             shape: RoundedRectangleBorder(
@@ -1864,16 +1836,15 @@ class _SectionCard extends StatelessWidget {
     final sch = section.schedule;
     final days = sch.days.isEmpty ? '—' : sch.days.join(', ');
     final rawEnd = sch.endTime.trim();
-    final endDisplay =
-        (rawEnd.isEmpty ||
+    final endDisplay = (rawEnd.isEmpty ||
             rawEnd == sch.timezone ||
             rawEnd.toUpperCase() == 'UTC')
         ? ''
         : rawEnd;
     final time = sch.startTime.isNotEmpty
         ? (endDisplay.isNotEmpty
-              ? '${sch.startTime} – $endDisplay'
-              : sch.startTime)
+            ? '${sch.startTime} – $endDisplay'
+            : sch.startTime)
         : '—';
     final count = vm.countForSection(section.id);
 
@@ -2000,9 +1971,8 @@ class _SectionCard extends StatelessWidget {
                               color: count > 0
                                   ? AppColors.accent
                                   : AppColors.inkMid,
-                              fontWeight: count > 0
-                                  ? FontWeight.w700
-                                  : FontWeight.w400,
+                              fontWeight:
+                                  count > 0 ? FontWeight.w700 : FontWeight.w400,
                             ),
                           ),
                         ),
@@ -2170,8 +2140,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     final hasExisting = existingCount > 0;
 
     if (hasExisting && ctx.mounted) {
-      final confirmed =
-          await showDialog<bool>(
+      final confirmed = await showDialog<bool>(
             context: ctx,
             barrierColor: Colors.black.withOpacity(0.55),
             builder: (_) => _ReplaceRosterDialog(
@@ -2204,9 +2173,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                   ? '✓ ${result.imported} student${result.imported == 1 ? "" : "s"} imported successfully'
                   : 'No students found — check your file has name/email columns',
             ),
-            backgroundColor: result.imported > 0
-                ? AppColors.accent
-                : AppColors.warn,
+            backgroundColor:
+                result.imported > 0 ? AppColors.accent : AppColors.warn,
             behavior: SnackBarBehavior.floating,
             shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
           ),
@@ -2226,13 +2194,13 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     final filtered = _search.isEmpty
         ? _students
         : _students
-              .where(
-                (s) =>
-                    s.name.toLowerCase().contains(_search.toLowerCase()) ||
-                    s.email.toLowerCase().contains(_search.toLowerCase()) ||
-                    s.studentNo.toLowerCase().contains(_search.toLowerCase()),
-              )
-              .toList();
+            .where(
+              (s) =>
+                  s.name.toLowerCase().contains(_search.toLowerCase()) ||
+                  s.email.toLowerCase().contains(_search.toLowerCase()) ||
+                  s.studentNo.toLowerCase().contains(_search.toLowerCase()),
+            )
+            .toList();
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -2242,9 +2210,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
         borderRadius: AppColors.r16,
         boxShadow: AppColors.shadowSm,
         border: Border.all(
-          color: _expanded
-              ? AppColors.primary.withOpacity(0.4)
-              : AppColors.border,
+          color:
+              _expanded ? AppColors.primary.withOpacity(0.4) : AppColors.border,
           width: _expanded ? 1.5 : 1,
         ),
       ),
@@ -2367,9 +2334,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                   : AppColors.primarySoft,
                               borderRadius: AppColors.r12,
                               child: InkWell(
-                                onTap: _importing
-                                    ? null
-                                    : () => _import(context),
+                                onTap:
+                                    _importing ? null : () => _import(context),
                                 borderRadius: AppColors.r12,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -2897,70 +2863,34 @@ class _ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Align(
-    alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.76,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-      decoration: BoxDecoration(
-        // Clarification prompts use a soft amber tint to signal "needs input"
-        color: msg.isUser
-            ? AppColors.primary
-            : msg.isClarification
-            ? const Color(0xFFFFF8E1)
-            : AppColors.surface,
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(14),
-          topRight: const Radius.circular(14),
-          bottomLeft: Radius.circular(msg.isUser ? 14 : 3),
-          bottomRight: Radius.circular(msg.isUser ? 3 : 14),
-        ),
-        boxShadow: AppColors.shadowSm,
-        border: msg.isUser
-            ? null
-            : Border.all(
-                color: msg.isClarification
-                    ? const Color(0xFFFFCC02)
-                    : AppColors.border,
-              ),
-      ),
-      child: msg.isClarification
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 1, right: 6),
-                  child: Icon(
-                    Icons.help_outline_rounded,
-                    size: 14,
-                    color: Color(0xFFF59E0B),
-                  ),
-                ),
-                Flexible(
-                  child: Text(
-                    msg.text,
-                    style: const TextStyle(
-                      color: Color(0xFF78350F),
-                      fontSize: 13,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Text(
-              msg.text,
-              style: TextStyle(
-                color: msg.isUser ? Colors.white : AppColors.ink,
-                fontSize: 13,
-                height: 1.5,
-              ),
+        alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.76,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          decoration: BoxDecoration(
+            color: msg.isUser ? AppColors.primary : AppColors.surface,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(14),
+              topRight: const Radius.circular(14),
+              bottomLeft: Radius.circular(msg.isUser ? 14 : 3),
+              bottomRight: Radius.circular(msg.isUser ? 3 : 14),
             ),
-    ),
-  );
+            boxShadow: AppColors.shadowSm,
+            border: msg.isUser ? null : Border.all(color: AppColors.border),
+          ),
+          child: Text(
+            msg.text,
+            style: TextStyle(
+              color: msg.isUser ? Colors.white : AppColors.ink,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+        ),
+      );
 }
 
 class _TypingIndicator extends StatelessWidget {
@@ -2968,37 +2898,38 @@ class _TypingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(14),
-          topRight: Radius.circular(14),
-          bottomRight: Radius.circular(14),
-          bottomLeft: Radius.circular(3),
-        ),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.primary),
-          SizedBox(width: 5),
-          Text(
-            'Thinking…',
-            style: TextStyle(
-              color: AppColors.inkLight,
-              fontSize: 12,
-              fontStyle: FontStyle.italic,
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(14),
+              topRight: Radius.circular(14),
+              bottomRight: Radius.circular(14),
+              bottomLeft: Radius.circular(3),
             ),
+            border: Border.all(color: AppColors.border),
           ),
-        ],
-      ),
-    ),
-  );
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.auto_awesome_rounded,
+                  size: 13, color: AppColors.primary),
+              SizedBox(width: 5),
+              Text(
+                'Thinking…',
+                style: TextStyle(
+                  color: AppColors.inkLight,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 // ── Office Hours Slots Widget ─────────────────────────────────────────────────
@@ -3053,8 +2984,7 @@ class _OfficeHoursSlotsWidgetState extends State<_OfficeHoursSlotsWidget> {
     int m = int.tryParse(parts.length > 1 ? parts[1].trim() : '0') ?? 0;
     if (h == 0)
       h = 12;
-    else if (h > 12)
-      h -= 12;
+    else if (h > 12) h -= 12;
     int minIdx = 0;
     int minDist = 999;
     for (int j = 0; j < _minLabels.length; j++) {
@@ -3099,17 +3029,17 @@ class _OfficeHoursSlotsWidgetState extends State<_OfficeHoursSlotsWidget> {
       builder: (_) => StatefulBuilder(
         builder: (bsCtx, setBS) {
           Widget sectionLabel(String text) => Padding(
-            padding: const EdgeInsets.only(top: 18, bottom: 8),
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: AppColors.inkLight,
-                letterSpacing: 1.2,
-              ),
-            ),
-          );
+                padding: const EdgeInsets.only(top: 18, bottom: 8),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.inkLight,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              );
 
           Widget hourRow(int selHour, void Function(int) onSel) =>
               SingleChildScrollView(
@@ -3184,42 +3114,43 @@ class _OfficeHoursSlotsWidgetState extends State<_OfficeHoursSlotsWidget> {
               );
 
           Widget ampmRow(bool isPM, void Function(bool) onSel) => Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceAlt,
-              borderRadius: AppColors.r10,
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final pm in [false, true])
-                  GestureDetector(
-                    onTap: () => setBS(() => onSel(pm)),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 110),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 11,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isPM == pm
-                            ? AppColors.primary
-                            : Colors.transparent,
-                        borderRadius: AppColors.r10,
-                      ),
-                      child: Text(
-                        pm ? 'PM' : 'AM',
-                        style: TextStyle(
-                          color: isPM == pm ? Colors.white : AppColors.inkMid,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: AppColors.r10,
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final pm in [false, true])
+                      GestureDetector(
+                        onTap: () => setBS(() => onSel(pm)),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 110),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 28,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isPM == pm
+                                ? AppColors.primary
+                                : Colors.transparent,
+                            borderRadius: AppColors.r10,
+                          ),
+                          child: Text(
+                            pm ? 'PM' : 'AM',
+                            style: TextStyle(
+                              color:
+                                  isPM == pm ? Colors.white : AppColors.inkMid,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          );
+                  ],
+                ),
+              );
 
           return DraggableScrollableSheet(
             expand: false,
@@ -3570,21 +3501,21 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-    children: [
-      Icon(icon, color: AppColors.primary, size: 17),
-      const SizedBox(width: 7),
-      Text(
-        title,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w800,
-          color: AppColors.ink,
-        ),
-      ),
-      const Spacer(),
-      if (trailing != null) trailing!,
-    ],
-  );
+        children: [
+          Icon(icon, color: AppColors.primary, size: 17),
+          const SizedBox(width: 7),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: AppColors.ink,
+            ),
+          ),
+          const Spacer(),
+          if (trailing != null) trailing!,
+        ],
+      );
 }
 
 class _PillButton extends StatelessWidget {
@@ -3594,24 +3525,24 @@ class _PillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: AppColors.primary,
-    borderRadius: AppColors.r20,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: AppColors.r20,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
+        color: AppColors.primary,
+        borderRadius: AppColors.r20,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: AppColors.r20,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
           ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
 class _FormField extends StatelessWidget {
@@ -3626,29 +3557,30 @@ class _FormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextField(
-    controller: ctrl,
-    style: const TextStyle(color: AppColors.ink, fontSize: 13),
-    decoration: InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: AppColors.inkMid, fontSize: 12),
-      prefixIcon: Icon(icon, color: AppColors.primary, size: 15),
-      filled: true,
-      fillColor: AppColors.surfaceAlt,
-      border: OutlineInputBorder(
-        borderRadius: AppColors.r12,
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: AppColors.r12,
-        borderSide: const BorderSide(color: AppColors.border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: AppColors.r12,
-        borderSide: const BorderSide(color: AppColors.primary, width: 2),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-    ),
-  );
+        controller: ctrl,
+        style: const TextStyle(color: AppColors.ink, fontSize: 13),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: AppColors.inkMid, fontSize: 12),
+          prefixIcon: Icon(icon, color: AppColors.primary, size: 15),
+          filled: true,
+          fillColor: AppColors.surfaceAlt,
+          border: OutlineInputBorder(
+            borderRadius: AppColors.r12,
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: AppColors.r12,
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: AppColors.r12,
+            borderSide: const BorderSide(color: AppColors.primary, width: 2),
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        ),
+      );
 }
 
 class _EmptyState extends StatelessWidget {
@@ -3663,54 +3595,48 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: const BoxDecoration(
-              color: AppColors.primarySoft,
-              borderRadius: AppColors.r20,
-            ),
-            child: Icon(icon, color: AppColors.primary, size: 34),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: AppColors.r20,
+                ),
+                child: Icon(icon, color: AppColors.primary, size: 34),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: AppColors.ink,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.inkLight,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-              color: AppColors.ink,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.inkLight,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 }
 
 class _ChatMsg {
-  const _ChatMsg({
-    required this.text,
-    required this.isUser,
-    this.isClarification = false,
-  });
+  const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
-  final bool
-  isClarification; // true = AI is asking for more detail, not a real answer
 }
 
 // ─── Replace Roster Confirmation Dialog ──────────────────────────────────────
@@ -3849,12 +3775,12 @@ class _ReplaceRosterDialog extends StatelessWidget {
                   Text(
                     isSameFile
                         ? 'This appears to be the same file you imported before. '
-                              'Re-importing will refresh the list with $existingCount '
-                              'student${existingCount == 1 ? "" : "s"}.'
+                            'Re-importing will refresh the list with $existingCount '
+                            'student${existingCount == 1 ? "" : "s"}.'
                         : 'This section currently has $existingCount '
-                              'student${existingCount == 1 ? "" : "s"}. '
-                              'Uploading a new file will permanently replace '
-                              'the existing roster. This cannot be undone.',
+                            'student${existingCount == 1 ? "" : "s"}. '
+                            'Uploading a new file will permanently replace '
+                            'the existing roster. This cannot be undone.',
                     style: const TextStyle(
                       fontSize: 13,
                       color: Color(0xFF6B6480),
