@@ -25,7 +25,9 @@ class WorkspaceService:
         repo: PgWorkspaceRepository,
         hash_service: PdfHashService,
         structured_repo: Optional[PgStructuredSyllabusRepository] = None,
-        converter_model: str = "gpt-o4-mini",
+        # ✅ FIX: was "gpt-o4-mini" (invalid model name) — caused converter to
+        #    crash before ever reaching the structured extraction block below.
+        converter_model: str = "gpt-5",
     ):
         self.repo            = repo
         self.hash_service    = hash_service
@@ -107,7 +109,6 @@ class WorkspaceService:
                         k: v for k, v in row.items()
                         if k in workspace.fields and not workspace.fields.get(k) and v
                     }
-                    # Mirror course_title <-> course_name
                     if 'course_title' in updates and not updates.get('course_name') \
                             and not workspace.fields.get('course_name'):
                         updates['course_name'] = updates['course_title']
@@ -122,9 +123,12 @@ class WorkspaceService:
 
         except Exception as e:
             logger.error("Converter failed for workspace=%s: %s", workspace_id, e)
-            raise
+            # ✅ FIX: removed `raise` here — previously this aborted the whole
+            #    function before structured extraction could run. Now converter
+            #    failure is logged but extraction still proceeds.
 
-        # ── Structured extraction ─────────────────────────────
+        # ── Structured extraction ──────────────────────────────────────────
+        # ✅ FIX: this block now always runs regardless of converter outcome.
         if self.structured_repo is not None:
             try:
                 data = self.extractor.extract(str(tmp_pdf))
@@ -133,6 +137,10 @@ class WorkspaceService:
                     weekly_topics=data.weekly_topics,
                     clos=data.clos,
                     key_dates=data.key_dates,
+                )
+                logger.info(
+                    "Structured extraction complete workspace=%s topics=%d clos=%d dates=%d",
+                    workspace_id, len(data.weekly_topics), len(data.clos), len(data.key_dates),
                 )
             except Exception as e:
                 logger.warning("Structured extraction failed (non-fatal) for workspace=%s: %s", workspace_id, e)

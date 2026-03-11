@@ -12,7 +12,6 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-# Keywords that signal a page likely contains schedule/CLO/assessment info
 _SIGNAL_KEYWORDS = {
     "week", "lecture", "topic", "clo", "outcome", "objective",
     "exam", "midterm", "quiz", "assignment", "due", "deadline",
@@ -52,7 +51,8 @@ class StructuredSyllabusData:
 
 class StructuredSyllabusExtractor:
 
-    def __init__(self, model: str = "gpt-o4-mini") -> None:
+    # ✅ Upgraded to gpt-4.1 — best model for accurate structured extraction
+    def __init__(self, model: str = "gpt-5-2025-08-07") -> None:
         self.client = OpenAI()
         self.model = model
 
@@ -101,10 +101,10 @@ class StructuredSyllabusExtractor:
         return combined[:total_cap]
 
     def _call_llm(self, text: str) -> StructuredSyllabusData:
+        # ✅ GPT-5 fix: use max_completion_tokens (not max_tokens), drop temperature
         response = self.client.chat.completions.create(
             model=self.model,
-            max_tokens=1500,
-            temperature=0,
+            max_completion_tokens=1500,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": f"SYLLABUS TEXT:\n{text}"},

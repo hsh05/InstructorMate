@@ -114,32 +114,24 @@ class LightweightRetriever:
 
 # ── Clarification detector ────────────────────────────────────────────────────
 
-# Only the most obviously meaningless inputs — greetings and filler with zero
-# syllabus intent. Anything that could plausibly be a question is passed through.
 _VAGUE_EXACT = {
     "help", "hi", "hello", "hey", "more", "ok", "okay", "yes", "no",
     "sure", "thanks", "thank you", "lol", "haha",
 }
 
-# Only match truly empty-looking patterns — bare punctuation or 1-2 chars
 _VAGUE_PATTERNS = [
-    r"^[^a-z0-9]*$",    # no letters or digits at all (e.g. "???", "...")
-    r"^.{1,2}\s*$",     # 1-2 chars only
+    r"^[^a-z0-9]*$",
+    r"^.{1,2}\s*$",
 ]
 _VAGUE_RE = [re.compile(p) for p in _VAGUE_PATTERNS]
 
 
 class ClarificationDetector:
-    """Minimal vagueness check — only intercepts truly empty/nonsensical input.
-    Any question with real words goes straight to the LLM answerer.
-    The LLM itself handles ambiguity far better than a rule-based filter."""
-
     def check(
         self,
         question: str,
         history: Optional[List[ChatMessage]] = None,
     ) -> Tuple[bool, Optional[str]]:
-        """Return (needs_clarification, clarifying_question_or_None)."""
         q = question.strip()
         if not q:
             return True, "What would you like to know about the syllabus?"
@@ -153,15 +145,14 @@ class ClarificationDetector:
             if pat.match(q_lower):
                 return True, "What would you like to know about the syllabus?"
 
-        # Everything else goes straight to the LLM — including short inputs like
-        # "grading policy", "quiz one questions", "what are the CLOs", etc.
         return False, None
 
 
 # ── LLM answerer ──────────────────────────────────────────────────────────────
 
 class SyllabusChatGPT:
-    def __init__(self, model: str = "gpt-o4-mini") -> None:
+    # ✅ GPT-5
+    def __init__(self, model: str = "gpt-5") -> None:
         self.client = OpenAI()
         self.model = model
 
@@ -219,7 +210,7 @@ class SyllabusChatGPT:
 
         response = self.client.chat.completions.create(
             model=self.model,
-            max_tokens=500,
+            max_completion_tokens=500,  # 2705 GPT-5 fix
             messages=messages,
         )
         return (response.choices[0].message.content or "").strip()
@@ -245,7 +236,6 @@ class AskPipeline:
         question: str,
         history: Optional[List[ChatMessage]] = None,
     ) -> AskResult:
-        # Check for vague question first (before retrieval — saves tokens)
         needs_clarification, clarifying_q = self.clarifier.check(question, history)
         if needs_clarification:
             return AskResult(
@@ -270,7 +260,7 @@ def main() -> None:
     pipeline = AskPipeline(
         store=SyllabusCsvStore(csv_path),
         retriever=LightweightRetriever(top_k=12, score_threshold=2.0),
-        llm=SyllabusChatGPT(model="gpt-o4-mini"),
+        llm=SyllabusChatGPT(model="gpt-5-2025-08-07"),
     )
 
     history: List[ChatMessage] = []
