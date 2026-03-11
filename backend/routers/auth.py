@@ -17,10 +17,10 @@ router = APIRouter()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")  # e.g. your Render URL + /auth/google/callback
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class SignUpRequest(BaseModel):
     email: EmailStr
@@ -32,7 +32,7 @@ class LoginRequest(BaseModel):
     password: str
 
 class GoogleCallbackRequest(BaseModel):
-    code: str  # OAuth code sent from Flutter after Google sign-in
+    code: str
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -62,6 +62,7 @@ async def issue_tokens(user_id: str, email: str, pool) -> dict:
         )
 
     return {
+        "user_id": user_id,          # ← added so Flutter can use it directly
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
@@ -108,12 +109,7 @@ async def login(body: LoginRequest):
 
 @router.post("/google/callback")
 async def google_callback(body: GoogleCallbackRequest):
-    """
-    Flutter uses google_sign_in package, gets an auth code, sends it here.
-    We exchange it for tokens, fetch the user profile, upsert in DB.
-    """
     async with httpx.AsyncClient() as client:
-        # Exchange code for tokens
         token_res = await client.post("https://oauth2.googleapis.com/token", data={
             "code": body.code,
             "client_id": GOOGLE_CLIENT_ID,
@@ -127,7 +123,6 @@ async def google_callback(body: GoogleCallbackRequest):
         google_tokens = token_res.json()
         id_token = google_tokens.get("id_token")
 
-        # Verify and decode the ID token
         verify_res = await client.get(
             f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
         )
@@ -174,7 +169,6 @@ async def refresh(body: RefreshRequest):
         if row["expires_at"] < datetime.now(timezone.utc):
             raise HTTPException(status_code=401, detail="Refresh token expired")
 
-        # Rotate: delete old, issue new
         await conn.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refresh_token)
 
     return await issue_tokens(str(row["user_id"]), row["email"], pool)

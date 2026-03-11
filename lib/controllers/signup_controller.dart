@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:instructor_mate/config/apiConfig.dart';
 
 class SignupController {
   final TextEditingController name, email, password, confirmPassword;
@@ -8,17 +9,15 @@ class SignupController {
   SignupController(this.name, this.email, this.password, this.confirmPassword);
 
   Future<bool> signup(String role) async {
-    final apiUrl = 'http://10.0.2.2:8000/auth/signup'; // backend URL for Android emulator
-
     try {
       final response = await http.post(
-        Uri.parse(apiUrl),
+        ApiConfig.signupUri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': email.text.trim(),
           'password': password.text.trim(),
           'full_name': name.text.trim(),
-          // optionally send 'role' if backend supports it
+          'role': role,
         }),
       );
 

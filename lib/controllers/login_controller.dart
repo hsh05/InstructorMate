@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:instructor_mate/config/apiConfig.dart';
 
 class LoginController {
   final TextEditingController email;
@@ -8,11 +10,13 @@ class LoginController {
 
   LoginController(this.email, this.password);
 
-  Future<bool> login() async {
-    final apiUrl = 'http://10.0.2.2:8000/auth/login'; // Change to your backend URL if needed
+  static const _storage = FlutterSecureStorage();
+
+  // Returns the userId (UUID string) on success, null on failure
+  Future<String?> login() async {
     try {
       final response = await http.post(
-        Uri.parse(apiUrl),
+        ApiConfig.loginUri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': email.text.trim(),
@@ -21,16 +25,22 @@ class LoginController {
       );
 
       if (response.statusCode == 200) {
-        // Optionally parse response JSON for tokens or user info
+        final data = jsonDecode(response.body);
         debugPrint('✅ Login successful: ${response.body}');
-        return true;
+
+        // Store tokens securely for future authenticated requests
+        await _storage.write(key: 'access_token', value: data['access_token']);
+        await _storage.write(key: 'refresh_token', value: data['refresh_token']);
+        await _storage.write(key: 'user_id', value: data['user_id']);
+
+        return data['user_id'] as String?;
       } else {
         debugPrint('❌ Login failed: ${response.body}');
-        return false;
+        return null;
       }
     } catch (e) {
       debugPrint('❌ Login error: $e');
-      return false;
+      return null;
     }
   }
 }
