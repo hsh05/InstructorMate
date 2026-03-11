@@ -8,53 +8,6 @@ from sqlalchemy.orm import relationship
 from db.database import Base
 
 
-# ── TEAMMATES' TABLES ─────────────────────────────────────────────────────────
-
-class Course(Base):
-    __tablename__ = "courses"
-
-    id          = Column(Integer, primary_key=True, index=True)
-    title       = Column(String, index=True)
-    description = Column(String)
-
-    materials   = relationship("Material", back_populates="course")
-
-
-class Material(Base):
-    __tablename__ = "materials"
-
-    id            = Column(Integer, primary_key=True, index=True)
-    course_id     = Column(Integer, ForeignKey("courses.id"))
-    file_name     = Column(String, index=True)
-    file_path     = Column(String)
-    material_type = Column(String)
-
-    course        = relationship("Course", back_populates="materials")
-
-
-class StudentFace(Base):
-    """Teammates' student table (face recognition). Named StudentFace here
-    to avoid collision with my Student model below."""
-    __tablename__ = "student"
-
-    student_id    = Column(Text, primary_key=True)
-    name          = Column(Text, nullable=False)
-    encoding_json = Column(Text)
-
-    attendance    = relationship("Attendance", back_populates="student")
-
-
-class Attendance(Base):
-    __tablename__ = "attendance"
-
-    lecture_number = Column(Integer, primary_key=True)
-    student_id     = Column(Text, ForeignKey("student.student_id", ondelete="CASCADE"), primary_key=True)
-    status         = Column(Text, nullable=False)
-    confidence     = Column(Text)
-
-    student        = relationship("StudentFace", back_populates="attendance")
-
-
 # ── My TABLES ───────────────────────────────────────────────────────────────
 
 class Workspace(Base):
