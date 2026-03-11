@@ -151,3 +151,33 @@ class SyllabusChunk(Base):
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     workspace    = relationship("Workspace", back_populates="chunks")
+
+class SyllabusWeeklyTopic(Base):
+    __tablename__ = "syllabus_weekly_topics"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(String, ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False, index=True)
+    week_number  = Column(Integer, nullable=False)
+    topic        = Column(Text, nullable=False)
+    description  = Column(Text, nullable=True)
+
+
+class SyllabusCLO(Base):
+    __tablename__ = "syllabus_clos"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(String, ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False, index=True)
+    clo_id       = Column(String, nullable=False)   # e.g. "CLO1"
+    text         = Column(Text, nullable=False)
+    bloom_level  = Column(String, nullable=True)    # e.g. "Apply"
+
+
+class SyllabusKeyDate(Base):
+    __tablename__ = "syllabus_key_dates"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(String, ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False, index=True)
+    label        = Column(String, nullable=False)   # e.g. "Midterm Exam"
+    date_text    = Column(String, nullable=False)   # e.g. "Week 7" or "March 15"
+    date_type    = Column(String, nullable=False)   # exam | assignment | deadline | other
+

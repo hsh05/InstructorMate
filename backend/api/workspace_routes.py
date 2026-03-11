@@ -1,6 +1,10 @@
 # backend/api/workspace_routes.py
 
 import logging
+import os
+import csv as _csv
+import tempfile
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -10,9 +14,10 @@ from db.database import get_db
 from repositories.pg_workspace_repository import PgWorkspaceRepository
 from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
+from repositories.pg_structured_syllabus_repository import PgStructuredSyllabusRepository
 from services.pdf_hash_service import PdfHashService
 from services.workspace_service import WorkspaceService
-from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore
+from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, ChatMessage
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,8 +25,14 @@ router = APIRouter()
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
+class ChatMessageRequest(BaseModel):
+    role: str       # "user" or "assistant"
+    content: str
+
+
 class AskRequest(BaseModel):
     question: str
+    history: Optional[List[ChatMessageRequest]] = None
 
 
 class UpdateFieldsRequest(BaseModel):
@@ -48,12 +59,18 @@ def get_student_repo(
     return PgStudentRepository(db, workspace_repo)
 
 
+def get_structured_repo(db: Session = Depends(get_db)) -> PgStructuredSyllabusRepository:
+    return PgStructuredSyllabusRepository(db)
+
+
 def get_workspace_service(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
+    structured_repo: PgStructuredSyllabusRepository = Depends(get_structured_repo),
 ) -> WorkspaceService:
     return WorkspaceService(
-        repo         = workspace_repo,
-        hash_service = PdfHashService(),
+        repo            = workspace_repo,
+        hash_service    = PdfHashService(),
+        structured_repo = structured_repo,
     )
 
 
@@ -70,13 +87,8 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
 
 
 def _mirror_course_name_fields(fields: dict) -> dict:
-    """FIX: Keep course_name and course_title in sync.
-    The PDF extractor always writes course_title; the Flutter UI always
-    reads/writes course_name. Without this mirror, editing one field in the
-    UI would leave the other stale, causing the header title to show
-    'Untitled Course' or the Info tab to show a blank Course Name.
-    """
-    fields = dict(fields)  # don't mutate caller's dict
+    """Keep course_name and course_title in sync."""
+    fields = dict(fields)
     if 'course_name' in fields and fields['course_name']:
         fields.setdefault('course_title', fields['course_name'])
         fields['course_title'] = fields['course_name']
@@ -113,8 +125,7 @@ async def import_workspace(
     content = await file.read()
     result  = workspace_service.create_from_file(file.filename, content)
     ws      = result["workspace"]
-    logger.info("Workspace uploaded id=%s already_uploaded=%s",
-                ws.workspace_id, result["already_uploaded"])
+    logger.info("Workspace uploaded id=%s already_uploaded=%s", ws.workspace_id, result["already_uploaded"])
     return {
         "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo),
         "already_uploaded": result["already_uploaded"],
@@ -145,10 +156,7 @@ def update_workspace(
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-
-    # FIX: mirror course_name <-> course_title so both fields stay in sync
     mirrored_fields = _mirror_course_name_fields(data.fields)
-
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     logger.info("Updated workspace id=%s", workspace_id)
@@ -176,13 +184,9 @@ async def ask_workspace_question(
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # Try DB chunks first (survives Render restarts)
-    # Fall back to file if DB is empty (local dev)
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
 
     if chunks_from_db:
-        # Write a temp CSV for AskPipeline to read
-        import tempfile, csv as _csv, os
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
         )
@@ -193,7 +197,6 @@ async def ask_workspace_question(
         tmp.close()
         chunks_path = tmp.name
     else:
-        # Fallback to file
         chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
         if not chunks_path_obj.exists():
             raise HTTPException(
@@ -202,16 +205,36 @@ async def ask_workspace_question(
             )
         chunks_path = str(chunks_path_obj)
 
+    # Convert history from request format to domain objects
+    history: Optional[List[ChatMessage]] = None
+    if req.history:
+        history = [ChatMessage(role=m.role, content=m.content) for m in req.history]
+
     try:
         pipeline = AskPipeline(
             store=SyllabusCsvStore(chunks_path),
             retriever=LightweightRetriever(),
             llm=SyllabusChatGPT(),
         )
-        answer = pipeline.run(req.question)
+        result = pipeline.run(req.question, history=history)
     finally:
-        # Clean up temp file if we created one
         if chunks_from_db:
             os.unlink(chunks_path)
 
-    return {"answer": answer}
+    return {"answer": result.answer, "needs_clarification": result.needs_clarification}
+
+
+@router.get("/workspaces/{workspace_id}/syllabus-structure")
+def get_syllabus_structure(
+    workspace_id: str,
+    workspace_repo:  PgWorkspaceRepository          = Depends(get_workspace_repo),
+    structured_repo: PgStructuredSyllabusRepository = Depends(get_structured_repo),
+):
+    ws = workspace_repo.get_by_id(workspace_id)
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return {
+        "weekly_topics": structured_repo.get_weekly_topics(workspace_id),
+        "clos":          structured_repo.get_clos(workspace_id),
+        "key_dates":     structured_repo.get_key_dates(workspace_id),
+    }

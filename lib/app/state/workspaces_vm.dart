@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
-import '../api_client.dart';
+import '../api_client.dart' show ApiClient, AskResult;
 import '../../services/mobile_toast_service.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
@@ -435,11 +435,14 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   // ── Ask AI ────────────────────────────────────────────────────────────────
 
-  Future<String?> askInWorkspace(String question) async {
+  Future<AskResult?> askInWorkspace(
+    String question, {
+    List<Map<String, String>> history = const [],
+  }) async {
     final ws = _current;
     if (ws == null) return null;
     try {
-      return await api.ask(ws.id, question);
+      return await api.ask(ws.id, question, history: history);
     } catch (e) {
       error = e.toString();
       notifyListeners();

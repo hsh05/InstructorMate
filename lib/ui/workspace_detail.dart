@@ -41,6 +41,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askCtrl = TextEditingController();
   final _askScroll = ScrollController();
   final List<_ChatMsg> _chat = [];
+  // Conversation history sent to the backend on each message.
+  // Each entry is {role: "user"|"assistant", content: "..."}.
+  // Clarification exchanges are NOT added here (they would pollute the context).
+  final List<Map<String, String>> _chatHistory = [];
   bool _asking = false;
 
   static const _editableKeys = [
@@ -519,16 +523,34 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     });
     _askCtrl.clear();
     _scrollChat();
-    final answer = await widget.vm.askInWorkspace(q);
+
+    final result = await widget.vm.askInWorkspace(q, history: _chatHistory);
+
     setState(() {
+      final replyText =
+          (widget.vm.error != null && widget.vm.error!.contains('chunks'))
+          ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
+          : (result?.answer ?? "Sorry, I couldn't get an answer.");
+
       _chat.add(
         _ChatMsg(
-          text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
-              ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
-              : (answer ?? "Sorry, I couldn't get an answer."),
+          text: replyText,
           isUser: false,
+          isClarification: result?.needsClarification ?? false,
         ),
       );
+
+      // Only add to history when we got a real answer (not a clarification prompt).
+      // Clarification prompts asking for more detail should not pollute the context.
+      if (result != null && !result.needsClarification) {
+        _chatHistory.add({'role': 'user', 'content': q});
+        _chatHistory.add({'role': 'assistant', 'content': result.answer});
+        // Keep last 6 messages (3 turns) to avoid bloating requests
+        if (_chatHistory.length > 6) {
+          _chatHistory.removeRange(0, _chatHistory.length - 6);
+        }
+      }
+
       _asking = false;
     });
     _scrollChat();
@@ -2883,7 +2905,12 @@ class _ChatBubble extends StatelessWidget {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
       decoration: BoxDecoration(
-        color: msg.isUser ? AppColors.primary : AppColors.surface,
+        // Clarification prompts use a soft amber tint to signal "needs input"
+        color: msg.isUser
+            ? AppColors.primary
+            : msg.isClarification
+            ? const Color(0xFFFFF8E1)
+            : AppColors.surface,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(14),
           topRight: const Radius.circular(14),
@@ -2891,16 +2918,47 @@ class _ChatBubble extends StatelessWidget {
           bottomRight: Radius.circular(msg.isUser ? 3 : 14),
         ),
         boxShadow: AppColors.shadowSm,
-        border: msg.isUser ? null : Border.all(color: AppColors.border),
+        border: msg.isUser
+            ? null
+            : Border.all(
+                color: msg.isClarification
+                    ? const Color(0xFFFFCC02)
+                    : AppColors.border,
+              ),
       ),
-      child: Text(
-        msg.text,
-        style: TextStyle(
-          color: msg.isUser ? Colors.white : AppColors.ink,
-          fontSize: 13,
-          height: 1.5,
-        ),
-      ),
+      child: msg.isClarification
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 1, right: 6),
+                  child: Icon(
+                    Icons.help_outline_rounded,
+                    size: 14,
+                    color: Color(0xFFF59E0B),
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    msg.text,
+                    style: const TextStyle(
+                      color: Color(0xFF78350F),
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Text(
+              msg.text,
+              style: TextStyle(
+                color: msg.isUser ? Colors.white : AppColors.ink,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
     ),
   );
 }
@@ -3644,9 +3702,15 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ChatMsg {
-  const _ChatMsg({required this.text, required this.isUser});
+  const _ChatMsg({
+    required this.text,
+    required this.isUser,
+    this.isClarification = false,
+  });
   final String text;
   final bool isUser;
+  final bool
+  isClarification; // true = AI is asking for more detail, not a real answer
 }
 
 // ─── Replace Roster Confirmation Dialog ──────────────────────────────────────

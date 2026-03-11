@@ -30,6 +30,13 @@ class ImportWorkspaceResult {
   });
 }
 
+/// Result from the /ask endpoint.
+class AskResult {
+  final String answer;
+  final bool needsClarification;
+  const AskResult({required this.answer, required this.needsClarification});
+}
+
 class ApiClient {
   ApiClient({required String baseUrl}) : baseUri = _normalizeBaseUri(baseUrl);
 
@@ -257,18 +264,39 @@ class ApiClient {
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
   }
 
-  Future<String> ask(String wid, String question) async {
+  /// Send a question with optional conversation history.
+  /// Returns an [AskResult] with the answer and a clarification flag.
+  Future<AskResult> ask(
+    String wid,
+    String question, {
+    List<Map<String, String>> history = const [],
+  }) async {
     final resp = await http
         .post(
           _u('/workspaces/$wid/ask'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'question': question}),
+          body: jsonEncode({'question': question, 'history': history}),
         )
         .timeout(AppConfig.standardTimeout);
     if (resp.statusCode == 504) throw Exception('Ask timed out. Try again.');
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    return (map['answer'] ?? '').toString();
+    return AskResult(
+      answer: (map['answer'] ?? '').toString(),
+      needsClarification: (map['needs_clarification'] as bool?) ?? false,
+    );
+  }
+
+  /// Fetch upcoming assessment/exam deadline notifications for a workspace.
+  Future<List<Map<String, dynamic>>> getUpcomingNotifications(
+    String wid,
+  ) async {
+    final resp = await http
+        .get(_u('/workspaces/$wid/notifications/upcoming'))
+        .timeout(AppConfig.shortTimeout);
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    return ((map['notifications'] as List?) ?? []).cast<Map<String, dynamic>>();
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

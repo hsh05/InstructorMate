@@ -4,12 +4,15 @@ import csv
 import logging
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
 from domain.workspace_fields import WORKSPACE_FIELD_NAMES
 from repositories.pg_workspace_repository import PgWorkspaceRepository
+from repositories.pg_structured_syllabus_repository import PgStructuredSyllabusRepository
 from services.pdf_hash_service import PdfHashService
+from services.structured_syllabus_extractor import StructuredSyllabusExtractor
 from syllabus_converter import SyllabusConverterService
 
 logger = logging.getLogger(__name__)
@@ -21,11 +24,14 @@ class WorkspaceService:
         self,
         repo: PgWorkspaceRepository,
         hash_service: PdfHashService,
-        converter_model: str = "gpt-5",
+        structured_repo: Optional[PgStructuredSyllabusRepository] = None,
+        converter_model: str = "gpt-4o-mini",
     ):
-        self.repo         = repo
-        self.hash_service = hash_service
-        self.converter    = SyllabusConverterService(model=converter_model)
+        self.repo            = repo
+        self.hash_service    = hash_service
+        self.structured_repo = structured_repo
+        self.converter       = SyllabusConverterService(model=converter_model)
+        self.extractor       = StructuredSyllabusExtractor(model=converter_model)
 
     def create_from_file(self, filename: str, content: bytes) -> dict:
         pdf_hash = self.hash_service.compute(content)
@@ -66,6 +72,8 @@ class WorkspaceService:
         self.repo.save(ws)
         return ws
 
+    # ── Internal ──────────────────────────────────────────────────────────────
+
     def _run_converter(self, workspace_id: str, content: bytes, workspace: Workspace) -> None:
         ws_dir  = self.repo.workspace_dir(workspace_id)
         ws_dir.mkdir(parents=True, exist_ok=True)
@@ -83,9 +91,7 @@ class WorkspaceService:
             # ── Save chunks to Postgres ───────────────────────────────────
             chunks_src = Path(result.chunks_csv)
             if chunks_src.exists():
-                # Save to DB so chunks survive Render restarts
                 self.repo.save_chunks(workspace_id, chunks_src)
-                # Also copy to expected path for AskPipeline file fallback
                 chunks_dst = self.repo.get_chunks_csv_path(workspace_id)
                 if chunks_src != chunks_dst:
                     import shutil
@@ -101,12 +107,7 @@ class WorkspaceService:
                         k: v for k, v in row.items()
                         if k in workspace.fields and not workspace.fields.get(k) and v
                     }
-
-                    # FIX: The PDF extractor outputs 'course_title' but the
-                    # Flutter UI field key is 'course_name'. Mirror the value
-                    # into both fields so the Info tab auto-fills correctly.
-                    # Also handle the reverse: if extractor ever outputs
-                    # 'course_name', mirror it into 'course_title' too.
+                    # Mirror course_title <-> course_name
                     if 'course_title' in updates and not updates.get('course_name') \
                             and not workspace.fields.get('course_name'):
                         updates['course_name'] = updates['course_title']
@@ -122,3 +123,16 @@ class WorkspaceService:
         except Exception as e:
             logger.error("Converter failed for workspace=%s: %s", workspace_id, e)
             raise
+
+        # ── Structured extraction (non-fatal) ─────────────────────────────
+        if self.structured_repo is not None:
+            try:
+                data = self.extractor.extract(str(tmp_pdf))
+                self.structured_repo.save(
+                    workspace_id,
+                    weekly_topics=data.weekly_topics,
+                    clos=data.clos,
+                    key_dates=data.key_dates,
+                )
+            except Exception as e:
+                logger.warning("Structured extraction failed (non-fatal) for workspace=%s: %s", workspace_id, e)
