@@ -114,28 +114,25 @@ class LightweightRetriever:
 
 # ── Clarification detector ────────────────────────────────────────────────────
 
-# Single-word or very short phrases that are always vague
+# Only the most obviously meaningless inputs — greetings and filler with zero
+# syllabus intent. Anything that could plausibly be a question is passed through.
 _VAGUE_EXACT = {
-    "help", "explain", "more", "info", "details", "what", "tell me",
-    "i need help", "can you help", "question", "hi", "hello",
+    "help", "hi", "hello", "hey", "more", "ok", "okay", "yes", "no",
+    "sure", "thanks", "thank you", "lol", "haha",
 }
 
-# Patterns that signal a vague question (regex applied to lowercased, stripped input)
+# Only match truly empty-looking patterns — bare punctuation or 1-2 chars
 _VAGUE_PATTERNS = [
-    r"^(tell me|explain|describe|elaborate|more|details?|information|info)$",
-    r"^(what|how|why|when|where|who)\s*\??$",
-    r"^.{1,6}\s*\??$",   # 6 chars or fewer — almost certainly incomplete
+    r"^[^a-z0-9]*$",    # no letters or digits at all (e.g. "???", "...")
+    r"^.{1,2}\s*$",     # 1-2 chars only
 ]
 _VAGUE_RE = [re.compile(p) for p in _VAGUE_PATTERNS]
 
 
 class ClarificationDetector:
-    """Two-tier vagueness check. Tier-1 is free (regex). Tier-2 uses LLM only
-    for short questions with no conversation history."""
-
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
-        self.client = OpenAI()
-        self.model = model
+    """Minimal vagueness check — only intercepts truly empty/nonsensical input.
+    Any question with real words goes straight to the LLM answerer.
+    The LLM itself handles ambiguity far better than a rule-based filter."""
 
     def check(
         self,
@@ -149,57 +146,22 @@ class ClarificationDetector:
 
         q_lower = q.lower()
 
-        # Tier 1 — rule-based (free)
         if q_lower in _VAGUE_EXACT:
-            return True, "Could you be more specific? For example: 'When is the midterm?' or 'What are the CLOs?'"
+            return True, "What would you like to know about the syllabus? For example: 'When is the midterm?' or 'What are the CLOs?'"
+
         for pat in _VAGUE_RE:
             if pat.match(q_lower):
-                return True, "Could you be more specific? For example: 'When is the final exam?' or 'What topics are covered in Week 3?'"
+                return True, "What would you like to know about the syllabus?"
 
-        # Short follow-up mid-conversation is fine — user is continuing a thread
-        has_history = bool(history)
-        if has_history:
-            return False, None
-
-        # Tier 2 — LLM check, only for short standalone questions (saves tokens)
-        if len(q) > 80:
-            return False, None  # Long questions are almost always specific enough
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=80,
-                temperature=0,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You decide if a syllabus question is specific enough to answer.\n"
-                            "Reply with ONLY: CLEAR or VAGUE: <short clarifying question>\n"
-                            "Examples:\n"
-                            "  'When is the midterm?' → CLEAR\n"
-                            "  'Tell me stuff' → VAGUE: What specific information are you looking for?\n"
-                            "  'grades' → VAGUE: Are you asking about the grading breakdown or how grades are calculated?\n"
-                        ),
-                    },
-                    {"role": "user", "content": q},
-                ],
-            )
-            reply = (response.choices[0].message.content or "").strip()
-            if reply.upper().startswith("VAGUE"):
-                parts = reply.split(":", 1)
-                follow_up = parts[1].strip() if len(parts) > 1 else "Could you please be more specific?"
-                return True, follow_up
-        except Exception:
-            pass  # If LLM check fails, proceed normally
-
+        # Everything else goes straight to the LLM — including short inputs like
+        # "grading policy", "quiz one questions", "what are the CLOs", etc.
         return False, None
 
 
 # ── LLM answerer ──────────────────────────────────────────────────────────────
 
 class SyllabusChatGPT:
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, model: str = "gpt-5") -> None:
         self.client = OpenAI()
         self.model = model
 
@@ -225,18 +187,22 @@ class SyllabusChatGPT:
         context_text = "\n\n---\n\n".join(parts)
 
         system_msg = {
-            "role": "system",
             "content": (
-                "You are a syllabus Q&A assistant.\n"
+                "You are an intelligent teaching assistant for this course.\n"
+                "You have access to the course syllabus as context.\n"
+                "You can help with:\n"
+                "- Answering factual questions about the syllabus (dates, policies, topics)\n"
+                "- Explaining course topics and concepts from the syllabus\n"
+                "- Helping plan lessons based on the weekly schedule\n"
+                "- Suggesting practice questions or quiz material for topics in the syllabus\n"
+                "- Giving study tips based on what the syllabus covers\n"
                 "Rules:\n"
-                "- Use ONLY the provided syllabus context.\n"
-                "- If the answer is not explicitly present, reply exactly: 'Not found in the syllabus.'\n"
-                "- Be concise (max 6 lines).\n"
-                "- Respond in a clean user-friendly way.\n"
-                "- Do NOT include citations.\n"
+                "- Base your responses on the syllabus context provided.\n"
+                "- For factual questions (dates, deadlines), only state what is in the syllabus.\n"
+                "- For creative tasks (suggest questions, plan a lesson), use the syllabus as a guide but use your knowledge to be helpful.\n"
+                "- Be concise but thorough. Use bullet points when listing things.\n"
                 "- Do NOT mention chunks or pages.\n"
-                "- Do NOT invent dates/times/numbers.\n"
-                f"\nSYLLABUS CONTEXT:\n{context_text}"
+                "- Do NOT invent dates or deadlines.\n"
             ),
         }
 
@@ -302,7 +268,7 @@ def main() -> None:
     pipeline = AskPipeline(
         store=SyllabusCsvStore(csv_path),
         retriever=LightweightRetriever(top_k=12, score_threshold=2.0),
-        llm=SyllabusChatGPT(model="gpt-4o-mini"),
+        llm=SyllabusChatGPT(model="gpt-5"),
     )
 
     history: List[ChatMessage] = []

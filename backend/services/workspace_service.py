@@ -25,7 +25,7 @@ class WorkspaceService:
         repo: PgWorkspaceRepository,
         hash_service: PdfHashService,
         structured_repo: Optional[PgStructuredSyllabusRepository] = None,
-        converter_model: str = "gpt-4o-mini",
+        converter_model: str = "gpt-5",
     ):
         self.repo            = repo
         self.hash_service    = hash_service
@@ -124,7 +124,7 @@ class WorkspaceService:
             logger.error("Converter failed for workspace=%s: %s", workspace_id, e)
             raise
 
-        # ── Structured extraction (non-fatal) ─────────────────────────────
+        # ── Structured extraction ─────────────────────────────
         if self.structured_repo is not None:
             try:
                 data = self.extractor.extract(str(tmp_pdf))
