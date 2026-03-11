@@ -131,12 +131,12 @@ class PgSectionRepository:
             "workspace_id": row.workspace_id,
             "name":         row.name or "",
             "location":     row.location or "",
+            "last_import_hash": row.last_import_hash or "", 
             "schedule": {
                 "days":             days,
                 "start_time":       (row.start_time or "").strip(),
                 "end_time":         (row.end_time or "").strip(),
                 "timezone":         "UTC",
                 "reminder_minutes": reminder,
-                "last_import_hash":  row.last_import_hash or "", 
             },
         }
