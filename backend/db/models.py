@@ -8,37 +8,25 @@ from sqlalchemy.orm import relationship
 from db.database import Base
 
 
-# ── My TABLES ───────────────────────────────────────────────────────────────
-
 class Workspace(Base):
     __tablename__ = "workspaces"
 
-    workspace_id     = Column(Text, primary_key=True)
-    pdf_hash         = Column(Text, nullable=False, default="")
-    status           = Column(Text, nullable=False, default="draft")  # 'draft' | 'ready'
-    course_title     = Column(Text, nullable=False, default="")
-    semester         = Column(Text, nullable=False, default="")
-    instructor_email = Column(Text, nullable=False, default="")
-    course_code      = Column(Text, nullable=False, default="")
-    course_name      = Column(Text, nullable=False, default="")
-    created_at       = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    workspace_id = Column(Text, primary_key=True)
+    pdf_hash     = Column(Text, nullable=False, default="")
+    status       = Column(Text, nullable=False, default="draft")  # 'draft' | 'ready'
+    course_title = Column(Text, nullable=False, default="")
+    semester     = Column(Text, nullable=False, default="")
+    course_code  = Column(Text, nullable=False, default="")
+    course_name  = Column(Text, nullable=False, default="")
+    created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
-    sections         = relationship("Section", back_populates="workspace",
-                                    cascade="all, delete-orphan")
-    students         = relationship("Student", back_populates="workspace",
-                                    cascade="all, delete-orphan")
-    chunks           = relationship("SyllabusChunk", back_populates="workspace",
-                                    cascade="all, delete-orphan")
-    
+    sections = relationship("Section", back_populates="workspace",
+                            cascade="all, delete-orphan")
+    students = relationship("Student", back_populates="workspace",
+                            cascade="all, delete-orphan")
+    chunks   = relationship("SyllabusChunk", back_populates="workspace",
+                            cascade="all, delete-orphan")
 
-class OfficeHour(Base):
-    __tablename__ = "office_hours"
-
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    workspace_id = Column(Text, ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False)
-    day          = Column(Text, nullable=False)
-    start_time   = Column(Text, nullable=False, default="")
-    end_time     = Column(Text, nullable=False, default="")
 
 class Section(Base):
     __tablename__ = "sections"
@@ -54,15 +42,18 @@ class Section(Base):
     created_at       = Column(TIMESTAMP(timezone=True), server_default=func.now())
     last_import_hash = Column(String, default="")
 
-    workspace        = relationship("Workspace", back_populates="sections")
-    students = relationship("StudentSection", cascade="all, delete-orphan")
+    workspace = relationship("Workspace", back_populates="sections")
+    students  = relationship("StudentSection", cascade="all, delete-orphan")
+
 
 class SectionDay(Base):
     __tablename__ = "section_days"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
-    section_id = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"), nullable=False)
+    section_id = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"),
+                        nullable=False)
     day        = Column(Text, nullable=False)
+
 
 class Student(Base):
     __tablename__ = "students"
@@ -75,8 +66,8 @@ class Student(Base):
     email        = Column(Text, nullable=False, default="")
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
-    workspace    = relationship("Workspace", back_populates="students")
-    sections     = relationship("StudentSection", cascade="all, delete-orphan")
+    workspace = relationship("Workspace", back_populates="students")
+    sections  = relationship("StudentSection", cascade="all, delete-orphan")
 
 
 class StudentSection(Base):
@@ -84,8 +75,10 @@ class StudentSection(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    student_id = Column(Text, ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
-    section_id = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(Text, ForeignKey("students.student_id", ondelete="CASCADE"),
+                        nullable=False)
+    section_id = Column(Text, ForeignKey("sections.section_id", ondelete="CASCADE"),
+                        nullable=False)
 
     student = relationship("Student")
     section = relationship("Section")
@@ -93,6 +86,8 @@ class StudentSection(Base):
     __table_args__ = (
         UniqueConstraint("student_id", "section_id", name="uq_student_section"),
     )
+
+
 class SyllabusChunk(Base):
     __tablename__ = "syllabus_chunks"
 
@@ -103,4 +98,4 @@ class SyllabusChunk(Base):
     content      = Column(Text, nullable=False, default="")
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
-    workspace    = relationship("Workspace", back_populates="chunks")
+    workspace = relationship("Workspace", back_populates="chunks")
