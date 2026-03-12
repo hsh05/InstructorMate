@@ -1,4 +1,6 @@
 // lib/app/state/workspaces_vm.dart
+// UPDATE: _syncCurrentToList now derives sectionsCount and studentsCount
+//         from the full Workspace so the home screen always shows real numbers.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -36,6 +38,8 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   void recordImport(String sectionId, int count) {
     sectionStudentCounts[sectionId] = count;
+    // Also update the summary list so student count reflects the import immediately
+    _syncCurrentToList();
     notifyListeners();
   }
 
@@ -45,7 +49,6 @@ class WorkspacesViewModel extends ChangeNotifier {
   int countForSection(String sectionId) => sectionStudentCounts[sectionId] ?? 0;
 
   // ── Mobile foreground ticker ──────────────────────────────────────────────
-  // Fires every minute — shows in-app toast automatically when app is open.
   Timer? _mobileTicker;
   List<Workspace> _allWorkspaces = [];
   final Set<String> _firedKeys = {};
@@ -92,7 +95,6 @@ class WorkspacesViewModel extends ChangeNotifier {
             final notifTitle = '⏰ ${ws.title} starts in ${remind}min';
             final notifBody =
                 '${section.name.isNotEmpty ? section.name : "Class"}$loc — ${ScheduleUtils.formatTime(sch.startTime)}';
-            // Record in bell history BEFORE showing toast
             WebNotificationService.instance.addMobileNotif(
               title: notifTitle,
               body: notifBody,
@@ -182,10 +184,13 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
-    await _initNotifications();
+    _initNotifications().ignore();
   }
 
   // ── Open workspace ────────────────────────────────────────────────────────
+  // Navigation is unblocked as soon as the single getWorkspace call completes.
+  // Notification rescheduling (which fetches ALL workspaces) runs in the
+  // background so it never delays the tap-to-open experience.
 
   Future<void> openWorkspace(String id) async {
     loading = true;
@@ -193,19 +198,19 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.getWorkspace(id);
-      // Clear stale counts from any previously opened workspace
       sectionStudentCounts.clear();
-      // Use studentsCount from workspace JSON — already correct from backend
       for (final s in _current?.sections ?? []) {
         sectionStudentCounts[s.id] = s.studentsCount;
       }
-      await rescheduleNotificationsForCurrent();
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
       loading = false;
       notifyListeners();
     }
+    // Fire-and-forget — does not block navigation
+    rescheduleNotificationsForCurrent().ignore();
   }
 
   // ── Import syllabus (bytes) ───────────────────────────────────────────────
@@ -226,7 +231,9 @@ class WorkspacesViewModel extends ChangeNotifier {
       );
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      await load();
+      // PERF: Don't call load() — just upsert the new workspace into the list.
+      // load() re-fetches every workspace which is wasteful after a single import.
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -252,7 +259,8 @@ class WorkspacesViewModel extends ChangeNotifier {
       );
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      await load();
+      // PERF: Don't call load() — just upsert the new workspace into the list.
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -268,11 +276,8 @@ class WorkspacesViewModel extends ChangeNotifier {
     if (ws == null) return;
 
     final payload = Map<String, String>.from(fields);
-    // office_hours_start holds the full encoded slots string from workspace_detail.
-    // office_hours_end holds a human-readable summary.
-    // The DB has a single 'office_hours' column — store the encoded string there.
     final ohEncoded = payload.remove('office_hours_start') ?? '';
-    payload.remove('office_hours_end'); // summary not needed in DB
+    payload.remove('office_hours_end');
     if (ohEncoded.isNotEmpty) {
       payload['office_hours'] = ohEncoded;
     }
@@ -282,7 +287,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.updateWorkspaceFields(ws.id, payload);
-      // Sync the WorkspaceSummary in the list so home status badge updates instantly
       _syncCurrentToList();
     } catch (e) {
       error = e.toString();
@@ -301,11 +305,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      // FIX: api.createSection now returns the full updated Workspace directly
-      // from the create response (backend now returns workspace in body).
-      // No separate GET needed.
       _current = await api.createSection(ws.id, draft);
-      await rescheduleNotificationsForCurrent();
       _syncCurrentToList();
     } catch (e) {
       error = e.toString();
@@ -313,11 +313,11 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+    rescheduleNotificationsForCurrent().ignore();
   }
 
   // ── Update section (in-place, preserves students) ────────────────────────
-  // Calls the backend PATCH endpoint so section_id stays the same and all
-  // students linked to this section are preserved in the database.
+
   Future<void> updateSection(String sectionId, SectionDraft draft) async {
     final ws = _current;
     if (ws == null) return;
@@ -326,7 +326,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.updateSection(ws.id, sectionId, draft);
-      await rescheduleNotificationsForCurrent();
       _syncCurrentToList();
     } catch (e) {
       error = e.toString();
@@ -334,6 +333,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+    rescheduleNotificationsForCurrent().ignore();
   }
 
   // ── Import students ───────────────────────────────────────────────────────
@@ -357,7 +357,9 @@ class WorkspacesViewModel extends ChangeNotifier {
         result.sectionId.isNotEmpty ? result.sectionId : sectionId,
         result.imported,
       );
+      // Refresh workspace to get updated student counts
       _current = await api.getWorkspace(ws.id);
+      _syncCurrentToList();
     } catch (e) {
       error = e.toString();
     } finally {
@@ -397,7 +399,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     try {
       _current = await api.deleteSection(ws.id, sectionId);
       sectionStudentCounts.remove(sectionId);
-      await rescheduleNotificationsForCurrent();
       _syncCurrentToList();
     } catch (e) {
       error = e.toString();
@@ -405,6 +406,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+    rescheduleNotificationsForCurrent().ignore();
   }
 
   // ── Re-upload PDF ─────────────────────────────────────────────────────────
@@ -445,23 +447,43 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Sync current workspace status → summary list ─────────────────────────
-  // Keeps the home screen status badge up-to-date immediately after any field
-  // update, without requiring a full load() round-trip to the server.
+  // ── Sync current workspace status + counts → summary list ────────────────
+  // Keeps home screen status badge, section count, and student count up-to-date
+  // immediately after any mutation — no extra network round-trip needed.
   void _syncCurrentToList() {
     final ws = _current;
     if (ws == null) return;
     final idx = workspaces.indexWhere((s) => s.id == ws.id);
-    if (idx == -1) return;
-    final old = workspaces[idx];
-    workspaces[idx] = WorkspaceSummary(
-      id: old.id,
-      createdAt: old.createdAt,
-      originalFilename: old.originalFilename,
-      pdfHash: old.pdfHash,
-      title: ws.title.isNotEmpty ? ws.title : old.title,
+
+    // Compute total students: prefer sectionStudentCounts map (live-updated
+    // by recordImport) then fall back to the workspace model itself.
+    int totalStudents = sectionStudentCounts.values.fold(0, (a, b) => a + b);
+    if (totalStudents == 0) {
+      totalStudents = ws.studentsCount > 0
+          ? ws.studentsCount
+          : ws.sections.fold(0, (sum, s) => sum + s.studentsCount);
+    }
+
+    final newSummary = WorkspaceSummary(
+      id: ws.id,
+      createdAt: idx != -1 ? workspaces[idx].createdAt : ws.createdAt,
+      updatedAtRaw: ws.updatedAtRaw ?? DateTime.now().toIso8601String(),
+      originalFilename:
+          idx != -1 ? workspaces[idx].originalFilename : ws.originalFilename,
+      pdfHash: idx != -1 ? workspaces[idx].pdfHash : ws.pdfHash,
+      title: ws.title.isNotEmpty
+          ? ws.title
+          : (idx != -1 ? workspaces[idx].title : 'Untitled Course'),
       status: ws.isReady ? 'ready' : 'draft',
+      sectionsCount: ws.sections.length,
+      studentsCount: totalStudents,
     );
+
+    if (idx == -1) {
+      workspaces.insert(0, newSummary);
+    } else {
+      workspaces[idx] = newSummary;
+    }
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -499,15 +521,11 @@ class WorkspacesViewModel extends ChangeNotifier {
       _current = fresh;
 
       if (kIsWeb) {
-        // FIX: rebuild the FULL workspace list for the web ticker.
-        // Previously this passed only [fresh] (one workspace) to updateWorkspaces(),
-        // which meant the ticker stopped watching all other workspaces' sections —
-        // their notifications would silently stop firing after any section edit.
         final all = <Workspace>[];
         for (final summary in workspaces) {
           try {
             if (summary.id == fresh.id) {
-              all.add(fresh); // use the already-fetched fresh copy
+              all.add(fresh);
             } else {
               all.add(await api.getWorkspace(summary.id));
             }
@@ -515,7 +533,6 @@ class WorkspacesViewModel extends ChangeNotifier {
         }
         WebNotificationService.instance.updateWorkspaces(all);
       } else {
-        // For mobile: reschedule ALL workspaces so no alarms are lost
         final all = <Workspace>[];
         for (final summary in workspaces) {
           try {

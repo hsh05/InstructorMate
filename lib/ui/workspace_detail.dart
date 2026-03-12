@@ -321,6 +321,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                 ws: ws,
                                 vm: widget.vm,
                                 onError: _showError,
+                                onNavigateToStudents: () => _tabs.animateTo(2),
                               ),
                               _StudentsTab(
                                 ws: ws,
@@ -1107,10 +1108,12 @@ class _SectionsTab extends StatefulWidget {
     required this.ws,
     required this.vm,
     required this.onError,
+    required this.onNavigateToStudents,
   });
   final Workspace ws;
   final WorkspacesViewModel vm;
   final void Function(String) onError;
+  final VoidCallback onNavigateToStudents;
 
   @override
   State<_SectionsTab> createState() => _SectionsTabState();
@@ -1187,24 +1190,6 @@ class _SectionsTabState extends State<_SectionsTab>
   // ── Bottom sheet ────────────────────────────────────────────────────────────
 
   void _showSectionSheet(BuildContext ctx, {Section? editing}) {
-    // Pre-fill from existing section or defaults
-    String selName = editing?.name ?? '';
-    String selLocation = editing?.location ?? '';
-    List<String> selDays = List.from(editing?.schedule.days ?? []);
-    int selReminderMins = editing?.schedule.reminderMinutes ?? 10;
-
-    final startParsed = _parseTime(editing?.schedule.startTime ?? '');
-    final endParsed = _parseTime(editing?.schedule.endTime ?? '');
-    int startH = startParsed.hour, startMIdx = startParsed.minIdx;
-    bool startPM = startParsed.isPM;
-    int endH = endParsed.hour, endMIdx = endParsed.minIdx;
-    bool endPM = endParsed.isPM;
-
-    final nameCtrl = TextEditingController(text: selName);
-    final locationCtrl = TextEditingController(text: selLocation);
-    bool saving = false;
-    String? sheetError;
-
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
@@ -1212,522 +1197,33 @@ class _SectionsTabState extends State<_SectionsTab>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => StatefulBuilder(
-        builder: (bsCtx, setBS) {
-          Widget sectionLabel(String text) => Padding(
-                padding: const EdgeInsets.only(top: 18, bottom: 8),
-                child: Text(
-                  text,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.inkLight,
-                    letterSpacing: 1.2,
-                  ),
+      builder: (_) => _SectionSheetContent(
+        editing: editing,
+        vm: widget.vm,
+        onSuccess: (msg) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(msg),
+                backgroundColor: AppColors.accent,
+                behavior: SnackBarBehavior.floating,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: AppColors.r12,
                 ),
-              );
-
-          Widget hourRow(int selHour, void Function(int) onSel) =>
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(12, (idx) {
-                    final h = idx + 1;
-                    final sel = selHour == h;
-                    return GestureDetector(
-                      onTap: () => setBS(() => onSel(h)),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 110),
-                        margin: const EdgeInsets.only(right: 6),
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: sel ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '$h',
-                          style: TextStyle(
-                            color: sel ? Colors.white : AppColors.ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              );
-
-          Widget minRow(int selMin, void Function(int) onSel) =>
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(_minLabels.length, (idx) {
-                    final sel = selMin == idx;
-                    return GestureDetector(
-                      onTap: () => setBS(() => onSel(idx)),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 110),
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: sel ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        child: Text(
-                          ':${_minLabels[idx]}',
-                          style: TextStyle(
-                            color: sel ? Colors.white : AppColors.ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              );
-
-          Widget ampmRow(bool isPM, void Function(bool) onSel) => Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt,
-                  borderRadius: AppColors.r10,
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final pm in [false, true])
-                      GestureDetector(
-                        onTap: () => setBS(() => onSel(pm)),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 110),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 11,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isPM == pm
-                                ? AppColors.primary
-                                : Colors.transparent,
-                            borderRadius: AppColors.r10,
-                          ),
-                          child: Text(
-                            pm ? 'PM' : 'AM',
-                            style: TextStyle(
-                              color:
-                                  isPM == pm ? Colors.white : AppColors.inkMid,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-
-          return DraggableScrollableSheet(
-            expand: false,
-            initialChildSize: 0.94,
-            minChildSize: 0.6,
-            maxChildSize: 0.97,
-            builder: (_, scrollCtrl) => ListView(
-              controller: scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-              children: [
-                // Handle
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  editing != null ? 'Edit Section' : 'New Section',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    color: AppColors.ink,
-                  ),
-                ),
-
-                // ── Name & Location ──────────────────────────────────────────
-                sectionLabel('SECTION NAME'),
-                TextField(
-                  controller: nameCtrl,
-                  onChanged: (v) => setBS(() {
-                    selName = v;
-                    sheetError = null;
-                  }),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Section A',
-                    hintStyle: const TextStyle(
-                      color: AppColors.inkLight,
-                      fontSize: 13,
-                    ),
-                    filled: true,
-                    fillColor: AppColors.surfaceAlt,
-                    border: OutlineInputBorder(
-                      borderRadius: AppColors.r10,
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: AppColors.r10,
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: AppColors.r10,
-                      borderSide: const BorderSide(
-                        color: AppColors.primary,
-                        width: 1.5,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-
-                sectionLabel('LOCATION / ROOM'),
-                TextField(
-                  controller: locationCtrl,
-                  onChanged: (v) => setBS(() => selLocation = v),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Room 204',
-                    hintStyle: const TextStyle(
-                      color: AppColors.inkLight,
-                      fontSize: 13,
-                    ),
-                    filled: true,
-                    fillColor: AppColors.surfaceAlt,
-                    border: OutlineInputBorder(
-                      borderRadius: AppColors.r10,
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: AppColors.r10,
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: AppColors.r10,
-                      borderSide: const BorderSide(
-                        color: AppColors.primary,
-                        width: 1.5,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-
-                // ── Days ────────────────────────────────────────────────────
-                sectionLabel('DAYS'),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _days.map((d) {
-                    final sel = selDays.contains(d);
-                    return GestureDetector(
-                      onTap: () => setBS(() {
-                        sel ? selDays.remove(d) : selDays.add(d);
-                        sheetError = null;
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 110),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: sel ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        child: Text(
-                          d,
-                          style: TextStyle(
-                            color: sel ? Colors.white : AppColors.inkMid,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-
-                // ── Start time ───────────────────────────────────────────────
-                sectionLabel('START — HOUR'),
-                hourRow(startH, (h) => startH = h),
-                sectionLabel('START — MINUTES'),
-                minRow(startMIdx, (m) => startMIdx = m),
-                sectionLabel('START — PERIOD'),
-                ampmRow(startPM, (pm) => startPM = pm),
-
-                // ── End time ─────────────────────────────────────────────────
-                sectionLabel('END — HOUR'),
-                hourRow(endH, (h) => endH = h),
-                sectionLabel('END — MINUTES'),
-                minRow(endMIdx, (m) => endMIdx = m),
-                sectionLabel('END — PERIOD'),
-                ampmRow(endPM, (pm) => endPM = pm),
-
-                // ── Reminder ─────────────────────────────────────────────────
-                sectionLabel('REMINDER BEFORE CLASS'),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [5, 10, 15, 20, 30].map((mins) {
-                      final sel = selReminderMins == mins;
-                      return GestureDetector(
-                        onTap: () => setBS(() => selReminderMins = mins),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 110),
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                sel ? AppColors.primary : AppColors.surfaceAlt,
-                            borderRadius: AppColors.r10,
-                            border: Border.all(
-                              color: sel ? AppColors.primary : AppColors.border,
-                            ),
-                          ),
-                          child: Text(
-                            '${mins}min',
-                            style: TextStyle(
-                              color: sel ? Colors.white : AppColors.ink,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ── Live preview pill ────────────────────────────────────────
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primarySoft,
-                      borderRadius: AppColors.r20,
-                      border: Border.all(
-                        color: AppColors.primary.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Text(
-                      '${selDays.isEmpty ? "No days" : selDays.join(", ")}  ·  '
-                      '${_formatTime(startH, startMIdx, startPM)} → ${_formatTime(endH, endMIdx, endPM)}',
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // ── Error ────────────────────────────────────────────────────
-                if (sheetError != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.warnSoft,
-                      borderRadius: AppColors.r10,
-                      border: Border.all(
-                        color: AppColors.warn.withOpacity(0.4),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          size: 15,
-                          color: AppColors.warn,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            sheetError!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.warn,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 16),
-
-                // ── Save button ──────────────────────────────────────────────
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: AppColors.r12,
-                      ),
-                    ),
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            // ── Validation ──
-                            final name = nameCtrl.text.trim();
-                            if (name.isEmpty) {
-                              setBS(
-                                () => sheetError = 'Section name is required.',
-                              );
-                              return;
-                            }
-                            if (selDays.isEmpty) {
-                              setBS(
-                                () => sheetError =
-                                    'Please select at least one day.',
-                              );
-                              return;
-                            }
-                            final startStr = _formatTime(
-                              startH,
-                              startMIdx,
-                              startPM,
-                            );
-                            final endStr = _formatTime(endH, endMIdx, endPM);
-                            final startMins = _timeToMins(startStr);
-                            final endMins = _timeToMins(endStr);
-                            if (startMins != null &&
-                                endMins != null &&
-                                endMins <= startMins) {
-                              setBS(
-                                () => sheetError =
-                                    'End time must be after start time ($startStr → $endStr).',
-                              );
-                              return;
-                            }
-
-                            setBS(() => saving = true);
-                            try {
-                              final draft = SectionDraft()
-                                ..name = name
-                                ..location = locationCtrl.text.trim()
-                                ..days = selDays
-                                ..startTime = startStr
-                                ..endTime = endStr
-                                ..reminderMinutes = selReminderMins;
-
-                              if (editing != null) {
-                                // UPDATE in-place: preserves section_id → students stay intact
-                                await widget.vm.updateSection(
-                                  editing.id,
-                                  draft,
-                                );
-                              } else {
-                                await widget.vm.createSection(draft);
-                              }
-
-                              if (bsCtx.mounted) Navigator.pop(bsCtx);
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      editing != null
-                                          ? 'Section updated ✓'
-                                          : 'Section created ✓',
-                                    ),
-                                    backgroundColor: AppColors.accent,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: const RoundedRectangleBorder(
-                                      borderRadius: AppColors.r12,
-                                    ),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              setBS(() {
-                                saving = false;
-                                sheetError = e.toString();
-                              });
-                            }
-                          },
-                    child: saving
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(
-                            editing != null ? 'Save Changes' : 'Create Section',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          );
+              ),
+            );
+          }
         },
+        onError: (e) {
+          if (mounted) widget.onError(e);
+        },
+        parseTime: _parseTime,
+        formatTime: _formatTime,
+        timeToMins: _timeToMins,
+        minLabels: _minLabels,
+        days: _days,
       ),
-    ).whenComplete(() {
-      nameCtrl.dispose();
-      locationCtrl.dispose();
-    });
+    );
   }
 
   @override
@@ -1761,7 +1257,7 @@ class _SectionsTabState extends State<_SectionsTab>
                 section: s,
                 onDelete: () => _confirmDelete(s),
                 onEdit: () => _showSectionSheet(context, editing: s),
-                vm: widget.vm,
+                onViewStudents: widget.onNavigateToStudents,
               ),
             ),
           ),
@@ -1818,23 +1314,519 @@ class _SectionsTabState extends State<_SectionsTab>
   }
 }
 
+// ─── Section sheet content (StatefulWidget — controllers disposed by Flutter lifecycle) ─
+class _SectionSheetContent extends StatefulWidget {
+  const _SectionSheetContent({
+    required this.editing,
+    required this.vm,
+    required this.onSuccess,
+    required this.onError,
+    required this.parseTime,
+    required this.formatTime,
+    required this.timeToMins,
+    required this.minLabels,
+    required this.days,
+  });
+  final Section? editing;
+  final WorkspacesViewModel vm;
+  final void Function(String) onSuccess;
+  final void Function(String) onError;
+  final ({int hour, int minIdx, bool isPM}) Function(String) parseTime;
+  final String Function(int, int, bool) formatTime;
+  final int? Function(String) timeToMins;
+  final List<String> minLabels;
+  final List<String> days;
+
+  @override
+  State<_SectionSheetContent> createState() => _SectionSheetContentState();
+}
+
+class _SectionSheetContentState extends State<_SectionSheetContent> {
+  // Controllers owned here — disposed by Flutter when the widget is removed
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _locationCtrl;
+
+  late List<String> _selDays;
+  late int _selReminderMins;
+  late int _startH, _startMIdx;
+  late bool _startPM;
+  late int _endH, _endMIdx;
+  late bool _endPM;
+
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.editing;
+    _nameCtrl = TextEditingController(text: e?.name ?? '');
+    _locationCtrl = TextEditingController(text: e?.location ?? '');
+    _selDays = List.from(e?.schedule.days ?? []);
+    _selReminderMins = e?.schedule.reminderMinutes ?? 10;
+
+    final sp = widget.parseTime(e?.schedule.startTime ?? '');
+    final ep = widget.parseTime(e?.schedule.endTime ?? '');
+    _startH = sp.hour;
+    _startMIdx = sp.minIdx;
+    _startPM = sp.isPM;
+    _endH = ep.hour;
+    _endMIdx = ep.minIdx;
+    _endPM = ep.isPM;
+  }
+
+  @override
+  void dispose() {
+    // Flutter calls this AFTER the widget tree is fully unmounted,
+    // so the IME / FocusNode have already detached — no more crash.
+    _nameCtrl.dispose();
+    _locationCtrl.dispose();
+    super.dispose();
+  }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(top: 18, bottom: 8),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            color: AppColors.inkLight,
+            letterSpacing: 1.2,
+          ),
+        ),
+      );
+
+  Widget _hourRow(int selHour, void Function(int) onSel) =>
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(12, (idx) {
+            final h = idx + 1;
+            final sel = selHour == h;
+            return GestureDetector(
+              onTap: () => setState(() => onSel(h)),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 110),
+                margin: const EdgeInsets.only(right: 6),
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                  borderRadius: AppColors.r10,
+                  border: Border.all(
+                      color: sel ? AppColors.primary : AppColors.border),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$h',
+                  style: TextStyle(
+                    color: sel ? Colors.white : AppColors.ink,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+
+  Widget _minRow(int selMin, void Function(int) onSel) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(widget.minLabels.length, (idx) {
+            final sel = selMin == idx;
+            return GestureDetector(
+              onTap: () => setState(() => onSel(idx)),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 110),
+                margin: const EdgeInsets.only(right: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                  borderRadius: AppColors.r10,
+                  border: Border.all(
+                      color: sel ? AppColors.primary : AppColors.border),
+                ),
+                child: Text(
+                  ':${widget.minLabels[idx]}',
+                  style: TextStyle(
+                    color: sel ? Colors.white : AppColors.ink,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+
+  Widget _ampmRow(bool isPM, void Function(bool) onSel) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceAlt,
+          borderRadius: AppColors.r10,
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final pm in [false, true])
+              GestureDetector(
+                onTap: () => setState(() => onSel(pm)),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 110),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: isPM == pm ? AppColors.primary : Colors.transparent,
+                    borderRadius: AppColors.r10,
+                  ),
+                  child: Text(
+                    pm ? 'PM' : 'AM',
+                    style: TextStyle(
+                      color: isPM == pm ? Colors.white : AppColors.inkMid,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Section name is required.');
+      return;
+    }
+    if (_selDays.isEmpty) {
+      setState(() => _error = 'Please select at least one day.');
+      return;
+    }
+    final startStr = widget.formatTime(_startH, _startMIdx, _startPM);
+    final endStr = widget.formatTime(_endH, _endMIdx, _endPM);
+    final startMins = widget.timeToMins(startStr);
+    final endMins = widget.timeToMins(endStr);
+    if (startMins != null && endMins != null && endMins <= startMins) {
+      setState(() =>
+          _error = 'End time must be after start time ($startStr → $endStr).');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final draft = SectionDraft()
+        ..name = name
+        ..location = _locationCtrl.text.trim()
+        ..days = _selDays
+        ..startTime = startStr
+        ..endTime = endStr
+        ..reminderMinutes = _selReminderMins;
+
+      if (widget.editing != null) {
+        await widget.vm.updateSection(widget.editing!.id, draft);
+      } else {
+        await widget.vm.createSection(draft);
+      }
+
+      if (mounted) Navigator.pop(context);
+      widget.onSuccess(
+          widget.editing != null ? 'Section updated ✓' : 'Section created ✓');
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _saving = false;
+          _error = e.toString();
+        });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.94,
+      minChildSize: 0.6,
+      maxChildSize: 0.97,
+      builder: (_, scrollCtrl) => ListView(
+        controller: scrollCtrl,
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            widget.editing != null ? 'Edit Section' : 'New Section',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: AppColors.ink,
+            ),
+          ),
+
+          // ── Name ──────────────────────────────────────────────────────────
+          _label('SECTION NAME'),
+          TextField(
+            controller: _nameCtrl,
+            onChanged: (_) => setState(() => _error = null),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              hintText: 'e.g. Section A',
+              hintStyle:
+                  const TextStyle(color: AppColors.inkLight, fontSize: 13),
+              filled: true,
+              fillColor: AppColors.surfaceAlt,
+              border: OutlineInputBorder(
+                  borderRadius: AppColors.r10,
+                  borderSide: const BorderSide(color: AppColors.border)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: AppColors.r10,
+                  borderSide: const BorderSide(color: AppColors.border)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: AppColors.r10,
+                  borderSide:
+                      const BorderSide(color: AppColors.primary, width: 1.5)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+
+          // ── Location ──────────────────────────────────────────────────────
+          _label('LOCATION / ROOM'),
+          TextField(
+            controller: _locationCtrl,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              hintText: 'e.g. Room 204',
+              hintStyle:
+                  const TextStyle(color: AppColors.inkLight, fontSize: 13),
+              filled: true,
+              fillColor: AppColors.surfaceAlt,
+              border: OutlineInputBorder(
+                  borderRadius: AppColors.r10,
+                  borderSide: const BorderSide(color: AppColors.border)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: AppColors.r10,
+                  borderSide: const BorderSide(color: AppColors.border)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: AppColors.r10,
+                  borderSide:
+                      const BorderSide(color: AppColors.primary, width: 1.5)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+
+          // ── Days ──────────────────────────────────────────────────────────
+          _label('DAYS'),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: widget.days.map((d) {
+              final sel = _selDays.contains(d);
+              return GestureDetector(
+                onTap: () => setState(() {
+                  sel ? _selDays.remove(d) : _selDays.add(d);
+                  _error = null;
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 110),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                    borderRadius: AppColors.r10,
+                    border: Border.all(
+                        color: sel ? AppColors.primary : AppColors.border),
+                  ),
+                  child: Text(
+                    d,
+                    style: TextStyle(
+                      color: sel ? Colors.white : AppColors.inkMid,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          // ── Start time ────────────────────────────────────────────────────
+          _label('START — HOUR'),
+          _hourRow(_startH, (h) => _startH = h),
+          _label('START — MINUTES'),
+          _minRow(_startMIdx, (m) => _startMIdx = m),
+          _label('START — PERIOD'),
+          _ampmRow(_startPM, (pm) => _startPM = pm),
+
+          // ── End time ──────────────────────────────────────────────────────
+          _label('END — HOUR'),
+          _hourRow(_endH, (h) => _endH = h),
+          _label('END — MINUTES'),
+          _minRow(_endMIdx, (m) => _endMIdx = m),
+          _label('END — PERIOD'),
+          _ampmRow(_endPM, (pm) => _endPM = pm),
+
+          // ── Reminder ──────────────────────────────────────────────────────
+          _label('REMINDER BEFORE CLASS'),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [5, 10, 15, 20, 30].map((mins) {
+                final sel = _selReminderMins == mins;
+                return GestureDetector(
+                  onTap: () => setState(() => _selReminderMins = mins),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 110),
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                      borderRadius: AppColors.r10,
+                      border: Border.all(
+                          color: sel ? AppColors.primary : AppColors.border),
+                    ),
+                    child: Text(
+                      '${mins}min',
+                      style: TextStyle(
+                        color: sel ? Colors.white : AppColors.ink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Live preview pill ─────────────────────────────────────────────
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: AppColors.r20,
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Text(
+                '${_selDays.isEmpty ? "No days" : _selDays.join(", ")}  ·  '
+                '${widget.formatTime(_startH, _startMIdx, _startPM)} → '
+                '${widget.formatTime(_endH, _endMIdx, _endPM)}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+
+          // ── Error ─────────────────────────────────────────────────────────
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.warnSoft,
+                borderRadius: AppColors.r10,
+                border: Border.all(color: AppColors.warn.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 15, color: AppColors.warn),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.warn,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // ── Save button ───────────────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape:
+                    const RoundedRectangleBorder(borderRadius: AppColors.r12),
+              ),
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(
+                      widget.editing != null
+                          ? 'Save Changes'
+                          : 'Create Section',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Section card ──────────────────────────────────────────────────────────────
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.section,
     required this.onDelete,
     required this.onEdit,
-    required this.vm,
+    required this.onViewStudents,
   });
   final Section section;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
-  final WorkspacesViewModel vm;
+  final VoidCallback onViewStudents;
 
   @override
   Widget build(BuildContext context) {
     final sch = section.schedule;
-    final days = sch.days.isEmpty ? '—' : sch.days.join(', ');
+    final days = sch.days.isEmpty ? 'No days set' : sch.days.join(', ');
     final rawEnd = sch.endTime.trim();
     final endDisplay = (rawEnd.isEmpty ||
             rawEnd == sch.timezone ||
@@ -1845,162 +1837,449 @@ class _SectionCard extends StatelessWidget {
         ? (endDisplay.isNotEmpty
             ? '${sch.startTime} – $endDisplay'
             : sch.startTime)
-        : '—';
-    final count = vm.countForSection(section.id);
+        : 'No time set';
 
-    return Material(
-      color: AppColors.surface,
-      borderRadius: AppColors.r16,
-      child: InkWell(
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
         borderRadius: AppColors.r16,
-        hoverColor: AppColors.primarySoft.withOpacity(0.5),
-        splashColor: AppColors.primary.withOpacity(0.08),
-        highlightColor: Colors.transparent,
-        onTap: onEdit,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: AppColors.r16,
-            boxShadow: AppColors.shadowSm,
-            border: Border.all(color: AppColors.border),
-          ),
-          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: AppColors.r12,
-                ),
-                child: const Icon(
-                  Icons.groups_2_rounded,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
+        boxShadow: AppColors.shadow,
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Column(
+        children: [
+          // ── Top gradient accent bar ──────────────────────────────────────
+          Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  Color(0xFF9B78E0),
+                  AppColors.accent
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      section.name.isEmpty ? 'Unnamed Section' : section.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: AppColors.ink,
+            ),
+          ),
+
+          // ── Header ──────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, Color(0xFF9B78E0)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: AppColors.r12,
+                  ),
+                  child: const Icon(
+                    Icons.groups_2_rounded,
+                    color: Colors.white,
+                    size: 21,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Name + location badge
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        section.name.isEmpty ? 'Unnamed Section' : section.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15.5,
+                          color: AppColors.ink,
+                          letterSpacing: -0.3,
+                          height: 1.2,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.calendar_today_rounded,
-                          size: 11,
-                          color: AppColors.inkLight,
-                        ),
-                        const SizedBox(width: 3),
-                        Flexible(
-                          child: Text(
-                            days,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkMid,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.schedule_rounded,
-                          size: 11,
-                          color: AppColors.inkLight,
-                        ),
-                        const SizedBox(width: 3),
-                        Flexible(
-                          child: Text(
-                            time,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkMid,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (section.location.isNotEmpty) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 5),
                       Row(
                         children: [
-                          const Icon(
-                            Icons.location_on_rounded,
-                            size: 11,
-                            color: AppColors.inkLight,
-                          ),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(
-                              section.location,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.inkMid,
+                          // "Section" label
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: AppColors.r8,
+                            ),
+                            child: const Text(
+                              'Section',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                                letterSpacing: 0.3,
                               ),
                             ),
                           ),
+                          if (section.location.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentSoft,
+                                borderRadius: AppColors.r8,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.location_on_rounded,
+                                      size: 10, color: AppColors.accent),
+                                  const SizedBox(width: 3),
+                                  Flexible(
+                                    child: Text(
+                                      section.location,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.accent,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.people_alt_rounded,
-                          size: 11,
-                          color: AppColors.inkLight,
-                        ),
-                        const SizedBox(width: 3),
-                        Flexible(
-                          child: Text(
-                            '$count student${count == 1 ? "" : "s"}',
-                            overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                // 3-dots menu
+                PopupMenuButton<String>(
+                  icon: const Icon(
+                    Icons.more_vert_rounded,
+                    color: AppColors.inkLight,
+                    size: 20,
+                  ),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 4,
+                  onSelected: (val) {
+                    if (val == 'edit') onEdit();
+                    if (val == 'delete') onDelete();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Row(children: const [
+                        Icon(Icons.edit_rounded,
+                            color: AppColors.primary, size: 17),
+                        SizedBox(width: 10),
+                        Text('Edit Section',
                             style: TextStyle(
-                              fontSize: 11,
-                              color: count > 0
-                                  ? AppColors.accent
-                                  : AppColors.inkMid,
-                              fontWeight:
-                                  count > 0 ? FontWeight.w700 : FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                      ],
+                                color: AppColors.ink,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13)),
+                      ]),
+                    ),
+                    const PopupMenuDivider(height: 1),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(children: const [
+                        Icon(Icons.delete_outline_rounded,
+                            color: AppColors.red, size: 17),
+                        SizedBox(width: 10),
+                        Text('Delete',
+                            style: TextStyle(
+                                color: AppColors.red,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13)),
+                      ]),
                     ),
                   ],
                 ),
+              ],
+            ),
+          ),
+
+          // ── Schedule info band ───────────────────────────────────────────
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt,
+              borderRadius: AppColors.r12,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  // Days cell
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.calendar_today_rounded,
+                                  size: 10, color: AppColors.primary),
+                              SizedBox(width: 4),
+                              Text(
+                                'DAYS',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            days,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.inkMid,
+                              height: 1.3,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Divider
+                  Container(width: 1, color: AppColors.border),
+                  // Time cell
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.schedule_rounded,
+                                  size: 10, color: AppColors.primary),
+                              SizedBox(width: 4),
+                              Text(
+                                'TIME',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            time,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.inkMid,
+                              height: 1.3,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: 'Edit section',
-                icon: const Icon(
-                  Icons.edit_outlined,
-                  color: AppColors.primary,
-                  size: 20,
+            ),
+          ),
+
+          // ── View Students CTA ────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: AppColors.r12,
+              child: InkWell(
+                onTap: onViewStudents,
+                borderRadius: AppColors.r12,
+                child: Ink(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary.withOpacity(0.08),
+                        AppColors.primary.withOpacity(0.04),
+                      ],
+                    ),
+                    borderRadius: AppColors.r12,
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.25),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 11, horizontal: 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.people_alt_rounded,
+                            color: AppColors.primary, size: 16),
+                        SizedBox(width: 8),
+                        Text(
+                          'View Students',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        SizedBox(width: 6),
+                        Icon(Icons.arrow_forward_rounded,
+                            color: AppColors.primary, size: 14),
+                      ],
+                    ),
+                  ),
                 ),
-                onPressed: onEdit,
               ),
-              IconButton(
-                tooltip: 'Delete section',
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: AppColors.red,
-                  size: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Section info cell (label + value, used in 2-col grid) ───────────────────
+class _SectionInfoCell extends StatelessWidget {
+  const _SectionInfoCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 10, color: AppColors.inkLight),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.inkLight,
+                  letterSpacing: 0.6,
                 ),
-                onPressed: onDelete,
               ),
             ],
           ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.inkMid,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Info chip (used inside section card) ────────────────────────────────────
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: AppColors.r8,
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppColors.inkMid),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.inkMid,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Small icon action button ────────────────────────────────────────────────
+class _IconAction extends StatelessWidget {
+  const _IconAction({
+    required this.icon,
+    required this.color,
+    required this.bgColor,
+    required this.tooltip,
+    required this.onTap,
+  });
+  final IconData icon;
+  final Color color;
+  final Color bgColor;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppColors.r8,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: AppColors.r8,
+          ),
+          child: Icon(icon, size: 16, color: color),
         ),
       ),
     );
@@ -2189,8 +2468,20 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   @override
   Widget build(BuildContext context) {
     final count = widget.vm.countForSection(widget.section.id);
+    final hasStudents = count > 0;
     final sch = widget.section.schedule;
-    final timeStr = '${sch.days.join(", ")} · ${sch.startTime}';
+    final days = sch.days.isEmpty ? '' : sch.days.join(', ');
+    final rawEnd = sch.endTime.trim();
+    final endDisplay = (rawEnd.isEmpty ||
+            rawEnd == sch.timezone ||
+            rawEnd.toUpperCase() == 'UTC')
+        ? ''
+        : rawEnd;
+    final time = sch.startTime.isNotEmpty
+        ? (endDisplay.isNotEmpty
+            ? '${sch.startTime} – $endDisplay'
+            : sch.startTime)
+        : '';
     final filtered = _search.isEmpty
         ? _students
         : _students
@@ -2217,102 +2508,185 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       ),
       child: Column(
         children: [
-          Material(
-            color: Colors.transparent,
+          ClipRRect(
             borderRadius: _expanded
                 ? const BorderRadius.vertical(top: Radius.circular(16))
                 : AppColors.r16,
-            child: InkWell(
-              onTap: _toggle,
-              borderRadius: _expanded
-                  ? const BorderRadius.vertical(top: Radius.circular(16))
-                  : AppColors.r16,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: count > 0
-                            ? AppColors.accentSoft
-                            : AppColors.primarySoft,
-                        borderRadius: AppColors.r12,
-                      ),
-                      child: Icon(
-                        Icons.groups_2_rounded,
-                        color: count > 0 ? AppColors.accent : AppColors.primary,
-                        size: 19,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.section.name.isEmpty
-                                ? 'Unnamed Section'
-                                : widget.section.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: AppColors.ink,
-                            ),
-                          ),
-                          Text(
-                            timeStr,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkMid,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: count > 0
-                            ? AppColors.accentSoft
-                            : AppColors.surfaceAlt,
-                        borderRadius: AppColors.r20,
-                      ),
-                      child: _importing
-                          ? const SizedBox(
-                              width: 36,
-                              height: 12,
-                              child: LinearProgressIndicator(
-                                color: AppColors.accent,
-                                backgroundColor: AppColors.accentSoft,
-                              ),
-                            )
-                          : Text(
-                              '$count student${count == 1 ? "" : "s"}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: count > 0
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _toggle,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Avatar
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: hasStudents
+                              ? AppColors.accentSoft
+                              : AppColors.primarySoft,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: (hasStudents
                                     ? AppColors.accent
-                                    : AppColors.inkLight,
-                              ),
-                            ),
-                    ),
-                    const SizedBox(width: 6),
-                    AnimatedRotation(
-                      turns: _expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 220),
-                      child: const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.inkLight,
-                        size: 20,
+                                    : AppColors.primary)
+                                .withOpacity(0.18),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.groups_2_rounded,
+                          color: hasStudents
+                              ? AppColors.accent
+                              : AppColors.primary,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      // Name + meta
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              widget.section.name.isEmpty
+                                  ? 'Unnamed Section'
+                                  : widget.section.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: AppColors.ink,
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (days.isNotEmpty || time.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  if (days.isNotEmpty) ...[
+                                    const Icon(
+                                      Icons.calendar_today_rounded,
+                                      size: 10,
+                                      color: AppColors.inkLight,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        days,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkMid,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (days.isNotEmpty && time.isNotEmpty)
+                                    const Padding(
+                                      padding:
+                                          EdgeInsets.symmetric(horizontal: 5),
+                                      child: Text(
+                                        '·',
+                                        style: TextStyle(
+                                          color: AppColors.inkLight,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  if (time.isNotEmpty) ...[
+                                    const Icon(
+                                      Icons.schedule_rounded,
+                                      size: 10,
+                                      color: AppColors.inkLight,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        time,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkMid,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Student count pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: hasStudents
+                              ? AppColors.accentSoft
+                              : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r20,
+                          border: Border.all(
+                            color: hasStudents
+                                ? AppColors.accent.withOpacity(0.3)
+                                : AppColors.border,
+                          ),
+                        ),
+                        child: _importing
+                            ? const SizedBox(
+                                width: 36,
+                                height: 11,
+                                child: LinearProgressIndicator(
+                                  color: AppColors.accent,
+                                  backgroundColor: AppColors.accentSoft,
+                                ),
+                              )
+                            : Text(
+                                '$count student${count == 1 ? "" : "s"}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: hasStudents
+                                      ? AppColors.accent
+                                      : AppColors.inkLight,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 6),
+                      // Chevron
+                      AnimatedRotation(
+                        turns: _expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 220),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: _expanded
+                                ? AppColors.primarySoft
+                                : AppColors.surfaceAlt,
+                            borderRadius: AppColors.r8,
+                          ),
+                          child: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: _expanded
+                                ? AppColors.primary
+                                : AppColors.inkMid,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2323,6 +2697,49 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
             child: _expanded
                 ? Column(
                     children: [
+                      const Divider(height: 1, color: AppColors.border),
+                      // ── Schedule info strip ─────────────────────────────
+                      Container(
+                        color: AppColors.surfaceAlt,
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _SectionInfoCell(
+                                icon: Icons.calendar_today_rounded,
+                                label: 'DAYS',
+                                value: days.isNotEmpty ? days : '—',
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 32,
+                              color: AppColors.border,
+                            ),
+                            Expanded(
+                              child: _SectionInfoCell(
+                                icon: Icons.schedule_rounded,
+                                label: 'TIME',
+                                value: time.isNotEmpty ? time : '—',
+                              ),
+                            ),
+                            if (widget.section.location.isNotEmpty) ...[
+                              Container(
+                                width: 1,
+                                height: 32,
+                                color: AppColors.border,
+                              ),
+                              Expanded(
+                                child: _SectionInfoCell(
+                                  icon: Icons.location_on_rounded,
+                                  label: 'ROOM',
+                                  value: widget.section.location,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                       const Divider(height: 1, color: AppColors.border),
                       Padding(
                         padding: const EdgeInsets.all(12),

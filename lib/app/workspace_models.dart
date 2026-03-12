@@ -5,28 +5,49 @@
 // FIX: Workspace.officeHours correctly parses both the combined 'office_hours'
 //      field and the split start/end UI fields.
 // FIX: Student moved here from api_client.dart — one canonical model.
+// UPDATE: WorkspaceSummary now includes sectionsCount, studentsCount, updatedAt
+//         so the home screen can display real numbers without opening each workspace.
 
 import '../utils/schedule_utils.dart';
 
 class WorkspaceSummary {
   final String id;
   final String createdAt;
+  final String? updatedAtRaw;
   final String originalFilename;
   final String pdfHash;
   final String title;
   final String status;
+  final int sectionsCount;
+  final int studentsCount;
 
   const WorkspaceSummary({
     required this.id,
     required this.createdAt,
+    this.updatedAtRaw,
     required this.originalFilename,
     required this.pdfHash,
     required this.title,
     required this.status,
+    this.sectionsCount = 0,
+    this.studentsCount = 0,
   });
+
+  /// Parsed updatedAt — prefers updated_at, falls back to created_at.
+  DateTime? get updatedAt {
+    final raw = (updatedAtRaw?.isNotEmpty == true) ? updatedAtRaw! : createdAt;
+    if (raw.isEmpty) return null;
+    try {
+      return DateTime.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
 
   factory WorkspaceSummary.fromJson(Map<String, dynamic> j) {
     final fields = (j['fields'] as Map?) ?? {};
+
+    // Resolve title from fields map
     String title = '';
     for (final key in ['course_name', 'course_title']) {
       final v = (fields[key] ?? '').toString().trim();
@@ -35,13 +56,39 @@ class WorkspaceSummary {
         break;
       }
     }
+
+    // sections_count: backend may expose this at the summary level
+    final sectionsRaw = j['sections'] as List?;
+    final sectionsCount = sectionsRaw != null
+        ? sectionsRaw.length
+        : (int.tryParse(
+                (j['sections_count'] ?? j['section_count'] ?? 0).toString()) ??
+            0);
+
+    // students_count: total across all sections
+    int studentsCount = int.tryParse(
+            (j['students_count'] ?? j['student_count'] ?? 0).toString()) ??
+        0;
+    // If sections list is embedded, sum from there as well
+    if (sectionsRaw != null && studentsCount == 0) {
+      for (final s in sectionsRaw) {
+        final sc = s as Map?;
+        if (sc == null) continue;
+        studentsCount +=
+            int.tryParse((sc['students_count'] ?? 0).toString()) ?? 0;
+      }
+    }
+
     return WorkspaceSummary(
       id: (j['id'] ?? '').toString(),
       createdAt: (j['created_at'] ?? '').toString(),
+      updatedAtRaw: j['updated_at']?.toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['pdf_hash'] ?? '').toString(),
       title: title.isEmpty ? 'Untitled Course' : title,
       status: (j['status'] ?? 'draft').toString(),
+      sectionsCount: sectionsCount,
+      studentsCount: studentsCount,
     );
   }
 }
@@ -49,6 +96,7 @@ class WorkspaceSummary {
 class Workspace {
   final String id;
   final String createdAt;
+  final String? updatedAtRaw;
   final String originalFilename;
   final String pdfHash;
   final String status;
@@ -59,6 +107,7 @@ class Workspace {
   const Workspace({
     required this.id,
     required this.createdAt,
+    this.updatedAtRaw,
     required this.originalFilename,
     required this.pdfHash,
     required this.status,
@@ -73,6 +122,7 @@ class Workspace {
     return Workspace(
       id: (j['id'] ?? '').toString(),
       createdAt: (j['created_at'] ?? '').toString(),
+      updatedAtRaw: j['updated_at']?.toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['pdf_hash'] ?? '').toString(),
       status: (j['status'] ?? 'draft').toString(),
@@ -87,6 +137,16 @@ class Workspace {
   }
 
   bool get isReady => status == 'ready';
+
+  DateTime? get updatedAt {
+    final raw = (updatedAtRaw?.isNotEmpty == true) ? updatedAtRaw! : createdAt;
+    if (raw.isEmpty) return null;
+    try {
+      return DateTime.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
 
   String get title {
     for (final key in [
@@ -111,6 +171,27 @@ class Workspace {
     if (start.isNotEmpty && end.isNotEmpty) return '$start – $end';
     if (start.isNotEmpty) return start;
     return '';
+  }
+
+  /// Converts this full Workspace into a WorkspaceSummary with real counts.
+  WorkspaceSummary toSummary() {
+    int totalStudents = studentsCount;
+    if (totalStudents == 0) {
+      for (final s in sections) {
+        totalStudents += s.studentsCount;
+      }
+    }
+    return WorkspaceSummary(
+      id: id,
+      createdAt: createdAt,
+      updatedAtRaw: updatedAtRaw,
+      originalFilename: originalFilename,
+      pdfHash: pdfHash,
+      title: title,
+      status: status,
+      sectionsCount: sections.length,
+      studentsCount: totalStudents,
+    );
   }
 }
 
@@ -164,10 +245,6 @@ class SectionSchedule {
 
   factory SectionSchedule.fromJson(Map<String, dynamic> j) {
     final daysRaw = (j['days'] as List?) ?? [];
-
-    // FIX: guard end_time — if it's missing or equals the timezone string,
-    // treat as empty. Previously a missing end_time key fell back to
-    // j['timezone'] in some call paths, causing "UTC" to render as the time.
     final rawEnd = (j['end_time'] ?? '').toString().trim();
     final rawStart = (j['start_time'] ?? '').toString().trim();
     final rawTz = (j['timezone'] ?? 'UTC').toString().trim();
@@ -175,9 +252,7 @@ class SectionSchedule {
     return SectionSchedule(
       days: daysRaw.map((e) => e.toString()).toList(),
       startTime: rawStart,
-      // FIX: never let endTime hold a timezone string
-      endTime:
-          (rawEnd == rawTz ||
+      endTime: (rawEnd == rawTz ||
               rawEnd.toUpperCase() == 'UTC' &&
                   rawStart.isNotEmpty &&
                   rawEnd == rawTz)
@@ -213,17 +288,17 @@ class SectionDraft {
   int reminderMinutes = 10;
 
   Map<String, dynamic> toJson() => {
-    'name': name,
-    'instructor_name': instructorName,
-    'location': location,
-    'schedule': {
-      'days': days,
-      'start_time': startTime,
-      'end_time': endTime,
-      'timezone': timezone,
-      'reminder_minutes': reminderMinutes,
-    },
-  };
+        'name': name,
+        'instructor_name': instructorName,
+        'location': location,
+        'schedule': {
+          'days': days,
+          'start_time': startTime,
+          'end_time': endTime,
+          'timezone': timezone,
+          'reminder_minutes': reminderMinutes,
+        },
+      };
 }
 
 /// FIX: Moved from api_client.dart — one canonical Student model.
@@ -241,9 +316,9 @@ class Student {
   });
 
   factory Student.fromJson(Map<String, dynamic> j) => Student(
-    studentId: (j['student_id'] ?? j['id'] ?? '').toString(),
-    name: (j['name'] ?? '').toString(),
-    email: (j['email'] ?? '').toString(),
-    studentNo: (j['student_no'] ?? '').toString(),
-  );
+        studentId: (j['student_id'] ?? j['id'] ?? '').toString(),
+        name: (j['name'] ?? '').toString(),
+        email: (j['email'] ?? '').toString(),
+        studentNo: (j['student_no'] ?? '').toString(),
+      );
 }
