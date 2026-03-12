@@ -14,13 +14,11 @@ const _fieldLabels = {
   'course_name': 'Course Name',
   'course_code': 'Course Code',
   'semester': 'Semester',
-  'instructor_email': 'Instructor Email',
 };
 const _fieldIcons = {
   'course_name': Icons.book_rounded,
   'course_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
-  'instructor_email': Icons.email_outlined,
 };
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -47,110 +45,13 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     'course_name',
     'course_code',
     'semester',
-    'instructor_email',
   ];
-
-  // Office hours slots: each slot = {days: List<String>, start: String, end: String}
-  List<Map<String, dynamic>> _ohSlots = [];
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
     _syncControllersFromWorkspace();
-    _loadOhSlots();
-  }
-
-  void _loadOhSlots() {
-    final ws = widget.vm.current;
-    if (ws == null) return;
-    const validDays = {'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'};
-    final raw = ws.fields['office_hours'] ?? '';
-    if (raw.contains('|')) {
-      try {
-        final parsed = raw
-            .split(';')
-            .map((slot) {
-              final parts = slot.split('|');
-              final cleanDays =
-                  (parts.isNotEmpty ? parts[0].split(',') : <String>[])
-                      .map((d) => d.trim())
-                      .where((d) => validDays.contains(d))
-                      .toList();
-              return <String, dynamic>{
-                'days': cleanDays,
-                'start': parts.length > 1 ? parts[1].trim() : '',
-                'end': parts.length > 2 ? parts[2].trim() : '',
-              };
-            })
-            .where((s) => (s['start'] as String).isNotEmpty)
-            .toList();
-        if (parsed.isNotEmpty) {
-          _ohSlots = parsed;
-          return;
-        }
-      } catch (_) {}
-    }
-    // Legacy fallback: "09:00" or "09:00 – 11:00"
-    final parts = raw.split(' – ');
-    _ohSlots = [
-      {
-        'days': <String>[],
-        'start': parts[0].trim(),
-        'end': parts.length > 1 ? parts[1].trim() : '',
-      },
-    ];
-  }
-
-  String _encodeOhSlots() {
-    return _ohSlots.map((s) {
-      final days = (s['days'] as List).join(',');
-      final start = s['start'] as String? ?? '';
-      final end = s['end'] as String? ?? '';
-      return '$days|$start|$end';
-    }).join(';');
-  }
-
-  /// Validate all OH slots — returns error string or null
-  String? _validateOhSlots() {
-    if (_ohSlots.isEmpty) return null; // optional field
-    for (int i = 0; i < _ohSlots.length; i++) {
-      final slot = _ohSlots[i];
-      final days = slot['days'] as List;
-      final start = (slot['start'] as String? ?? '').trim();
-      final end = (slot['end'] as String? ?? '').trim();
-
-      if (days.isEmpty) return 'Slot ${i + 1}: please select at least one day.';
-      if (start.isEmpty) return 'Slot ${i + 1}: start time is required.';
-      if (end.isEmpty) return 'Slot ${i + 1}: end time is required.';
-
-      final startMins = _parseTimeToMins(start);
-      final endMins = _parseTimeToMins(end);
-      if (startMins == null)
-        return 'Slot ${i + 1}: invalid start time "$start".';
-      if (endMins == null) return 'Slot ${i + 1}: invalid end time "$end".';
-      if (endMins <= startMins) {
-        return 'Slot ${i + 1}: end time must be after start time ($start → $end).';
-      }
-    }
-    return null;
-  }
-
-  /// Parse "9:30 AM" or "09:30" → total minutes from midnight
-  int? _parseTimeToMins(String val) {
-    if (val.isEmpty) return null;
-    final upper = val.toUpperCase();
-    final isPM = upper.contains('PM');
-    final isAM = upper.contains('AM');
-    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
-    final parts = clean.split(':');
-    if (parts.length < 2) return null;
-    int? h = int.tryParse(parts[0].trim());
-    int? m = int.tryParse(parts[1].trim());
-    if (h == null || m == null) return null;
-    if (isPM && h != 12) h += 12;
-    if (isAM && h == 12) h = 0;
-    return h * 60 + m;
   }
 
   @override
@@ -158,7 +59,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     super.didUpdateWidget(old);
     if (old.vm.current != widget.vm.current) {
       _syncControllersFromWorkspace();
-      _loadOhSlots(); // reload OH slots when workspace changes
     }
   }
 
@@ -223,13 +123,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
         return Scaffold(
           backgroundColor: AppColors.bg,
-          // FIX: Wrap in ScrollConfiguration to disable the auto-injected web
-          // Scrollbar. Flutter's MaterialScrollBehavior on web wraps every
-          // scrollable with a Scrollbar that requires a single ScrollPosition.
-          // NestedScrollView creates multiple ScrollPositions internally, so
-          // the injected Scrollbar crashes with "attached to more than one
-          // ScrollPosition" whenever an AnimationController (e.g. the bell
-          // shake) notifies its status listeners during a scroll event.
           body: ScrollConfiguration(
             behavior: ScrollConfiguration.of(
               context,
@@ -313,9 +206,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                 editableKeys: _editableKeys,
                                 ctrl: _ctrl,
                                 onSave: _onSave,
-                                ohSlots: _ohSlots,
-                                onOhChanged: (slots) =>
-                                    setState(() => _ohSlots = slots),
                               ),
                               _SectionsTab(
                                 ws: ws,
@@ -347,7 +237,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                 ],
               ),
             ),
-          ), // ScrollConfiguration
+          ),
         );
       },
     );
@@ -479,18 +369,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   }
 
   Future<void> _onSave() async {
-    // Validate OH slots before saving
-    final ohError = _validateOhSlots();
-    if (ohError != null) {
-      _showError(ohError);
-      return;
-    }
-
     final updated = {
       for (final k in _editableKeys) k: (_fieldCtrl[k]?.text.trim() ?? ''),
-      // workspaces_vm.updateFields() picks up 'office_hours_start' and
-      // writes it to the real DB column 'office_hours'.
-      'office_hours_start': _encodeOhSlots(),
     };
     await widget.vm.updateFields(updated);
     if (!mounted) return;
@@ -642,15 +522,11 @@ class _InfoTab extends StatefulWidget {
     required this.editableKeys,
     required this.ctrl,
     required this.onSave,
-    required this.ohSlots,
-    required this.onOhChanged,
   });
   final Workspace ws;
   final List<String> editableKeys;
   final TextEditingController Function(String, String) ctrl;
   final Future<void> Function() onSave;
-  final List<Map<String, dynamic>> ohSlots;
-  final void Function(List<Map<String, dynamic>>) onOhChanged;
 
   @override
   State<_InfoTab> createState() => _InfoTabState();
@@ -659,15 +535,6 @@ class _InfoTab extends StatefulWidget {
 String? _validateField(String key, String value) {
   final v = value.trim();
   if (v.isEmpty) return '${_fieldLabels[key] ?? key} is required';
-  switch (key) {
-    case 'instructor_email':
-      final emailRe = RegExp(
-        r'^[\w.+-]+@[\w-]+(\.[\w-]+)+$',
-        caseSensitive: false,
-      );
-      if (!emailRe.hasMatch(v)) return 'Enter a valid email address';
-      break;
-  }
   return null;
 }
 
@@ -691,7 +558,6 @@ class _InfoTabState extends State<_InfoTab>
       final err = _validateField(key, val);
       if (err != null) _errors[key] = err;
     }
-
     return _errors.isEmpty;
   }
 
@@ -717,7 +583,6 @@ class _InfoTabState extends State<_InfoTab>
 
   TextInputType _keyboardType(String key) {
     if (_numericKeys.contains(key)) return TextInputType.number;
-    if (key == 'instructor_email') return TextInputType.emailAddress;
     return TextInputType.text;
   }
 
@@ -790,15 +655,6 @@ class _InfoTabState extends State<_InfoTab>
                   ],
                 );
               }),
-              // ── Office Hours Slots ──────────────────────────────────
-              const Divider(height: 1, color: AppColors.border),
-              _OfficeHoursSlotsWidget(
-                slots: widget.ohSlots,
-                onChanged: (slots) {
-                  widget.onOhChanged(slots);
-                  setState(() => _dirty = true);
-                },
-              ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
@@ -1095,8 +951,6 @@ String _hintFor(String key) {
       return 'e.g. CS101';
     case 'semester':
       return 'e.g. Fall 2025';
-    case 'instructor_email':
-      return 'e.g. prof@university.edu';
     default:
       return '';
   }
@@ -1154,9 +1008,8 @@ class _SectionsTabState extends State<_SectionsTab>
     if (h == 0)
       h = 12;
     else if (h > 12 && !isPM)
-      h -= 12; // handle 24h legacy input
+      h -= 12;
     else if (h > 12) h -= 12;
-    // Snap to nearest 5-min slot
     int minIdx = 0, minDist = 999;
     for (int j = 0; j < _minLabels.length; j++) {
       final d = (int.parse(_minLabels[j]) - m).abs();
@@ -1314,7 +1167,7 @@ class _SectionsTabState extends State<_SectionsTab>
   }
 }
 
-// ─── Section sheet content (StatefulWidget — controllers disposed by Flutter lifecycle) ─
+// ─── Section sheet content ────────────────────────────────────────────────────
 class _SectionSheetContent extends StatefulWidget {
   const _SectionSheetContent({
     required this.editing,
@@ -1342,7 +1195,6 @@ class _SectionSheetContent extends StatefulWidget {
 }
 
 class _SectionSheetContentState extends State<_SectionSheetContent> {
-  // Controllers owned here — disposed by Flutter when the widget is removed
   late final TextEditingController _nameCtrl;
   late final TextEditingController _locationCtrl;
 
@@ -1377,8 +1229,6 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
 
   @override
   void dispose() {
-    // Flutter calls this AFTER the widget tree is fully unmounted,
-    // so the IME / FocusNode have already detached — no more crash.
     _nameCtrl.dispose();
     _locationCtrl.dispose();
     super.dispose();
@@ -1560,7 +1410,6 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
         controller: scrollCtrl,
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
         children: [
-          // Handle
           Center(
             child: Container(
               width: 36,
@@ -1823,21 +1672,24 @@ class _SectionCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onViewStudents;
 
+  static const _allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
   @override
   Widget build(BuildContext context) {
     final sch = section.schedule;
-    final days = sch.days.isEmpty ? 'No days set' : sch.days.join(', ');
+    final activeDays = sch.days.toSet();
     final rawEnd = sch.endTime.trim();
     final endDisplay = (rawEnd.isEmpty ||
             rawEnd == sch.timezone ||
             rawEnd.toUpperCase() == 'UTC')
         ? ''
         : rawEnd;
-    final time = sch.startTime.isNotEmpty
+    final hasTime = sch.startTime.isNotEmpty;
+    final timeString = hasTime
         ? (endDisplay.isNotEmpty
             ? '${sch.startTime} – $endDisplay'
             : sch.startTime)
-        : 'No time set';
+        : null;
 
     return Container(
       decoration: BoxDecoration(
@@ -1849,25 +1701,11 @@ class _SectionCard extends StatelessWidget {
       clipBehavior: Clip.hardEdge,
       child: Column(
         children: [
-          // ── Top gradient accent bar ──────────────────────────────────────
-          Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary,
-                  Color(0xFF9B78E0),
-                  AppColors.accent
-                ],
-              ),
-            ),
-          ),
-
-          // ── Header ──────────────────────────────────────────────────────
+          // ── Header row ───────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Avatar
                 Container(
@@ -1888,7 +1726,7 @@ class _SectionCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Name + location badge
+                // Name + badges
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1907,52 +1745,18 @@ class _SectionCard extends StatelessWidget {
                       const SizedBox(height: 5),
                       Row(
                         children: [
-                          // "Section" label
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.primarySoft,
-                              borderRadius: AppColors.r8,
-                            ),
-                            child: const Text(
-                              'Section',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
+                          _Badge(
+                            label: 'Section',
+                            color: AppColors.primary,
+                            bgColor: AppColors.primarySoft,
                           ),
                           if (section.location.isNotEmpty) ...[
                             const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 7, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.accentSoft,
-                                borderRadius: AppColors.r8,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.location_on_rounded,
-                                      size: 10, color: AppColors.accent),
-                                  const SizedBox(width: 3),
-                                  Flexible(
-                                    child: Text(
-                                      section.location,
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: AppColors.accent,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            _Badge(
+                              icon: Icons.location_on_rounded,
+                              label: section.location,
+                              color: AppColors.accent,
+                              bgColor: AppColors.accentSoft,
                             ),
                           ],
                         ],
@@ -2008,150 +1812,100 @@ class _SectionCard extends StatelessWidget {
             ),
           ),
 
-          // ── Schedule info band ───────────────────────────────────────────
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceAlt,
-              borderRadius: AppColors.r12,
-              border: Border.all(color: AppColors.border),
-            ),
-            child: IntrinsicHeight(
+          // ── Schedule block ───────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceAlt,
+                borderRadius: AppColors.r12,
+                border: Border.all(color: AppColors.border),
+              ),
               child: Row(
                 children: [
-                  // Days cell
+                  // ── Day pills ──────────────────────────────────────────
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: const [
-                              Icon(Icons.calendar_today_rounded,
-                                  size: 10, color: AppColors.primary),
-                              SizedBox(width: 4),
-                              Text(
-                                'DAYS',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primary,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            days,
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.inkMid,
-                              height: 1.3,
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: _allDays.map((d) {
+                        final active = activeDays.contains(d);
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          width: 32,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color:
+                                active ? AppColors.primary : AppColors.surface,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color:
+                                  active ? AppColors.primary : AppColors.border,
+                              width: active ? 0 : 1,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ],
-                      ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            d.substring(0, 1), // M, T, W …
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: active ? Colors.white : AppColors.inkLight,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
-                  // Divider
-                  Container(width: 1, color: AppColors.border),
-                  // Time cell
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(width: 12),
+                  // ── Vertical divider ───────────────────────────────────
+                  Container(width: 1, height: 36, color: AppColors.border),
+                  const SizedBox(width: 12),
+                  // ── Time ──────────────────────────────────────────────
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: const [
-                              Icon(Icons.schedule_rounded,
-                                  size: 10, color: AppColors.primary),
-                              SizedBox(width: 4),
-                              Text(
-                                'TIME',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primary,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ],
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 11,
+                            color: hasTime
+                                ? AppColors.primary
+                                : AppColors.inkLight,
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(width: 4),
                           Text(
-                            time,
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.inkMid,
-                              height: 1.3,
+                            'TIME',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: hasTime
+                                  ? AppColors.primary
+                                  : AppColors.inkLight,
+                              letterSpacing: 0.9,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 5),
+                      Text(
+                        timeString ?? '—',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: hasTime ? AppColors.ink : AppColors.inkLight,
+                          height: 1.2,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ),
-          ),
-
-          // ── View Students CTA ────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Material(
-              color: Colors.transparent,
-              borderRadius: AppColors.r12,
-              child: InkWell(
-                onTap: onViewStudents,
-                borderRadius: AppColors.r12,
-                child: Ink(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary.withOpacity(0.08),
-                        AppColors.primary.withOpacity(0.04),
-                      ],
-                    ),
-                    borderRadius: AppColors.r12,
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.25),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 11, horizontal: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.people_alt_rounded,
-                            color: AppColors.primary, size: 16),
-                        SizedBox(width: 8),
-                        Text(
-                          'View Students',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                        SizedBox(width: 6),
-                        Icon(Icons.arrow_forward_rounded,
-                            color: AppColors.primary, size: 14),
-                      ],
-                    ),
-                  ),
-                ),
               ),
             ),
           ),
@@ -2161,7 +1915,53 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// ─── Section info cell (label + value, used in 2-col grid) ───────────────────
+// ─── Reusable badge chip ──────────────────────────────────────────────────────
+class _Badge extends StatelessWidget {
+  const _Badge({
+    required this.label,
+    required this.color,
+    required this.bgColor,
+    this.icon,
+  });
+  final String label;
+  final Color color;
+  final Color bgColor;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: AppColors.r8,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 10, color: color),
+            const SizedBox(width: 3),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: color,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Section info cell ────────────────────────────────────────────────────────
 class _SectionInfoCell extends StatelessWidget {
   const _SectionInfoCell({
     required this.icon,
@@ -2212,7 +2012,7 @@ class _SectionInfoCell extends StatelessWidget {
   }
 }
 
-// ─── Info chip (used inside section card) ────────────────────────────────────
+// ─── Info chip ────────────────────────────────────────────────────────────────
 class _InfoChip extends StatelessWidget {
   const _InfoChip({required this.icon, required this.label});
   final IconData icon;
@@ -2250,7 +2050,7 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
-// ─── Small icon action button ────────────────────────────────────────────────
+// ─── Small icon action button ─────────────────────────────────────────────────
 class _IconAction extends StatelessWidget {
   const _IconAction({
     required this.icon,
@@ -2408,10 +2208,13 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       widget.onError('File has no data.');
       return;
     }
+    // AFTER — read live section from VM
 
-    // ── Detect same vs different file using SHA-256 ───────────────────────
     final newHash = sha256.convert(bytes).toString();
-    final storedHash = widget.section.lastImportHash;
+    final liveSection = widget.vm.current?.sections.firstWhere(
+        (s) => s.id == widget.section.id,
+        orElse: () => widget.section);
+    final storedHash = liveSection?.lastImportHash ?? '';
     final isSameFile = storedHash.isNotEmpty && newHash == storedHash;
     final existingCount = _students.isNotEmpty
         ? _students.length
@@ -2432,7 +2235,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       if (!confirmed) return;
     }
 
-    // ── Upload ────────────────────────────────────────────────────────────
     setState(() => _importing = true);
     try {
       final result = await widget.vm.api.importStudents(
@@ -2443,6 +2245,10 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       );
       widget.vm.recordImport(widget.section.id, result.imported);
       await _loadRoster();
+      // Silently refresh _current so lastImportHash is up to date for next import
+      widget.vm.api.getWorkspace(widget.ws.id).then((fresh) {
+        widget.vm.current = fresh;
+      }).catchError((_) {});
       if (mounted) {
         setState(() => _importing = false);
         ScaffoldMessenger.of(ctx).showSnackBar(
@@ -2697,49 +2503,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
             child: _expanded
                 ? Column(
                     children: [
-                      const Divider(height: 1, color: AppColors.border),
-                      // ── Schedule info strip ─────────────────────────────
-                      Container(
-                        color: AppColors.surfaceAlt,
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _SectionInfoCell(
-                                icon: Icons.calendar_today_rounded,
-                                label: 'DAYS',
-                                value: days.isNotEmpty ? days : '—',
-                              ),
-                            ),
-                            Container(
-                              width: 1,
-                              height: 32,
-                              color: AppColors.border,
-                            ),
-                            Expanded(
-                              child: _SectionInfoCell(
-                                icon: Icons.schedule_rounded,
-                                label: 'TIME',
-                                value: time.isNotEmpty ? time : '—',
-                              ),
-                            ),
-                            if (widget.section.location.isNotEmpty) ...[
-                              Container(
-                                width: 1,
-                                height: 32,
-                                color: AppColors.border,
-                              ),
-                              Expanded(
-                                child: _SectionInfoCell(
-                                  icon: Icons.location_on_rounded,
-                                  label: 'ROOM',
-                                  value: widget.section.location,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
                       const Divider(height: 1, color: AppColors.border),
                       Padding(
                         padding: const EdgeInsets.all(12),
@@ -3148,9 +2911,10 @@ class _AskEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final suggestions = [
-      'What is the grading policy?',
+      'What is the grading breakdown?',
       'What are the attendance rules?',
       'What textbooks are required?',
+      'when is the midterm?'
     ];
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -3347,562 +3111,6 @@ class _TypingIndicator extends StatelessWidget {
           ),
         ),
       );
-}
-
-// ── Office Hours Slots Widget ─────────────────────────────────────────────────
-// Professional day-picker + time-range per slot, add/remove slots freely.
-class _OfficeHoursSlotsWidget extends StatefulWidget {
-  const _OfficeHoursSlotsWidget({required this.slots, required this.onChanged});
-  final List<Map<String, dynamic>> slots;
-  final void Function(List<Map<String, dynamic>>) onChanged;
-
-  @override
-  State<_OfficeHoursSlotsWidget> createState() =>
-      _OfficeHoursSlotsWidgetState();
-}
-
-class _OfficeHoursSlotsWidgetState extends State<_OfficeHoursSlotsWidget> {
-  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  static final List<String> _minLabels = [
-    '00',
-    '05',
-    '10',
-    '15',
-    '20',
-    '25',
-    '30',
-    '35',
-    '40',
-    '45',
-    '50',
-    '55',
-  ];
-
-  List<Map<String, dynamic>> get _slots => widget.slots;
-  void _notify() => widget.onChanged(List.of(_slots));
-
-  void _addSlot() {
-    setState(() => _slots.add({'days': <String>[], 'start': '', 'end': ''}));
-    _notify();
-  }
-
-  void _removeSlot(int i) {
-    setState(() => _slots.removeAt(i));
-    _notify();
-  }
-
-  ({int hour, int minIdx, bool isPM}) _parse(String val) {
-    if (val.isEmpty) return (hour: 9, minIdx: 0, isPM: false);
-    final upper = val.toUpperCase();
-    final isPM = upper.contains('PM');
-    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
-    final parts = clean.split(':');
-    int h = int.tryParse(parts[0].trim()) ?? 9;
-    int m = int.tryParse(parts.length > 1 ? parts[1].trim() : '0') ?? 0;
-    if (h == 0)
-      h = 12;
-    else if (h > 12) h -= 12;
-    int minIdx = 0;
-    int minDist = 999;
-    for (int j = 0; j < _minLabels.length; j++) {
-      final d = (int.parse(_minLabels[j]) - m).abs();
-      if (d < minDist) {
-        minDist = d;
-        minIdx = j;
-      }
-    }
-    return (hour: h, minIdx: minIdx, isPM: isPM);
-  }
-
-  String _format(int hour12, int minIdx, bool isPM) =>
-      '$hour12:${_minLabels[minIdx]} ${isPM ? "PM" : "AM"}';
-
-  void _setSlot(int i, {List<String>? days, String? start, String? end}) {
-    setState(() {
-      if (days != null) _slots[i]['days'] = days;
-      if (start != null) _slots[i]['start'] = start;
-      if (end != null) _slots[i]['end'] = end;
-    });
-    _notify();
-  }
-
-  void _showSlotSheet(BuildContext ctx, int i) {
-    final slot = _slots[i];
-    List<String> selDays = List<String>.from(slot['days'] as List);
-    final startParsed = _parse(slot['start'] as String? ?? '');
-    final endParsed = _parse(slot['end'] as String? ?? '');
-    int startH = startParsed.hour, startM = startParsed.minIdx;
-    bool startPM = startParsed.isPM;
-    int endH = endParsed.hour, endM = endParsed.minIdx;
-    bool endPM = endParsed.isPM;
-
-    showModalBottomSheet(
-      context: ctx,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => StatefulBuilder(
-        builder: (bsCtx, setBS) {
-          Widget sectionLabel(String text) => Padding(
-                padding: const EdgeInsets.only(top: 18, bottom: 8),
-                child: Text(
-                  text,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.inkLight,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              );
-
-          Widget hourRow(int selHour, void Function(int) onSel) =>
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(12, (idx) {
-                    final h = idx + 1;
-                    final sel = selHour == h;
-                    return GestureDetector(
-                      onTap: () => setBS(() => onSel(h)),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 110),
-                        margin: const EdgeInsets.only(right: 6),
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: sel ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '$h',
-                          style: TextStyle(
-                            color: sel ? Colors.white : AppColors.ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              );
-
-          Widget minRow(int selMin, void Function(int) onSel) =>
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(_minLabels.length, (idx) {
-                    final sel = selMin == idx;
-                    return GestureDetector(
-                      onTap: () => setBS(() => onSel(idx)),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 110),
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: sel ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        child: Text(
-                          ':${_minLabels[idx]}',
-                          style: TextStyle(
-                            color: sel ? Colors.white : AppColors.ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              );
-
-          Widget ampmRow(bool isPM, void Function(bool) onSel) => Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt,
-                  borderRadius: AppColors.r10,
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final pm in [false, true])
-                      GestureDetector(
-                        onTap: () => setBS(() => onSel(pm)),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 110),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 11,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isPM == pm
-                                ? AppColors.primary
-                                : Colors.transparent,
-                            borderRadius: AppColors.r10,
-                          ),
-                          child: Text(
-                            pm ? 'PM' : 'AM',
-                            style: TextStyle(
-                              color:
-                                  isPM == pm ? Colors.white : AppColors.inkMid,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-
-          return DraggableScrollableSheet(
-            expand: false,
-            initialChildSize: 0.92,
-            minChildSize: 0.6,
-            maxChildSize: 0.96,
-            builder: (_, scrollCtrl) => ListView(
-              controller: scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Slot ${i + 1} — Office Hours',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    color: AppColors.ink,
-                  ),
-                ),
-                sectionLabel('DAYS'),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _days.map((d) {
-                    final sel = selDays.contains(d);
-                    return GestureDetector(
-                      onTap: () => setBS(() {
-                        sel ? selDays.remove(d) : selDays.add(d);
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 110),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: sel ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        child: Text(
-                          d,
-                          style: TextStyle(
-                            color: sel ? Colors.white : AppColors.inkMid,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                sectionLabel('START — HOUR'),
-                hourRow(startH, (h) => startH = h),
-                sectionLabel('START — MINUTES'),
-                minRow(startM, (m) => startM = m),
-                sectionLabel('START — PERIOD'),
-                ampmRow(startPM, (pm) => startPM = pm),
-                sectionLabel('END — HOUR'),
-                hourRow(endH, (h) => endH = h),
-                sectionLabel('END — MINUTES'),
-                minRow(endM, (m) => endM = m),
-                sectionLabel('END — PERIOD'),
-                ampmRow(endPM, (pm) => endPM = pm),
-                const SizedBox(height: 24),
-                Center(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primarySoft,
-                      borderRadius: AppColors.r20,
-                      border: Border.all(
-                        color: AppColors.primary.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Text(
-                      selDays.isEmpty
-                          ? '${_format(startH, startM, startPM)} → ${_format(endH, endM, endPM)}'
-                          : '${selDays.join(", ")}  ·  ${_format(startH, startM, startPM)} → ${_format(endH, endM, endPM)}',
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: AppColors.r12,
-                      ),
-                    ),
-                    onPressed: () {
-                      _setSlot(
-                        i,
-                        days: selDays,
-                        start: _format(startH, startM, startPM),
-                        end: _format(endH, endM, endPM),
-                      );
-                      Navigator.pop(bsCtx);
-                    },
-                    child: const Text(
-                      'Save',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.access_time_rounded,
-                color: AppColors.primary,
-                size: 15,
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                'Office Hours',
-                style: TextStyle(
-                  color: AppColors.inkLight,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: _addSlot,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySoft,
-                    borderRadius: AppColors.r20,
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.3),
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.add_rounded,
-                        size: 13,
-                        color: AppColors.primary,
-                      ),
-                      SizedBox(width: 3),
-                      Text(
-                        'Add slot',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_slots.isEmpty)
-            GestureDetector(
-              onTap: _addSlot,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt,
-                  borderRadius: AppColors.r12,
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Column(
-                  children: [
-                    Icon(
-                      Icons.add_circle_outline_rounded,
-                      color: AppColors.inkLight,
-                      size: 24,
-                    ),
-                    SizedBox(height: 6),
-                    Text(
-                      'Tap to add office hours',
-                      style: TextStyle(
-                        color: AppColors.inkLight,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            ...List.generate(_slots.length, (i) {
-              final slot = _slots[i];
-              final days = List<String>.from(slot['days'] as List);
-              final start = slot['start'] as String? ?? '';
-              final end = slot['end'] as String? ?? '';
-              final hasTime = start.isNotEmpty && end.isNotEmpty;
-              final hasDays = days.isNotEmpty;
-
-              return GestureDetector(
-                onTap: () => _showSlotSheet(context, i),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: AppColors.r12,
-                    border: Border.all(
-                      color: hasTime && hasDays
-                          ? AppColors.primary.withOpacity(0.25)
-                          : AppColors.border,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primarySoft,
-                          borderRadius: AppColors.r10,
-                        ),
-                        child: const Icon(
-                          Icons.access_time_rounded,
-                          color: AppColors.primary,
-                          size: 18,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              hasDays ? days.join(', ') : 'No days selected',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                color: hasDays
-                                    ? AppColors.ink
-                                    : AppColors.inkLight,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              hasTime ? '$start  →  $end' : 'Tap to set time',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: hasTime
-                                    ? AppColors.inkMid
-                                    : AppColors.inkLight,
-                                fontStyle: hasTime
-                                    ? FontStyle.normal
-                                    : FontStyle.italic,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.edit_outlined,
-                            size: 15,
-                            color: AppColors.inkLight,
-                          ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () => _removeSlot(i),
-                            child: const Icon(
-                              Icons.close_rounded,
-                              size: 16,
-                              color: AppColors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
 }
 
 // ─── Shared widgets ────────────────────────────────────────────────────────────
