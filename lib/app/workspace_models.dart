@@ -2,8 +2,6 @@
 //
 // FIX: SectionSchedule.formattedTimeRange now uses 12-h AM/PM format
 //      so "08:00 – 09:30" displays as "8:00 AM – 9:30 AM" in the UI.
-// FIX: Workspace.officeHours correctly parses both the combined 'office_hours'
-//      field and the split start/end UI fields.
 // FIX: Student moved here from api_client.dart — one canonical model.
 // UPDATE: WorkspaceSummary now includes sectionsCount, studentsCount, updatedAt
 //         so the home screen can display real numbers without opening each workspace.
@@ -160,17 +158,6 @@ class Workspace {
       if (v.isNotEmpty) return v;
     }
     return 'Untitled Course';
-  }
-
-  /// Returns the raw office_hours string, falling back to merged start–end.
-  String get officeHours {
-    final raw = (fields['office_hours'] ?? '').trim();
-    if (raw.isNotEmpty) return raw;
-    final start = (fields['office_hours_start'] ?? '').trim();
-    final end = (fields['office_hours_end'] ?? '').trim();
-    if (start.isNotEmpty && end.isNotEmpty) return '$start – $end';
-    if (start.isNotEmpty) return start;
-    return '';
   }
 
   /// Converts this full Workspace into a WorkspaceSummary with real counts.

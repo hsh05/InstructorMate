@@ -276,11 +276,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     if (ws == null) return;
 
     final payload = Map<String, String>.from(fields);
-    final ohEncoded = payload.remove('office_hours_start') ?? '';
-    payload.remove('office_hours_end');
-    if (ohEncoded.isNotEmpty) {
-      payload['office_hours'] = ohEncoded;
-    }
 
     loading = true;
     error = null;
