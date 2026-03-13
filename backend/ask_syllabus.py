@@ -112,7 +112,7 @@ class LightweightRetriever:
 
 
 class SyllabusChatGPT:
-    def __init__(self, model: str = "gpt-5") -> None:
+    def __init__(self, model: str = "gpt-4o-mini") -> None:
         self.client = OpenAI()
         self.model = model
 
@@ -187,7 +187,7 @@ def main() -> None:
     pipeline = AskPipeline(
         store=SyllabusCsvStore(csv_path),
         retriever=LightweightRetriever(top_k=12, score_threshold=2.0),
-        llm=SyllabusChatGPT(model="gpt-5"),
+        llm=SyllabusChatGPT(model="gpt-4o-mini"),
     )
 
     answer = pipeline.run(question)

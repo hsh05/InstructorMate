@@ -4,7 +4,7 @@
 # 1. Removed /reupload endpoint — no longer needed.
 # 2. Fixed temp-file leak in /ask: file write is now inside the try block.
 # 3. /upload now accepts .pdf and .docx (backend auto-detects by extension).
-# 4. Added _is_extracting state to workspace GET so Flutter knows to poll.
+
 
 import logging
 import os
@@ -145,11 +145,6 @@ def get_workspace(
     # FIX: expose whether background extraction is still running so Flutter
     # can poll until status == 'ready' and all required fields are filled.
     fields = d.get("fields", {})
-    d["is_extracting"] = (
-        d.get("status") == "draft"
-        and not fields.get("course_title")
-        and not fields.get("course_name")
-    )
     return {"workspace": d}
 
 

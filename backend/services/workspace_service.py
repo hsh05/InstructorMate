@@ -34,7 +34,7 @@ class WorkspaceService:
         self,
         repo: PgWorkspaceRepository,
         hash_service: PdfHashService,
-        converter_model: str = "gpt-4o",
+        converter_model: str = "gpt-4o-mini",
     ):
         self.repo         = repo
         self.hash_service = hash_service
