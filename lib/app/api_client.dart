@@ -1,4 +1,12 @@
 // lib/app/api_client.dart
+//
+// CHANGES vs original:
+// FIX #2 — GET requests now retry up to 2 times with exponential back-off on
+//           network errors or 5xx responses. Upload/mutation calls do NOT retry
+//           (they are not idempotent).
+// FIX #6 — reuploadSyllabus() removed entirely.
+// .docx is still accepted by importWorkspace (backend auto-detects).
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -50,6 +58,34 @@ class ApiClient {
     return baseUri.resolve(p);
   }
 
+  // ── FIX #2: Retry helper for GET requests ──────────────────────────────────
+  // Retries up to [maxAttempts] times on network errors or 5xx responses.
+  // Waits [base * 2^attempt] seconds between retries.
+  Future<http.Response> _getWithRetry(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 15),
+    int maxAttempts = 3,
+    Duration base = const Duration(milliseconds: 600),
+  }) async {
+    Exception? lastError;
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(base * (1 << (attempt - 1))); // 0.6s, 1.2s
+      }
+      try {
+        final resp = await http.get(uri).timeout(timeout);
+        if (resp.statusCode < 500)
+          return resp; // success or client error — don't retry
+        lastError = Exception('Server error ${resp.statusCode}');
+      } on TimeoutException catch (e) {
+        lastError = Exception('Request timed out: $e');
+      } catch (e) {
+        lastError = Exception('Network error: $e');
+      }
+    }
+    throw lastError ?? Exception('Request failed after $maxAttempts attempts');
+  }
+
   // ── Workspaces ─────────────────────────────────────────────────────────────
 
   Future<ImportWorkspaceResult> importWorkspace({
@@ -88,7 +124,7 @@ class ApiClient {
 
   Future<List<WorkspaceSummary>> listWorkspaces() async {
     final resp =
-        await http.get(_u('/workspaces')).timeout(AppConfig.shortTimeout);
+        await _getWithRetry(_u('/workspaces'), timeout: AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return (map['workspaces'] as List)
@@ -97,8 +133,8 @@ class ApiClient {
   }
 
   Future<Workspace> getWorkspace(String id) async {
-    final resp =
-        await http.get(_u('/workspaces/$id')).timeout(AppConfig.shortTimeout);
+    final resp = await _getWithRetry(_u('/workspaces/$id'),
+        timeout: AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
@@ -120,10 +156,6 @@ class ApiClient {
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
   }
 
-  // FIX: Returns Workspace by reading it from the create-section response body.
-  // Backend now returns {"section": ..., "workspace": ...} so we avoid a
-  // redundant GET. Falls back to getWorkspace if workspace key is absent
-  // (backwards compatibility with older backend deployments).
   Future<Workspace> createSection(String wid, SectionDraft d) async {
     final resp = await http
         .post(
@@ -142,10 +174,6 @@ class ApiClient {
     return getWorkspace(wid);
   }
 
-  /// Update an existing section in-place (PATCH).
-  /// Preserves the section_id so all students linked to it stay intact.
-  /// Backend route: PATCH /workspaces/{wid}/sections/{sectionId}
-  /// Expected response: {"workspace": {...}} or {"section": ..., "workspace": ...}
   Future<Workspace> updateSection(
     String wid,
     String sectionId,
@@ -163,7 +191,6 @@ class ApiClient {
     if (map['workspace'] != null) {
       return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
     }
-    // Fallback: fetch the workspace if backend doesn't return it inline
     return getWorkspace(wid);
   }
 
@@ -222,36 +249,15 @@ class ApiClient {
     String workspaceId,
     String sectionId,
   ) async {
-    final resp = await http
-        .get(_u('/workspaces/$workspaceId/sections/$sectionId/students'))
-        .timeout(AppConfig.shortTimeout);
+    final resp = await _getWithRetry(
+      _u('/workspaces/$workspaceId/sections/$sectionId/students'),
+      timeout: AppConfig.shortTimeout,
+    );
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return ((map['students'] as List?) ?? [])
         .map((e) => Student.fromJson(e as Map<String, dynamic>))
         .toList();
-  }
-
-  Future<Workspace> reuploadSyllabus({
-    required String workspaceId,
-    required Uint8List bytes,
-    required String filename,
-  }) async {
-    final req =
-        http.MultipartRequest('POST', _u('/workspaces/$workspaceId/reupload'))
-          ..files.add(
-            http.MultipartFile.fromBytes(
-              'file',
-              bytes,
-              filename: filename,
-              contentType: _contentTypeFor(filename),
-            ),
-          );
-    final streamed = await req.send().timeout(AppConfig.reuploadTimeout);
-    final resp = await http.Response.fromStream(streamed);
-    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
-    final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
   }
 
   Future<String> ask(String wid, String question) async {

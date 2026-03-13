@@ -224,12 +224,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                 scrollCtrl: _askScroll,
                                 asking: _asking,
                                 onAsk: _onAsk,
-                                onReupload: () async {
-                                  await widget.vm.reuploadSyllabus();
-                                  if (widget.vm.error != null) {
-                                    _showError(widget.vm.error!);
-                                  }
-                                },
                               ),
                             ],
                           ),
@@ -2771,59 +2765,18 @@ class _AskTab extends StatelessWidget {
     required this.scrollCtrl,
     required this.asking,
     required this.onAsk,
-    required this.onReupload,
+    // FIX #6: onReupload removed
   });
   final List<_ChatMsg> chat;
   final TextEditingController ctrl;
   final ScrollController scrollCtrl;
   final bool asking;
   final Future<void> Function(String) onAsk;
-  final VoidCallback onReupload;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Container(
-          width: double.infinity,
-          color: AppColors.surfaceAlt,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.picture_as_pdf_rounded,
-                color: AppColors.primary,
-                size: 15,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  "If AI isn't answering, re-upload the PDF.",
-                  style: TextStyle(fontSize: 11, color: AppColors.inkMid),
-                ),
-              ),
-              Material(
-                color: AppColors.primary,
-                borderRadius: AppColors.r8,
-                child: InkWell(
-                  onTap: onReupload,
-                  borderRadius: AppColors.r8,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    child: Text(
-                      'Re-upload',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: chat.isEmpty
               ? _AskEmptyState(onAsk: onAsk)

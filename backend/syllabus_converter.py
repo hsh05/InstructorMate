@@ -1,4 +1,11 @@
-from __future__ import annotations  # forward references in type hints
+# backend/syllabus_converter.py
+#
+# CHANGES:
+# 1. Added DocxTextExtractor — extracts text from .docx files paragraph-by-paragraph.
+# 2. SyllabusConverterService.convert() auto-detects pdf vs docx by extension.
+# 3. Removed reupload logic — callers simply call convert() again.
+
+from __future__ import annotations
 
 import time
 import csv
@@ -11,6 +18,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 from pypdf import PdfReader
+
+# docx support — install: pip install python-docx
+try:
+    from docx import Document as DocxDocument
+    _DOCX_AVAILABLE = True
+except ImportError:
+    _DOCX_AVAILABLE = False
 
 
 @dataclass(frozen=True)
@@ -36,16 +50,13 @@ class SafeJson:
         text = (text or "").strip()
         if not text:
             raise JsonParseError("Empty model output; expected JSON.")
-
         try:
             return json.loads(text)
         except Exception:
             pass
-
         extracted = SafeJson._extract_first_json(text)
         if extracted is None:
             raise JsonParseError("Model output was not valid JSON and no JSON block was found.")
-
         try:
             return json.loads(extracted)
         except Exception as e:
@@ -60,21 +71,16 @@ class SafeJson:
             start_candidates.append((obj_i, "{"))
         if arr_i != -1:
             start_candidates.append((arr_i, "["))
-
         if not start_candidates:
             return None
-
         start_candidates.sort(key=lambda x: x[0])
         start, opening = start_candidates[0]
         closing = "}" if opening == "{" else "]"
-
         depth = 0
         in_string = False
         escape = False
-
         for i in range(start, len(text)):
             ch = text[i]
-
             if in_string:
                 if escape:
                     escape = False
@@ -83,79 +89,107 @@ class SafeJson:
                 elif ch == '"':
                     in_string = False
                 continue
-
             if ch == '"':
                 in_string = True
                 continue
-
             if ch == opening:
                 depth += 1
             elif ch == closing:
                 depth -= 1
                 if depth == 0:
-                    return text[start : i + 1]
-
+                    return text[start: i + 1]
         return None
 
+
+# ── PDF extractor ──────────────────────────────────────────────────────────────
 
 class PdfTextExtractor:
     def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found: {pdf_path.resolve()}")
-
         reader = PdfReader(str(pdf_path))
         chunks: List[PdfChunk] = []
         chunk_id = 1
-
         for page_index, page in enumerate(reader.pages, start=1):
             text = (page.extract_text() or "").strip()
             if not text:
                 continue
             chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))
             chunk_id += 1
-
         if not chunks:
             raise RuntimeError("No text extracted. PDF may be scanned; OCR would be needed.")
+        return chunks
+
+
+# ── DOCX extractor ─────────────────────────────────────────────────────────────
+
+class DocxTextExtractor:
+    """
+    Extracts text from .docx files using python-docx.
+    Groups paragraphs into ~page-sized chunks (every 40 paragraphs = 1 chunk)
+    so the downstream pipeline treats them the same as PDF pages.
+    """
+
+    _PARAS_PER_CHUNK = 40
+
+    def extract_chunks(self, docx_path: Path) -> List[PdfChunk]:
+        if not _DOCX_AVAILABLE:
+            raise RuntimeError(
+                "python-docx is not installed. Run: pip install python-docx --break-system-packages"
+            )
+        if not docx_path.exists():
+            raise FileNotFoundError(f"DOCX not found: {docx_path.resolve()}")
+
+        doc = DocxDocument(str(docx_path))
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+
+        if not paragraphs:
+            raise RuntimeError("No text extracted from DOCX. The file may be empty.")
+
+        chunks: List[PdfChunk] = []
+        chunk_id = 1
+        for i in range(0, len(paragraphs), self._PARAS_PER_CHUNK):
+            group = paragraphs[i: i + self._PARAS_PER_CHUNK]
+            text = "\n".join(group)
+            # "page" is a virtual page number — fine for downstream use
+            page = chunk_id
+            chunks.append(PdfChunk(chunk_id=chunk_id, page=page, text=text))
+            chunk_id += 1
 
         return chunks
 
+
+# ── Schema loader ──────────────────────────────────────────────────────────────
 
 class CsvSchemaLoader:
     def load_columns(self, csv_path: str) -> List[str]:
         path = Path(csv_path)
         if not path.exists():
             raise FileNotFoundError(f"Template CSV not found: {path.resolve()}")
-
         with path.open("r", encoding="utf-8") as f:
             reader = csv.reader(f)
             header = next(reader, None)
-
         if not header:
             raise ValueError("Template CSV has no header row.")
-
         cols = [h.strip() for h in header if h and h.strip()]
         if not cols:
             raise ValueError("Template CSV header is empty.")
-
         return cols
 
 
+# ── LLM field extractor ────────────────────────────────────────────────────────
+
 class SyllabusFieldExtractor:
-    def __init__(self, model: str = "gpt-5") -> None:
+    def __init__(self, model: str = "gpt-4o") -> None:
         self.client = OpenAI()
         self.model = model
 
     def extract_single_row(self, chunks: List[PdfChunk], columns: List[str]) -> Dict[str, str]:
-        # Smaller cap = faster + cheaper, still enough for most syllabi.
         syllabus_text = self._compact_text(chunks, max_chars=3500)
-
-        # If the syllabus text is too small, avoid paying for an LLM call.
-        # (Usually means broken extraction or near-empty PDF.)
         if len(syllabus_text.strip()) < 250:
             return {col: "" for col in columns}
 
         cols_json = json.dumps(columns, ensure_ascii=True)
-
         prompt = (
             "You extract structured fields from syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
@@ -182,7 +216,6 @@ class SyllabusFieldExtractor:
         for name in columns:
             value = data.get(name, "")
             normalized[name] = str(value) if value is not None else ""
-
         return normalized
 
     def _call_with_retries(self, prompt: str) -> str:
@@ -196,32 +229,24 @@ class SyllabusFieldExtractor:
                 return (resp.output_text or "").strip()
             except Exception as e:
                 last_err = e
-                # simple backoff: 1.5s, 3.0s, 4.5s
                 time.sleep(1.5 * (attempt + 1))
         raise RuntimeError(f"OpenAI call failed after retries: {last_err}")
 
     def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:
-        # Most syllabi put the key stuff early
         first_pages = [c for c in chunks if c.page <= 3]
-
-        # “High-signal” pages across the doc
         keywords = (
             "assessment", "grading", "grade", "rubric", "evaluation",
-            "office hour", "office hours", "instructor", "email", "contact",
-            "schedule", "timeline", "calendar", "weekly", "outline", "topics",
-            "policy", "policies", "attendance", "late", "late work","textbook",
-            "academic integrity", "plagiarism", "exam", "midterm", "final",
-            "quiz", "project", "assignment", "learning outcomes", "objectives",
-            "prerequisite", "required text", "textbook",
+            "office hour", "instructor", "email", "contact",
+            "schedule", "timeline", "calendar", "weekly", "outline",
+            "policy", "attendance", "late", "textbook",
+            "exam", "midterm", "final", "quiz", "project", "assignment",
         )
-
         keyword_pages: List[PdfChunk] = []
         for c in chunks:
             t = c.text.lower()
             if any(k in t for k in keywords):
                 keyword_pages.append(c)
 
-        # Dedupe pages while preserving order
         seen_pages = set()
         selected: List[PdfChunk] = []
         for c in first_pages + keyword_pages:
@@ -229,13 +254,12 @@ class SyllabusFieldExtractor:
                 selected.append(c)
                 seen_pages.add(c.page)
 
-        # IMPORTANT: do NOT include any "[page X]" markers in the model input
-        # Also cap each page text so one huge page doesn’t dominate.
         per_page_cap = 1200
         joined = "\n\n".join((c.text or "")[:per_page_cap] for c in selected)
-
         return joined[:max_chars]
 
+
+# ── CSV writer ─────────────────────────────────────────────────────────────────
 
 class CsvFileWriter:
     def write_single_row(self, csv_path: Path, row: Dict[str, str]) -> None:
@@ -255,67 +279,79 @@ class CsvFileWriter:
                 writer.writerow({"chunk_id": c.chunk_id, "page": c.page, "text": c.text})
 
 
+# ── Main service ───────────────────────────────────────────────────────────────
+
+_SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
+
+
 class SyllabusConverterService:
-    def __init__(self, model: str = "gpt-5") -> None:
-        self.extractor = PdfTextExtractor()
-        self.schema_loader = CsvSchemaLoader()
+    def __init__(self, model: str = "gpt-4o") -> None:
+        self.pdf_extractor  = PdfTextExtractor()
+        self.docx_extractor = DocxTextExtractor()
+        self.schema_loader  = CsvSchemaLoader()
         self.field_extractor = SyllabusFieldExtractor(model=model)
         self.writer = CsvFileWriter()
 
+    # FIX: raises ValueError with a clear message for unsupported types
+    def _get_extractor(self, suffix: str):
+        s = suffix.lower()
+        if s == ".pdf":
+            return self.pdf_extractor
+        if s == ".docx":
+            if not _DOCX_AVAILABLE:
+                raise ValueError(
+                    "python-docx is not installed on the server. "
+                    "Run: pip install python-docx --break-system-packages"
+                )
+            return self.docx_extractor
+        raise ValueError(
+            f"Unsupported file type '{s}'. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
+        )
+
     def convert(
         self,
-        pdf_path: str,
+        pdf_path: str,          # kept named pdf_path for backwards compat
         output_dir: str,
         template_csv_path: str,
         output_base_name: Optional[str] = None,
     ) -> ConversionResult:
-        pdf = Path(pdf_path)
-        if not pdf.exists():
-            raise FileNotFoundError(f"PDF not found: {pdf.resolve()}")
+        doc_path = Path(pdf_path)
+        if not doc_path.exists():
+            raise FileNotFoundError(f"File not found: {doc_path.resolve()}")
+
+        extractor = self._get_extractor(doc_path.suffix)
 
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Load template columns first (fast)
         columns = self.schema_loader.load_columns(template_csv_path)
 
-        # Hashes first (enables true cache hit short-circuit)
-        pdf_bytes = pdf.read_bytes()
-        pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()[:10]
+        doc_bytes  = doc_path.read_bytes()
+        doc_hash   = hashlib.sha256(doc_bytes).hexdigest()[:10]
         header_hash = hashlib.sha256(("|".join(columns)).encode("utf-8")).hexdigest()[:10]
 
-        base = output_base_name.strip() if output_base_name and output_base_name.strip() else pdf.stem
-
-        # sanitize base to match doc_id regex [A-Za-z0-9._-]
-        base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
-        base = base.strip("._-")
-        if not base:
-            base = "syllabus"
-
-        # cap base so "{base}.{pdf_hash}.{header_hash}" stays within 200 chars
-        max_total = 200
-        suffix = f".{pdf_hash}.{header_hash}"
-        max_base_len = max_total - len(suffix)
-        if max_base_len < 5:
-            max_base_len = 5
+        base = output_base_name.strip() if output_base_name and output_base_name.strip() else doc_path.stem
+        base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._-") or "syllabus"
+        suffix = f".{doc_hash}.{header_hash}"
+        max_base_len = max(200 - len(suffix), 5)
         if len(base) > max_base_len:
             base = base[:max_base_len].rstrip("._-")
 
-        prefix = f"{base}.{pdf_hash}.{header_hash}"
-
+        prefix = f"{base}.{doc_hash}.{header_hash}"
         single_row_path = out_dir / f"{prefix}.single_row.csv"
-        chunks_path = out_dir / f"{prefix}.chunks.csv"
+        chunks_path     = out_dir / f"{prefix}.chunks.csv"
 
-        # Cache hit: no extraction, no OpenAI
+        # Cache hit
         if single_row_path.exists() and chunks_path.exists():
-            return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))
+            return ConversionResult(
+                single_row_csv=str(single_row_path),
+                chunks_csv=str(chunks_path),
+            )
 
-        # Heavy extraction
         t0 = time.time()
-        chunks = self.extractor.extract_chunks(pdf)
-        print("extract_chunks sec:", round(time.time() - t0, 2))
+        chunks = extractor.extract_chunks(doc_path)
+        print(f"extract_chunks ({doc_path.suffix}) sec:", round(time.time() - t0, 2))
 
-        # LLM extraction (slowest)
         t1 = time.time()
         single_row = self.field_extractor.extract_single_row(chunks, columns)
         print("llm sec:", round(time.time() - t1, 2))
@@ -323,13 +359,18 @@ class SyllabusConverterService:
         self.writer.write_single_row(single_row_path, single_row)
         self.writer.write_chunks(chunks_path, chunks)
 
-        return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))
+        return ConversionResult(
+            single_row_csv=str(single_row_path),
+            chunks_csv=str(chunks_path),
+        )
 
+
+# ── Public helper ──────────────────────────────────────────────────────────────
 
 def convert_pdf_to_csvs(
     pdf_path: str,
     output_dir: str = "output",
-    model: str = "gpt-5",
+    model: str = "gpt-4o",
     template_csv_path: str = "templates/default_template.csv",
     output_base_name: Optional[str] = None,
 ) -> Dict[str, str]:

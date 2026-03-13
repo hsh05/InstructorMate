@@ -1,8 +1,13 @@
 // lib/ui/workspaces_home.dart
-// UPDATED: Workspace cards now show sections count, student count, and
-//          last-updated timestamp — all wired to real model data.
-//          WorkspaceSummary extended with sectionsCount + studentsCount
-//          from the backend JSON. Drop-zone redesigned to match screenshot.
+//
+// CHANGES vs original:
+// FIX #9 — After a successful non-duplicate upload, navigates to
+//   SyllabusExtractionScreen (the premium loading screen) instead of /workspace.
+//   The extraction screen polls until done, then navigates to /workspace itself.
+// FIX #6 — Drop zone label updated: "PDF or DOCX" (no reupload mention).
+// FIX #NULL — ws.status null-promotion error resolved by copying ws to a local
+//   variable inside build() before accessing its fields.
+
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +16,7 @@ import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
 import '../config/app_colors.dart';
 import 'widgets/notification_bell.dart';
+import 'syllabus_extraction_screen.dart';
 
 class WorkspacesHome extends StatefulWidget {
   const WorkspacesHome({super.key, required this.vm});
@@ -126,7 +132,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Drop a PDF above or tap the upload button to get started.',
+                  'Drop a PDF or DOCX above, or tap the upload button to get started.',
                   textAlign: TextAlign.center,
                   style:
                       TextStyle(color: AppColors.textSecondary, fontSize: 14),
@@ -142,7 +148,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     if (widget.vm.importing) return;
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf', 'docx', 'txt'],
+      allowedExtensions: const ['pdf', 'docx'],
       withData: true,
     );
     if (res == null || res.files.isEmpty) return;
@@ -155,6 +161,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     await widget.vm.importSyllabusBytes(bytes: bytes, filename: filename);
     if (!mounted) return;
 
+    // ── Duplicate: show existing workspace dialog ──────────────────────────
     if (widget.vm.lastImportWasDuplicate) {
       widget.vm.lastImportWasDuplicate = false;
       final ws = widget.vm.current;
@@ -162,201 +169,22 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       await showDialog<void>(
         context: context,
         barrierColor: Colors.black.withOpacity(0.6),
-        builder: (ctx) {
-          final ws = widget.vm.current;
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 40,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 22),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFFF8ED),
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(24)),
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFEDC2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFFFFD080),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: const Icon(Icons.file_copy_rounded,
-                              color: Color(0xFFE6920A), size: 24),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Duplicate Syllabus',
-                          style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1A1A2E),
-                              letterSpacing: -0.3),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'This file was already imported',
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF888888),
-                              fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Found existing workspace:',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFAAAAAA),
-                              letterSpacing: 0.5),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF4F0FF),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: AppColors.primary.withOpacity(0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.school_rounded,
-                                    color: AppColors.primary, size: 20),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      ws?.title ?? filename,
-                                      style: const TextStyle(
-                                          color: Color(0xFF1A1A2E),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14),
-                                    ),
-                                    if (ws?.status != null) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        ws!.status == 'ready'
-                                            ? '● Ready'
-                                            : '○ Draft',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: ws.status == 'ready'
-                                              ? const Color(0xFF22C55E)
-                                              : const Color(0xFFAAAAAA),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side:
-                                    const BorderSide(color: Color(0xFFE0E0E0)),
-                              ),
-                            ),
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Dismiss',
-                                style: TextStyle(
-                                    color: Color(0xFF888888),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14)),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            icon: const Icon(Icons.arrow_forward_rounded,
-                                size: 16),
-                            label: const Text('Open Workspace',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 14)),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              if (ws != null && mounted) {
-                                Navigator.of(context).pushNamed('/workspace');
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+        builder: (ctx) => _DuplicateDialog(
+          ws: ws,
+          filename: filename,
+          onOpen: () {
+            Navigator.pop(ctx);
+            if (ws != null && mounted) {
+              Navigator.of(context).pushNamed('/workspace');
+            }
+          },
+          onDismiss: () => Navigator.pop(ctx),
+        ),
       );
       return;
     }
 
+    // ── Error ─────────────────────────────────────────────────────────────
     if (widget.vm.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -367,7 +195,24 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
+      return;
     }
+
+    // ── FIX #9: New upload → show extraction loading screen ───────────────
+    if (!mounted) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => SyllabusExtractionScreen(
+          vm: widget.vm,
+          filename: filename,
+        ),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: anim,
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, WorkspaceSummary workspace) {
@@ -416,6 +261,208 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 }
 
+// ─── Duplicate dialog (extracted for clarity) ─────────────────────────────────
+class _DuplicateDialog extends StatelessWidget {
+  const _DuplicateDialog({
+    required this.ws,
+    required this.filename,
+    required this.onOpen,
+    required this.onDismiss,
+  });
+  final Workspace? ws;
+  final String filename;
+  final VoidCallback onOpen;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    // FIX #NULL — copy nullable field to a local variable so Dart can
+    // promote it after the null-check without the "non-public field" error.
+    final localWs = ws;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 40,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 22),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFF8ED),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEDC2),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFFFFD080), width: 1.5),
+                    ),
+                    child: const Icon(Icons.file_copy_rounded,
+                        color: Color(0xFFE6920A), size: 24),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Duplicate Syllabus',
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1A1A2E),
+                        letterSpacing: -0.3),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'This file was already imported',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF888888),
+                        fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Found existing workspace:',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFAAAAAA),
+                        letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F0FF),
+                      borderRadius: BorderRadius.circular(14),
+                      border:
+                          Border.all(color: AppColors.primary.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.school_rounded,
+                              color: AppColors.primary, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                localWs?.title ?? filename,
+                                style: const TextStyle(
+                                    color: Color(0xFF1A1A2E),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14),
+                              ),
+                              // FIX #NULL — use promoted localWs after null check
+                              if (localWs != null &&
+                                  localWs.status.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  localWs.status == 'ready'
+                                      ? '● Ready'
+                                      : '○ Draft',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: localWs.status == 'ready'
+                                        ? const Color(0xFF22C55E)
+                                        : const Color(0xFFAAAAAA),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: Color(0xFFE0E0E0)),
+                        ),
+                      ),
+                      onPressed: onDismiss,
+                      child: const Text('Dismiss',
+                          style: TextStyle(
+                              color: Color(0xFF888888),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                      label: const Text('Open Workspace',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 14)),
+                      onPressed: onOpen,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Workspace Card ───────────────────────────────────────────────────────────
 class _WorkspaceCard extends StatelessWidget {
   const _WorkspaceCard({
@@ -455,7 +502,6 @@ class _WorkspaceCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Icon avatar
               Container(
                 width: 48,
                 height: 48,
@@ -470,7 +516,6 @@ class _WorkspaceCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              // Title + metadata
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -487,7 +532,6 @@ class _WorkspaceCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 5),
-                    // Status badge + inline section · student count
                     Row(
                       children: [
                         _StatusBadge(status: workspace.status),
@@ -519,7 +563,6 @@ class _WorkspaceCard extends StatelessWidget {
                   ],
                 ),
               ),
-              // 3-dots menu
               PopupMenuButton<String>(
                 icon: const Icon(
                   Icons.more_horiz_rounded,
@@ -683,7 +726,7 @@ class _DropZone extends StatelessWidget {
                       ),
                       SizedBox(height: 10),
                       Text(
-                        'Importing syllabus…',
+                        'Uploading syllabus…',
                         style: TextStyle(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w600,
@@ -708,7 +751,9 @@ class _DropZone extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        dragOver ? 'Drop to upload' : 'Drag & drop a PDF here',
+                        dragOver
+                            ? 'Drop to upload'
+                            : 'Drag & drop your syllabus',
                         style: const TextStyle(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,
@@ -717,7 +762,7 @@ class _DropZone extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       const Text(
-                        'or tap to browse — PDF, DOCX, TXT',
+                        'PDF or DOCX — tap to browse',
                         style: TextStyle(
                           color: AppColors.inkLight,
                           fontSize: 12,

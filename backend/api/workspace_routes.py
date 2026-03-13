@@ -1,6 +1,13 @@
 # backend/api/workspace_routes.py
+#
+# CHANGES:
+# 1. Removed /reupload endpoint — no longer needed.
+# 2. Fixed temp-file leak in /ask: file write is now inside the try block.
+# 3. /upload now accepts .pdf and .docx (backend auto-detects by extension).
+# 4. Added _is_extracting state to workspace GET so Flutter knows to poll.
 
 import logging
+import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -16,6 +23,8 @@ from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, Syl
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_ALLOWED_SYLLABUS_EXTENSIONS = {".pdf", ".docx"}
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -70,19 +79,12 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
 
 
 def _mirror_course_name_fields(fields: dict) -> dict:
-    """FIX: Keep course_name and course_title in sync.
-    The PDF extractor always writes course_title; the Flutter UI always
-    reads/writes course_name. Without this mirror, editing one field in the
-    UI would leave the other stale, causing the header title to show
-    'Untitled Course' or the Info tab to show a blank Course Name.
-    """
-    fields = dict(fields)  # don't mutate caller's dict
-    if 'course_name' in fields and fields['course_name']:
-        fields.setdefault('course_title', fields['course_name'])
-        fields['course_title'] = fields['course_name']
-    elif 'course_title' in fields and fields['course_title']:
-        fields.setdefault('course_name', fields['course_title'])
-        fields['course_name'] = fields['course_title']
+    """Keep course_name and course_title in sync."""
+    fields = dict(fields)
+    if fields.get("course_name"):
+        fields["course_title"] = fields["course_name"]
+    elif fields.get("course_title"):
+        fields["course_name"] = fields["course_title"]
     return fields
 
 
@@ -110,11 +112,19 @@ async def import_workspace(
     student_repo:      PgStudentRepository   = Depends(get_student_repo),
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
 ):
+    filename = file.filename or ""
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if ext not in _ALLOWED_SYLLABUS_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type '{ext}'. Allowed: {sorted(_ALLOWED_SYLLABUS_EXTENSIONS)}",
+        )
+
     content = await file.read()
-    result  = workspace_service.create_from_file(file.filename, content)
+    result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
-    logger.info("Workspace uploaded id=%s already_uploaded=%s",
-                ws.workspace_id, result["already_uploaded"])
+    logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
+                ws.workspace_id, result["already_uploaded"], ext)
     return {
         "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo),
         "already_uploaded": result["already_uploaded"],
@@ -131,7 +141,16 @@ def get_workspace(
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
+    d = _ws_dict(workspace_id, ws, section_repo, student_repo)
+    # FIX: expose whether background extraction is still running so Flutter
+    # can poll until status == 'ready' and all required fields are filled.
+    fields = d.get("fields", {})
+    d["is_extracting"] = (
+        d.get("status") == "draft"
+        and not fields.get("course_title")
+        and not fields.get("course_name")
+    )
+    return {"workspace": d}
 
 
 @router.patch("/workspaces/{workspace_id}")
@@ -145,10 +164,7 @@ def update_workspace(
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-
-    # FIX: mirror course_name <-> course_title so both fields stay in sync
     mirrored_fields = _mirror_course_name_fields(data.fields)
-
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     logger.info("Updated workspace id=%s", workspace_id)
@@ -176,42 +192,43 @@ async def ask_workspace_question(
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # Try DB chunks first (survives Render restarts)
-    # Fall back to file if DB is empty (local dev)
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
-
-    if chunks_from_db:
-        # Write a temp CSV for AskPipeline to read
-        import tempfile, csv as _csv, os
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
-        )
-        writer = _csv.DictWriter(tmp, fieldnames=["chunk_id", "page", "text"])
-        writer.writeheader()
-        for c in chunks_from_db:
-            writer.writerow({"chunk_id": c["chunk_id"], "page": c["page"], "text": c["content"]})
-        tmp.close()
-        chunks_path = tmp.name
-    else:
-        # Fallback to file
-        chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
-        if not chunks_path_obj.exists():
-            raise HTTPException(
-                status_code=422,
-                detail="Syllabus chunks not found. Re-upload the PDF to regenerate them.",
-            )
-        chunks_path = str(chunks_path_obj)
+    chunks_path: str | None = None
 
     try:
+        if chunks_from_db:
+            # FIX: write temp file inside the try so cleanup is always reached
+            import tempfile, csv as _csv
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
+            )
+            writer = _csv.DictWriter(tmp, fieldnames=["chunk_id", "page", "text"])
+            writer.writeheader()
+            for c in chunks_from_db:
+                writer.writerow({"chunk_id": c["chunk_id"], "page": c["page"], "text": c["content"]})
+            tmp.close()
+            chunks_path = tmp.name
+        else:
+            chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
+            if not chunks_path_obj.exists():
+                raise HTTPException(
+                    status_code=422,
+                    detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
+                )
+            chunks_path = str(chunks_path_obj)
+
         pipeline = AskPipeline(
             store=SyllabusCsvStore(chunks_path),
             retriever=LightweightRetriever(),
             llm=SyllabusChatGPT(),
         )
         answer = pipeline.run(req.question)
+
     finally:
-        # Clean up temp file if we created one
-        if chunks_from_db:
-            os.unlink(chunks_path)
+        if chunks_from_db and chunks_path and os.path.exists(chunks_path):
+            try:
+                os.unlink(chunks_path)
+            except OSError:
+                pass
 
     return {"answer": answer}

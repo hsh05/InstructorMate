@@ -1,6 +1,12 @@
 // lib/app/state/workspaces_vm.dart
-// UPDATE: _syncCurrentToList now derives sectionsCount and studentsCount
-//         from the full Workspace so the home screen always shows real numbers.
+//
+// CHANGES vs original:
+// FIX #3  — load() is guarded by _isLoading flag; concurrent calls are a no-op.
+// FIX #6  — reuploadSyllabus() removed entirely.
+// NEW     — startExtractionPolling() / stopExtractionPolling():
+//           After upload, if workspace is in DRAFT state, we poll every 3 s
+//           until status becomes 'ready' or 'error', then navigate automatically.
+//           The polling result is surfaced via [extractionDone] and [extractionError].
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -36,9 +42,17 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   final Map<String, int> sectionStudentCounts = {};
 
+  // ── FIX #3: guard against concurrent load() calls ─────────────────────────
+  bool _isLoading = false;
+
+  // ── Extraction polling state ───────────────────────────────────────────────
+  Timer? _extractionPoller;
+  bool extractionDone = false; // goes true when status flips to 'ready'
+  bool extractionError = false; // goes true when backend returns 'error'
+  String? extractionErrorMessage;
+
   void recordImport(String sectionId, int count) {
     sectionStudentCounts[sectionId] = count;
-    // Also update the summary list so student count reflects the import immediately
     _syncCurrentToList();
     notifyListeners();
   }
@@ -85,11 +99,12 @@ class WorkspacesViewModel extends ChangeNotifier {
           );
           final diff = now.difference(fireAt).inSeconds;
           if (diff >= 0 && diff < 60) {
+            // FIX #8: key on sectionId + weekday + hour instead of name+time proximity
             final key =
-                '${section.name}:${fireAt.year}-${fireAt.month}-${fireAt.day}-${fireAt.hour}-${fireAt.minute}';
+                '${section.id}:${fireAt.weekday}-${fireAt.hour}-${fireAt.minute}';
             if (_firedKeys.contains(key)) continue;
             _firedKeys.add(key);
-            if (_firedKeys.length > 100) _firedKeys.remove(_firedKeys.first);
+            if (_firedKeys.length > 200) _firedKeys.remove(_firedKeys.first);
             final loc =
                 section.location.isNotEmpty ? ' @ ${section.location}' : '';
             final notifTitle = '⏰ ${ws.title} starts in ${remind}min';
@@ -149,6 +164,7 @@ class WorkspacesViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _mobileTicker?.cancel();
+    _extractionPoller?.cancel();
     super.dispose();
   }
 
@@ -173,6 +189,9 @@ class WorkspacesViewModel extends ChangeNotifier {
   // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> load() async {
+    // FIX #3: prevent race condition from concurrent calls
+    if (_isLoading) return;
+    _isLoading = true;
     loading = true;
     error = null;
     notifyListeners();
@@ -182,15 +201,13 @@ class WorkspacesViewModel extends ChangeNotifier {
       error = e.toString();
     } finally {
       loading = false;
+      _isLoading = false;
       notifyListeners();
     }
     _initNotifications().ignore();
   }
 
   // ── Open workspace ────────────────────────────────────────────────────────
-  // Navigation is unblocked as soon as the single getWorkspace call completes.
-  // Notification rescheduling (which fetches ALL workspaces) runs in the
-  // background so it never delays the tap-to-open experience.
 
   Future<void> openWorkspace(String id) async {
     loading = true;
@@ -209,7 +226,6 @@ class WorkspacesViewModel extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
-    // Fire-and-forget — does not block navigation
     rescheduleNotificationsForCurrent().ignore();
   }
 
@@ -223,6 +239,9 @@ class WorkspacesViewModel extends ChangeNotifier {
     importing = true;
     error = null;
     lastImportWasDuplicate = false;
+    extractionDone = false;
+    extractionError = false;
+    extractionErrorMessage = null;
     notifyListeners();
     try {
       final result = await api.importWorkspace(
@@ -231,8 +250,6 @@ class WorkspacesViewModel extends ChangeNotifier {
       );
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      // PERF: Don't call load() — just upsert the new workspace into the list.
-      // load() re-fetches every workspace which is wasteful after a single import.
       _syncCurrentToList();
     } catch (e) {
       error = e.toString();
@@ -249,6 +266,9 @@ class WorkspacesViewModel extends ChangeNotifier {
     importing = true;
     error = null;
     lastImportWasDuplicate = false;
+    extractionDone = false;
+    extractionError = false;
+    extractionErrorMessage = null;
     notifyListeners();
     try {
       final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt']);
@@ -259,7 +279,6 @@ class WorkspacesViewModel extends ChangeNotifier {
       );
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      // PERF: Don't call load() — just upsert the new workspace into the list.
       _syncCurrentToList();
     } catch (e) {
       error = e.toString();
@@ -267,6 +286,47 @@ class WorkspacesViewModel extends ChangeNotifier {
       importing = false;
       notifyListeners();
     }
+  }
+
+  // ── Extraction polling ────────────────────────────────────────────────────
+  // Call this immediately after a successful (non-duplicate) import.
+  // Polls every 3 s; sets extractionDone=true when backend marks it 'ready'.
+
+  void startExtractionPolling(String workspaceId) {
+    _extractionPoller?.cancel();
+    extractionDone = false;
+    extractionError = false;
+    extractionErrorMessage = null;
+    notifyListeners();
+
+    _extractionPoller = Timer.periodic(const Duration(seconds: 3), (_) async {
+      try {
+        final ws = await api.getWorkspace(workspaceId);
+        _current = ws;
+        _syncCurrentToList();
+
+        if (ws.status == 'ready') {
+          stopExtractionPolling();
+          extractionDone = true;
+          notifyListeners();
+        } else if (ws.status == 'error') {
+          stopExtractionPolling();
+          extractionError = true;
+          extractionErrorMessage =
+              'AI extraction failed. You can fill in the fields manually.';
+          // Still show the workspace — user can edit manually
+          extractionDone = true;
+          notifyListeners();
+        }
+      } catch (_) {
+        // Network blip — keep polling silently
+      }
+    });
+  }
+
+  void stopExtractionPolling() {
+    _extractionPoller?.cancel();
+    _extractionPoller = null;
   }
 
   // ── Update fields ─────────────────────────────────────────────────────────
@@ -311,7 +371,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     rescheduleNotificationsForCurrent().ignore();
   }
 
-  // ── Update section (in-place, preserves students) ────────────────────────
+  // ── Update section ────────────────────────────────────────────────────────
 
   Future<void> updateSection(String sectionId, SectionDraft draft) async {
     final ws = _current;
@@ -352,7 +412,6 @@ class WorkspacesViewModel extends ChangeNotifier {
         result.sectionId.isNotEmpty ? result.sectionId : sectionId,
         result.imported,
       );
-      // Refresh workspace to get updated student counts
       _current = await api.getWorkspace(ws.id);
       _syncCurrentToList();
     } catch (e) {
@@ -404,30 +463,6 @@ class WorkspacesViewModel extends ChangeNotifier {
     rescheduleNotificationsForCurrent().ignore();
   }
 
-  // ── Re-upload PDF ─────────────────────────────────────────────────────────
-
-  Future<void> reuploadSyllabus() async {
-    final ws = _current;
-    if (ws == null) return;
-    loading = true;
-    error = null;
-    notifyListeners();
-    try {
-      final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt']);
-      if (picked == null) return;
-      _current = await api.reuploadSyllabus(
-        workspaceId: ws.id,
-        bytes: picked.bytes,
-        filename: picked.name,
-      );
-    } catch (e) {
-      error = e.toString();
-    } finally {
-      loading = false;
-      notifyListeners();
-    }
-  }
-
   // ── Ask AI ────────────────────────────────────────────────────────────────
 
   Future<String?> askInWorkspace(String question) async {
@@ -442,16 +477,13 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Sync current workspace status + counts → summary list ────────────────
-  // Keeps home screen status badge, section count, and student count up-to-date
-  // immediately after any mutation — no extra network round-trip needed.
+  // ── Sync current workspace status + counts → summary list ─────────────────
+
   void _syncCurrentToList() {
     final ws = _current;
     if (ws == null) return;
     final idx = workspaces.indexWhere((s) => s.id == ws.id);
 
-    // Compute total students: prefer sectionStudentCounts map (live-updated
-    // by recordImport) then fall back to the workspace model itself.
     int totalStudents = sectionStudentCounts.values.fold(0, (a, b) => a + b);
     if (totalStudents == 0) {
       totalStudents = ws.studentsCount > 0
@@ -469,7 +501,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       title: ws.title.isNotEmpty
           ? ws.title
           : (idx != -1 ? workspaces[idx].title : 'Untitled Course'),
-      status: ws.isReady ? 'ready' : 'draft',
+      status: ws.status,
       sectionsCount: ws.sections.length,
       studentsCount: totalStudents,
     );
