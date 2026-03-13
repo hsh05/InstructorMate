@@ -68,8 +68,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
     for (final key in _editableKeys) {
       String value = ws.fields[key] ?? '';
-      // FIX: The PDF extractor writes 'course_title' but the UI field is
-      // 'course_name'. Fall back to course_title so the field auto-fills.
       if (key == 'course_name' && value.isEmpty) {
         value = ws.fields['course_title'] ?? '';
       }
@@ -124,19 +122,17 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         return Scaffold(
           backgroundColor: AppColors.bg,
           body: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(scrollbars: false),
+            behavior:
+                ScrollConfiguration.of(context).copyWith(scrollbars: false),
             child: NestedScrollView(
               headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
               body: Column(
                 children: [
+                  // ── Tab bar ────────────────────────────────────────────
                   Container(
                     color: AppColors.surface,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Container(
                       decoration: BoxDecoration(
                         color: AppColors.surfaceAlt,
@@ -161,72 +157,68 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                         labelColor: Colors.white,
                         unselectedLabelColor: AppColors.inkMid,
                         labelStyle: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
+                            fontWeight: FontWeight.w700, fontSize: 11),
                         unselectedLabelStyle: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11,
-                        ),
+                            fontWeight: FontWeight.w600, fontSize: 11),
                         tabs: const [
                           Tab(
-                            icon: Icon(Icons.info_outline_rounded, size: 16),
-                            text: 'Info',
-                          ),
+                              icon: Icon(Icons.info_outline_rounded, size: 16),
+                              text: 'Info'),
                           Tab(
-                            icon: Icon(Icons.groups_2_rounded, size: 16),
-                            text: 'Sections',
-                          ),
+                              icon: Icon(Icons.groups_2_rounded, size: 16),
+                              text: 'Sections'),
                           Tab(
-                            icon: Icon(Icons.people_alt_rounded, size: 16),
-                            text: 'Students',
-                          ),
+                              icon: Icon(Icons.people_alt_rounded, size: 16),
+                              text: 'Students'),
                           Tab(
-                            icon: Icon(Icons.auto_awesome_rounded, size: 16),
-                            text: 'Ask AI',
-                          ),
+                              icon: Icon(Icons.auto_awesome_rounded, size: 16),
+                              text: 'Ask AI'),
                         ],
                       ),
                     ),
                   ),
-                  if (!ready && missing.isNotEmpty)
+                  if (!ready && missing.isNotEmpty && !widget.vm.loadingDetail)
                     _MissingBanner(fields: missing),
+                  // ── Tab content ────────────────────────────────────────
                   Expanded(
-                    child: widget.vm.loading
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
-                            ),
-                          )
-                        : TabBarView(
-                            controller: _tabs,
-                            children: [
-                              _InfoTab(
-                                ws: ws,
-                                editableKeys: _editableKeys,
-                                ctrl: _ctrl,
-                                onSave: _onSave,
+                    child: widget.vm.loadingDetail
+                        // Background fetch still running → show skeleton
+                        ? const _DetailSkeleton()
+                        : widget.vm.loading
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                    color: AppColors.primary),
+                              )
+                            : TabBarView(
+                                controller: _tabs,
+                                children: [
+                                  _InfoTab(
+                                    ws: ws,
+                                    editableKeys: _editableKeys,
+                                    ctrl: _ctrl,
+                                    onSave: _onSave,
+                                  ),
+                                  _SectionsTab(
+                                    ws: ws,
+                                    vm: widget.vm,
+                                    onError: _showError,
+                                    onNavigateToStudents: () =>
+                                        _tabs.animateTo(2),
+                                  ),
+                                  _StudentsTab(
+                                    ws: ws,
+                                    vm: widget.vm,
+                                    onError: _showError,
+                                  ),
+                                  _AskTab(
+                                    chat: _chat,
+                                    ctrl: _askCtrl,
+                                    scrollCtrl: _askScroll,
+                                    asking: _asking,
+                                    onAsk: _onAsk,
+                                  ),
+                                ],
                               ),
-                              _SectionsTab(
-                                ws: ws,
-                                vm: widget.vm,
-                                onError: _showError,
-                                onNavigateToStudents: () => _tabs.animateTo(2),
-                              ),
-                              _StudentsTab(
-                                ws: ws,
-                                vm: widget.vm,
-                                onError: _showError,
-                              ),
-                              _AskTab(
-                                chat: _chat,
-                                ctrl: _askCtrl,
-                                scrollCtrl: _askScroll,
-                                asking: _asking,
-                                onAsk: _onAsk,
-                              ),
-                            ],
-                          ),
                   ),
                 ],
               ),
@@ -269,25 +261,31 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          ws.title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                            height: 1.2,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: ws.title.isEmpty
+                            // Title still loading — subtle shimmer bar
+                            ? _ShimmerBar(
+                                width: 200,
+                                height: 20,
+                                light: Colors.white.withOpacity(0.15),
+                                lighter: Colors.white.withOpacity(0.28),
+                              )
+                            : Text(
+                                ws.title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                  height: 1.2,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                       const SizedBox(width: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: (ready ? AppColors.accent : AppColors.warn)
                               .withOpacity(0.2),
@@ -333,9 +331,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                         ],
                         if (semester.isNotEmpty) ...[
                           _StatPill(
-                            icon: Icons.calendar_today_rounded,
-                            label: semester,
-                          ),
+                              icon: Icons.calendar_today_rounded,
+                              label: semester),
                           const SizedBox(width: 8),
                         ],
                         _StatPill(
@@ -372,14 +369,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       _showError(widget.vm.error!);
     } else {
       _syncControllersFromWorkspace();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Changes saved ✓'),
-          backgroundColor: AppColors.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Changes saved ✓'),
+        backgroundColor: AppColors.accent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: AppColors.r12),
+      ));
     }
   }
 
@@ -393,14 +388,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     _scrollChat();
     final answer = await widget.vm.askInWorkspace(q);
     setState(() {
-      _chat.add(
-        _ChatMsg(
-          text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
-              ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
-              : (answer ?? "Sorry, I couldn't get an answer."),
-          isUser: false,
-        ),
-      );
+      _chat.add(_ChatMsg(
+        text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
+            ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
+            : (answer ?? "Sorry, I couldn't get an answer."),
+        isUser: false,
+      ));
       _asking = false;
     });
     _scrollChat();
@@ -426,13 +419,236 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       );
 }
 
+// ─── Detail Skeleton ──────────────────────────────────────────────────────────
+// Shown in the tab content area while loadingDetail == true (background fetch).
+// The header already renders with title/status from the cached summary,
+// so only the tab body needs this treatment.
+class _DetailSkeleton extends StatefulWidget {
+  const _DetailSkeleton();
+
+  @override
+  State<_DetailSkeleton> createState() => _DetailSkeletonState();
+}
+
+class _DetailSkeletonState extends State<_DetailSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final t = Curves.easeInOut.transform(_ctrl.value);
+        final dim =
+            Color.lerp(const Color(0xFFE8E8EE), const Color(0xFFF2F2F6), t)!;
+        final bright =
+            Color.lerp(const Color(0xFFDDDDE6), const Color(0xFFECECF2), t)!;
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            // ── Row: section label ───────────────────────────────────────
+            Row(children: [
+              _pill(bright, w: 16, h: 16, r: 8),
+              const SizedBox(width: 8),
+              _pill(bright, w: 110, h: 13),
+            ]),
+            const SizedBox(height: 6),
+            _pill(bright, w: 200, h: 10),
+            const SizedBox(height: 14),
+
+            // ── Card: 3 field rows ───────────────────────────────────────
+            _skeletonCard(dim, bright, children: [
+              _fieldRow(dim, bright),
+              _divider(dim),
+              _fieldRow(dim, bright),
+              _divider(dim),
+              _fieldRow(dim, bright),
+            ]),
+
+            const SizedBox(height: 22),
+
+            // ── Section label 2 ──────────────────────────────────────────
+            Row(children: [
+              _pill(bright, w: 16, h: 16, r: 8),
+              const SizedBox(width: 8),
+              _pill(bright, w: 90, h: 13),
+              const Spacer(),
+              _pill(bright, w: 80, h: 28, r: 14),
+            ]),
+            const SizedBox(height: 14),
+
+            // ── Section cards ────────────────────────────────────────────
+            _skeletonCard(dim, bright, children: [_sectionRow(dim, bright)]),
+            const SizedBox(height: 10),
+            _skeletonCard(dim, bright,
+                children: [_sectionRow(dim, bright, narrowName: true)]),
+
+            const SizedBox(height: 28),
+
+            // ── Subtle spinner + label ────────────────────────────────────
+            Center(
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.8,
+                    color: AppColors.primary.withOpacity(0.3 + t * 0.2),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  'Fetching workspace…',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.inkLight.withOpacity(0.55 + t * 0.2),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _pill(Color color, {required double w, double h = 12, double r = 6}) =>
+      Container(
+        width: w,
+        height: h,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(r),
+        ),
+      );
+
+  Widget _divider(Color color) => Container(height: 1, color: color);
+
+  Widget _skeletonCard(Color bg, Color hi, {required List<Widget> children}) =>
+      Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: AppColors.r16,
+          border: Border.all(color: AppColors.border),
+        ),
+        clipBehavior: Clip.hardEdge,
+        child: Column(children: children),
+      );
+
+  Widget _fieldRow(Color bg, Color hi) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        child: Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: hi, borderRadius: AppColors.r10),
+          ),
+          const SizedBox(width: 13),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _pill(hi, w: 56, h: 10),
+            const SizedBox(height: 6),
+            _pill(hi, w: 148, h: 13),
+          ]),
+          const Spacer(),
+          _pill(hi, w: 14, h: 14, r: 7),
+        ]),
+      );
+
+  Widget _sectionRow(Color bg, Color hi, {bool narrowName = false}) => Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(color: hi, borderRadius: AppColors.r12),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _pill(hi, w: narrowName ? 90.0 : 130.0, h: 13),
+              const SizedBox(height: 7),
+              Row(children: [
+                _pill(hi, w: 20, h: 20, r: 10),
+                const SizedBox(width: 5),
+                _pill(hi, w: 60, h: 10),
+              ]),
+            ]),
+          ),
+          _pill(hi, w: 24, h: 24, r: 12),
+        ]),
+      );
+}
+
+// ─── Shimmer bar (used in header title while loading) ─────────────────────────
+class _ShimmerBar extends StatefulWidget {
+  const _ShimmerBar(
+      {required this.width,
+      required this.height,
+      required this.light,
+      required this.lighter});
+  final double width, height;
+  final Color light, lighter;
+
+  @override
+  State<_ShimmerBar> createState() => _ShimmerBarState();
+}
+
+class _ShimmerBarState extends State<_ShimmerBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (_, __) => Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            color: Color.lerp(widget.light, widget.lighter, _c.value),
+            borderRadius: BorderRadius.circular(widget.height / 2),
+          ),
+        ),
+      );
+}
+
 // ── Stat pill ──────────────────────────────────────────────────────────────────
 class _StatPill extends StatelessWidget {
-  const _StatPill({
-    required this.icon,
-    required this.label,
-    this.highlight = false,
-  });
+  const _StatPill(
+      {required this.icon, required this.label, this.highlight = false});
   final IconData icon;
   final String label;
   final bool highlight;
@@ -451,25 +667,19 @@ class _StatPill extends StatelessWidget {
                 : Colors.white.withOpacity(0.25),
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon,
+              color: highlight ? AppColors.accent : Colors.white, size: 11),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
               color: highlight ? AppColors.accent : Colors.white,
-              size: 11,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                color: highlight ? AppColors.accent : Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ]),
       );
 }
 
@@ -485,26 +695,20 @@ class _MissingBanner extends StatelessWidget {
       width: double.infinity,
       color: AppColors.warnSoft,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.warning_amber_rounded,
-            color: AppColors.warn,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Complete: $labels',
-              style: const TextStyle(
+      child: Row(children: [
+        const Icon(Icons.warning_amber_rounded,
+            color: AppColors.warn, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Complete: $labels',
+            style: const TextStyle(
                 color: AppColors.warn,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+                fontWeight: FontWeight.w600),
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 }
@@ -584,7 +788,6 @@ class _InfoTabState extends State<_InfoTab>
   Widget build(BuildContext context) {
     super.build(context);
     final hasEdits = _editing.isNotEmpty;
-
     final List<_FieldGroup> groups = [];
     for (final key in widget.editableKeys) {
       groups.add(_FieldGroup.single(key));
@@ -594,14 +797,10 @@ class _InfoTabState extends State<_InfoTab>
       padding: const EdgeInsets.all(16),
       children: [
         const _SectionHeader(
-          title: 'Course Details',
-          icon: Icons.info_outline_rounded,
-        ),
+            title: 'Course Details', icon: Icons.info_outline_rounded),
         const SizedBox(height: 4),
-        const Text(
-          'Tap any field to edit. All fields are required.',
-          style: TextStyle(fontSize: 12, color: AppColors.inkMid),
-        ),
+        const Text('Tap any field to edit. All fields are required.',
+            style: TextStyle(fontSize: 12, color: AppColors.inkMid)),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -616,38 +815,33 @@ class _InfoTabState extends State<_InfoTab>
                 final idx = entry.key;
                 final group = entry.value;
                 final isLast = idx == groups.length - 1;
-                return Column(
-                  children: [
-                    _InfoFieldRow(
-                      fieldKey: group.key,
-                      value: widget.ws.fields[group.key] ?? '',
-                      ctrl: widget.ctrl,
-                      isEditing: _editing.contains(group.key),
-                      error: _errors[group.key],
-                      keyboardType: _keyboardType(group.key),
-                      onTap: () => setState(() {
-                        _editing.add(group.key);
-                        _dirty = true;
-                      }),
-                      onDone: () => setState(() {
-                        _editing.remove(group.key);
-                        if (_triedSave) {
-                          _errors[group.key] = _validateField(
-                            group.key,
-                            widget.ctrl(group.key, '').text,
-                          );
-                        }
-                      }),
-                    ),
-                    if (!isLast)
-                      const Divider(
+                return Column(children: [
+                  _InfoFieldRow(
+                    fieldKey: group.key,
+                    value: widget.ws.fields[group.key] ?? '',
+                    ctrl: widget.ctrl,
+                    isEditing: _editing.contains(group.key),
+                    error: _errors[group.key],
+                    keyboardType: _keyboardType(group.key),
+                    onTap: () => setState(() {
+                      _editing.add(group.key);
+                      _dirty = true;
+                    }),
+                    onDone: () => setState(() {
+                      _editing.remove(group.key);
+                      if (_triedSave) {
+                        _errors[group.key] = _validateField(
+                            group.key, widget.ctrl(group.key, '').text);
+                      }
+                    }),
+                  ),
+                  if (!isLast)
+                    const Divider(
                         height: 1,
                         indent: 16,
                         endIndent: 16,
-                        color: AppColors.border,
-                      ),
-                  ],
-                );
+                        color: AppColors.border),
+                ]);
               }),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
@@ -664,8 +858,7 @@ class _InfoTabState extends State<_InfoTab>
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: const RoundedRectangleBorder(
-                                borderRadius: AppColors.r12,
-                              ),
+                                  borderRadius: AppColors.r12),
                             ),
                             onPressed: _saving ? null : _save,
                             icon: _saving
@@ -673,18 +866,12 @@ class _InfoTabState extends State<_InfoTab>
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
+                                        strokeWidth: 2, color: Colors.white),
                                   )
                                 : const Icon(Icons.save_rounded, size: 17),
-                            label: Text(
-                              _saving ? 'Saving…' : 'Save Changes',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                              ),
-                            ),
+                            label: Text(_saving ? 'Saving…' : 'Save Changes',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 14)),
                           ),
                         ),
                       )
@@ -705,37 +892,23 @@ class _InfoTabState extends State<_InfoTab>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: const [
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppColors.warn,
-                      size: 15,
-                    ),
-                    SizedBox(width: 6),
-                    Text(
-                      'Please fix the following:',
+                Row(children: const [
+                  Icon(Icons.warning_amber_rounded,
+                      color: AppColors.warn, size: 15),
+                  SizedBox(width: 6),
+                  Text('Please fix the following:',
                       style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                        color: AppColors.warn,
-                      ),
-                    ),
-                  ],
-                ),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: AppColors.warn)),
+                ]),
                 const SizedBox(height: 6),
-                ..._errors.entries.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      '• ${e.value}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.warn,
-                      ),
-                    ),
-                  ),
-                ),
+                ..._errors.entries.map((e) => Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('• ${e.value}',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.warn)),
+                    )),
               ],
             ),
           ),
@@ -745,7 +918,6 @@ class _InfoTabState extends State<_InfoTab>
   }
 }
 
-// ── Field group model ──────────────────────────────────────────────────────────
 class _FieldGroup {
   final String key;
   final String? secondKey;
@@ -753,7 +925,6 @@ class _FieldGroup {
   const _FieldGroup.single(this.key) : secondKey = null;
 }
 
-// ── Single field row ───────────────────────────────────────────────────────────
 class _InfoFieldRow extends StatelessWidget {
   const _InfoFieldRow({
     required this.fieldKey,
@@ -788,60 +959,45 @@ class _InfoFieldRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: hasError ? AppColors.warn : AppColors.primary,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    color: hasError ? AppColors.warn : AppColors.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             TextField(
               controller: ctrl(fieldKey, value),
               autofocus: true,
               keyboardType: keyboardType,
               style: const TextStyle(
-                color: AppColors.ink,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+                  color: AppColors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500),
               decoration: InputDecoration(
-                prefixIcon: Icon(
-                  icon,
-                  color: hasError ? AppColors.warn : AppColors.primary,
-                  size: 17,
-                ),
+                prefixIcon: Icon(icon,
+                    color: hasError ? AppColors.warn : AppColors.primary,
+                    size: 17),
                 suffixIcon: IconButton(
-                  icon: Icon(
-                    Icons.check_circle_rounded,
-                    color: hasError ? AppColors.warn : AppColors.accent,
-                  ),
+                  icon: Icon(Icons.check_circle_rounded,
+                      color: hasError ? AppColors.warn : AppColors.accent),
                   onPressed: onDone,
                 ),
                 hintText: _hintFor(fieldKey),
-                hintStyle: const TextStyle(
-                  color: AppColors.inkLight,
-                  fontSize: 13,
-                ),
+                hintStyle:
+                    const TextStyle(color: AppColors.inkLight, fontSize: 13),
                 filled: true,
                 fillColor:
                     hasError ? AppColors.warnSoft : AppColors.primarySoft,
                 border: OutlineInputBorder(
-                  borderRadius: AppColors.r12,
-                  borderSide: BorderSide.none,
-                ),
+                    borderRadius: AppColors.r12, borderSide: BorderSide.none),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: AppColors.r12,
                   borderSide: BorderSide(
-                    color: hasError ? AppColors.warn : AppColors.primary,
-                    width: 2,
-                  ),
+                      color: hasError ? AppColors.warn : AppColors.primary,
+                      width: 2),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 13,
-                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                 errorText: error,
                 errorStyle: const TextStyle(fontSize: 11),
               ),
@@ -860,77 +1016,67 @@ class _InfoFieldRow extends StatelessWidget {
         splashColor: AppColors.primary.withOpacity(0.06),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: hasError
-                      ? AppColors.warnSoft
-                      : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
-                  borderRadius: AppColors.r10,
-                ),
-                child: Icon(
-                  icon,
+          child: Row(children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: hasError
+                    ? AppColors.warnSoft
+                    : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
+                borderRadius: AppColors.r10,
+              ),
+              child: Icon(icon,
                   color: hasError
                       ? AppColors.warn
                       : (isEmpty ? AppColors.warn : AppColors.primary),
-                  size: 17,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
+                  size: 17),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
                       style: const TextStyle(
-                        color: AppColors.inkLight,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      liveValue.isEmpty ? 'Tap to add…' : liveValue,
-                      style: TextStyle(
-                        color: liveValue.isEmpty
-                            ? AppColors.inkLight
-                            : AppColors.ink,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        fontStyle: liveValue.isEmpty
-                            ? FontStyle.italic
-                            : FontStyle.normal,
-                      ),
-                    ),
-                    if (hasError) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        error!,
-                        style: const TextStyle(
-                          color: AppColors.warn,
+                          color: AppColors.inkLight,
                           fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                    liveValue.isEmpty ? 'Tap to add…' : liveValue,
+                    style: TextStyle(
+                      color: liveValue.isEmpty
+                          ? AppColors.inkLight
+                          : AppColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      fontStyle: liveValue.isEmpty
+                          ? FontStyle.italic
+                          : FontStyle.normal,
+                    ),
+                  ),
+                  if (hasError) ...[
+                    const SizedBox(height: 3),
+                    Text(error!,
+                        style: const TextStyle(
+                            color: AppColors.warn,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
                   ],
-                ),
+                ],
               ),
-              Icon(
-                isEmpty || hasError
-                    ? Icons.error_outline_rounded
-                    : Icons.edit_outlined,
-                size: 15,
-                color: hasError
-                    ? AppColors.warn
-                    : (isEmpty ? AppColors.warn : AppColors.inkLight),
-              ),
-            ],
-          ),
+            ),
+            Icon(
+              isEmpty || hasError
+                  ? Icons.error_outline_rounded
+                  : Icons.edit_outlined,
+              size: 15,
+              color: hasError
+                  ? AppColors.warn
+                  : (isEmpty ? AppColors.warn : AppColors.inkLight),
+            ),
+          ]),
         ),
       ),
     );
@@ -988,21 +1134,16 @@ class _SectionsTabState extends State<_SectionsTab>
     '55',
   ];
 
-  // ── Time helpers ────────────────────────────────────────────────────────────
-
   ({int hour, int minIdx, bool isPM}) _parseTime(String val) {
     if (val.isEmpty) return (hour: 8, minIdx: 0, isPM: false);
     final upper = val.toUpperCase();
     final isPM = upper.contains('PM');
-    final isAM = upper.contains('AM');
     final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
     final parts = clean.split(':');
     int h = int.tryParse(parts[0].trim()) ?? 8;
     int m = int.tryParse(parts.length > 1 ? parts[1].trim() : '0') ?? 0;
     if (h == 0)
       h = 12;
-    else if (h > 12 && !isPM)
-      h -= 12;
     else if (h > 12) h -= 12;
     int minIdx = 0, minDist = 999;
     for (int j = 0; j < _minLabels.length; j++) {
@@ -1034,31 +1175,24 @@ class _SectionsTabState extends State<_SectionsTab>
     return h * 60 + m;
   }
 
-  // ── Bottom sheet ────────────────────────────────────────────────────────────
-
   void _showSectionSheet(BuildContext ctx, {Section? editing}) {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _SectionSheetContent(
         editing: editing,
         vm: widget.vm,
         onSuccess: (msg) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(msg),
-                backgroundColor: AppColors.accent,
-                behavior: SnackBarBehavior.floating,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: AppColors.r12,
-                ),
-              ),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(msg),
+              backgroundColor: AppColors.accent,
+              behavior: SnackBarBehavior.floating,
+              shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
+            ));
           }
         },
         onError: (e) {
@@ -1084,9 +1218,7 @@ class _SectionsTabState extends State<_SectionsTab>
           title: 'Sections (${ws.sections.length})',
           icon: Icons.groups_2_rounded,
           trailing: _PillButton(
-            label: '+ Add Section',
-            onTap: () => _showSectionSheet(context),
-          ),
+              label: '+ Add Section', onTap: () => _showSectionSheet(context)),
         ),
         const SizedBox(height: 12),
         if (ws.sections.isEmpty)
@@ -1097,17 +1229,15 @@ class _SectionsTabState extends State<_SectionsTab>
                 'Tap \"+ Add Section\" to create your first class section.',
           )
         else
-          ...ws.sections.map(
-            (s) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _SectionCard(
-                section: s,
-                onDelete: () => _confirmDelete(s),
-                onEdit: () => _showSectionSheet(context, editing: s),
-                onViewStudents: widget.onNavigateToStudents,
-              ),
-            ),
-          ),
+          ...ws.sections.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _SectionCard(
+                  section: s,
+                  onDelete: () => _confirmDelete(s),
+                  onEdit: () => _showSectionSheet(context, editing: s),
+                  onViewStudents: widget.onNavigateToStudents,
+                ),
+              )),
       ],
     );
   }
@@ -1116,24 +1246,18 @@ class _SectionsTabState extends State<_SectionsTab>
     final ok = await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            title: const Text(
-              'Delete Section',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-            ),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: const Text('Delete Section',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
             content: Text(
-              'Delete "${s.name.isNotEmpty ? s.name : "this section"}"?',
-              style: const TextStyle(fontSize: 13, color: AppColors.inkMid),
-            ),
+                'Delete "${s.name.isNotEmpty ? s.name : "this section"}"?',
+                style: const TextStyle(fontSize: 13, color: AppColors.inkMid)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(color: AppColors.inkLight),
-                ),
+                child: const Text('Cancel',
+                    style: TextStyle(color: AppColors.inkLight)),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -1141,14 +1265,11 @@ class _SectionsTabState extends State<_SectionsTab>
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                      borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  'Delete',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
+                child: const Text('Delete',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -1191,14 +1312,12 @@ class _SectionSheetContent extends StatefulWidget {
 class _SectionSheetContentState extends State<_SectionSheetContent> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _locationCtrl;
-
   late List<String> _selDays;
   late int _selReminderMins;
   late int _startH, _startMIdx;
   late bool _startPM;
   late int _endH, _endMIdx;
   late bool _endPM;
-
   bool _saving = false;
   String? _error;
 
@@ -1210,7 +1329,6 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
     _locationCtrl = TextEditingController(text: e?.location ?? '');
     _selDays = List.from(e?.schedule.days ?? []);
     _selReminderMins = e?.schedule.reminderMinutes ?? 10;
-
     final sp = widget.parseTime(e?.schedule.startTime ?? '');
     final ep = widget.parseTime(e?.schedule.endTime ?? '');
     _startH = sp.hour;
@@ -1230,15 +1348,12 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
 
   Widget _label(String text) => Padding(
         padding: const EdgeInsets.only(top: 18, bottom: 8),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            color: AppColors.inkLight,
-            letterSpacing: 1.2,
-          ),
-        ),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.inkLight,
+                letterSpacing: 1.2)),
       );
 
   Widget _hourRow(int selHour, void Function(int) onSel) =>
@@ -1262,14 +1377,11 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                       color: sel ? AppColors.primary : AppColors.border),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  '$h',
-                  style: TextStyle(
-                    color: sel ? Colors.white : AppColors.ink,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
+                child: Text('$h',
+                    style: TextStyle(
+                        color: sel ? Colors.white : AppColors.ink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15)),
               ),
             );
           }),
@@ -1294,14 +1406,11 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                   border: Border.all(
                       color: sel ? AppColors.primary : AppColors.border),
                 ),
-                child: Text(
-                  ':${widget.minLabels[idx]}',
-                  style: TextStyle(
-                    color: sel ? Colors.white : AppColors.ink,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
+                child: Text(':${widget.minLabels[idx]}',
+                    style: TextStyle(
+                        color: sel ? Colors.white : AppColors.ink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
               ),
             );
           }),
@@ -1310,10 +1419,9 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
 
   Widget _ampmRow(bool isPM, void Function(bool) onSel) => Container(
         decoration: BoxDecoration(
-          color: AppColors.surfaceAlt,
-          borderRadius: AppColors.r10,
-          border: Border.all(color: AppColors.border),
-        ),
+            color: AppColors.surfaceAlt,
+            borderRadius: AppColors.r10,
+            border: Border.all(color: AppColors.border)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1328,14 +1436,11 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                     color: isPM == pm ? AppColors.primary : Colors.transparent,
                     borderRadius: AppColors.r10,
                   ),
-                  child: Text(
-                    pm ? 'PM' : 'AM',
-                    style: TextStyle(
-                      color: isPM == pm ? Colors.white : AppColors.inkMid,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
+                  child: Text(pm ? 'PM' : 'AM',
+                      style: TextStyle(
+                          color: isPM == pm ? Colors.white : AppColors.inkMid,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14)),
                 ),
               ),
           ],
@@ -1361,7 +1466,6 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
           _error = 'End time must be after start time ($startStr → $endStr).');
       return;
     }
-
     setState(() {
       _saving = true;
       _error = null;
@@ -1374,13 +1478,11 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
         ..startTime = startStr
         ..endTime = endStr
         ..reminderMinutes = _selReminderMins;
-
       if (widget.editing != null) {
         await widget.vm.updateSection(widget.editing!.id, draft);
       } else {
         await widget.vm.createSection(draft);
       }
-
       if (mounted) Navigator.pop(context);
       widget.onSuccess(
           widget.editing != null ? 'Section updated ✓' : 'Section created ✓');
@@ -1409,22 +1511,18 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2)),
             ),
           ),
           const SizedBox(height: 14),
           Text(
             widget.editing != null ? 'Edit Section' : 'New Section',
             style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-              color: AppColors.ink,
-            ),
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                color: AppColors.ink),
           ),
-
-          // ── Name ──────────────────────────────────────────────────────────
           _label('SECTION NAME'),
           TextField(
             controller: _nameCtrl,
@@ -1450,8 +1548,6 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
-
-          // ── Location ──────────────────────────────────────────────────────
           _label('LOCATION / ROOM'),
           TextField(
             controller: _locationCtrl,
@@ -1476,8 +1572,6 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
-
-          // ── Days ──────────────────────────────────────────────────────────
           _label('DAYS'),
           Wrap(
             spacing: 6,
@@ -1499,36 +1593,27 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                     border: Border.all(
                         color: sel ? AppColors.primary : AppColors.border),
                   ),
-                  child: Text(
-                    d,
-                    style: TextStyle(
-                      color: sel ? Colors.white : AppColors.inkMid,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
+                  child: Text(d,
+                      style: TextStyle(
+                          color: sel ? Colors.white : AppColors.inkMid,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
                 ),
               );
             }).toList(),
           ),
-
-          // ── Start time ────────────────────────────────────────────────────
           _label('START — HOUR'),
           _hourRow(_startH, (h) => _startH = h),
           _label('START — MINUTES'),
           _minRow(_startMIdx, (m) => _startMIdx = m),
           _label('START — PERIOD'),
           _ampmRow(_startPM, (pm) => _startPM = pm),
-
-          // ── End time ──────────────────────────────────────────────────────
           _label('END — HOUR'),
           _hourRow(_endH, (h) => _endH = h),
           _label('END — MINUTES'),
           _minRow(_endMIdx, (m) => _endMIdx = m),
           _label('END — PERIOD'),
           _ampmRow(_endPM, (pm) => _endPM = pm),
-
-          // ── Reminder ──────────────────────────────────────────────────────
           _label('REMINDER BEFORE CLASS'),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -1548,23 +1633,17 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                       border: Border.all(
                           color: sel ? AppColors.primary : AppColors.border),
                     ),
-                    child: Text(
-                      '${mins}min',
-                      style: TextStyle(
-                        color: sel ? Colors.white : AppColors.ink,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
+                    child: Text('${mins}min',
+                        style: TextStyle(
+                            color: sel ? Colors.white : AppColors.ink,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
                   ),
                 );
               }).toList(),
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // ── Live preview pill ─────────────────────────────────────────────
           Center(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1578,15 +1657,12 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                 '${widget.formatTime(_startH, _startMIdx, _startPM)} → '
                 '${widget.formatTime(_endH, _endMIdx, _endPM)}',
                 style: const TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12),
               ),
             ),
           ),
-
-          // ── Error ─────────────────────────────────────────────────────────
           if (_error != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -1596,29 +1672,21 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                 borderRadius: AppColors.r10,
                 border: Border.all(color: AppColors.warn.withOpacity(0.4)),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      size: 15, color: AppColors.warn),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      _error!,
+              child: Row(children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 15, color: AppColors.warn),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(_error!,
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.warn,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                          fontSize: 12,
+                          color: AppColors.warn,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ]),
             ),
           ],
-
           const SizedBox(height: 16),
-
-          // ── Save button ───────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 50,
@@ -1643,8 +1711,7 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
                           ? 'Save Changes'
                           : 'Create Section',
                       style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
+                          fontWeight: FontWeight.w700, fontSize: 15)),
             ),
           ),
         ],
@@ -1653,7 +1720,7 @@ class _SectionSheetContentState extends State<_SectionSheetContent> {
   }
 }
 
-// ─── Section card ──────────────────────────────────────────────────────────────
+// ─── Section card ─────────────────────────────────────────────────────────────
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.section,
@@ -1693,400 +1760,219 @@ class _SectionCard extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.hardEdge,
-      child: Column(
-        children: [
-          // ── Header row ───────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Avatar
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primary, Color(0xFF9B78E0)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: AppColors.r12,
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, Color(0xFF9B78E0)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  child: const Icon(
-                    Icons.groups_2_rounded,
-                    color: Colors.white,
-                    size: 21,
-                  ),
+                  borderRadius: AppColors.r12,
                 ),
-                const SizedBox(width: 12),
-                // Name + badges
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        section.name.isEmpty ? 'Unnamed Section' : section.name,
-                        style: const TextStyle(
+                child: const Icon(Icons.groups_2_rounded,
+                    color: Colors.white, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      section.name.isEmpty ? 'Unnamed Section' : section.name,
+                      style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 15.5,
                           color: AppColors.ink,
                           letterSpacing: -0.3,
-                          height: 1.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          _Badge(
-                            label: 'Section',
-                            color: AppColors.primary,
-                            bgColor: AppColors.primarySoft,
-                          ),
-                          if (section.location.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            _Badge(
-                              icon: Icons.location_on_rounded,
-                              label: section.location,
-                              color: AppColors.accent,
-                              bgColor: AppColors.accentSoft,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // 3-dots menu
-                PopupMenuButton<String>(
-                  icon: const Icon(
-                    Icons.more_vert_rounded,
-                    color: AppColors.inkLight,
-                    size: 20,
-                  ),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 4,
-                  onSelected: (val) {
-                    if (val == 'edit') onEdit();
-                    if (val == 'delete') onDelete();
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Row(children: const [
-                        Icon(Icons.edit_rounded,
-                            color: AppColors.primary, size: 17),
-                        SizedBox(width: 10),
-                        Text('Edit Section',
-                            style: TextStyle(
-                                color: AppColors.ink,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13)),
-                      ]),
+                          height: 1.2),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const PopupMenuDivider(height: 1),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Row(children: const [
-                        Icon(Icons.delete_outline_rounded,
-                            color: AppColors.red, size: 17),
-                        SizedBox(width: 10),
-                        Text('Delete',
-                            style: TextStyle(
-                                color: AppColors.red,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13)),
-                      ]),
-                    ),
+                    const SizedBox(height: 5),
+                    Row(children: [
+                      _Badge(
+                          label: 'Section',
+                          color: AppColors.primary,
+                          bgColor: AppColors.primarySoft),
+                      if (section.location.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        _Badge(
+                            icon: Icons.location_on_rounded,
+                            label: section.location,
+                            color: AppColors.accent,
+                            bgColor: AppColors.accentSoft),
+                      ],
+                    ]),
                   ],
                 ),
-              ],
-            ),
-          ),
-
-          // ── Schedule block ───────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceAlt,
-                borderRadius: AppColors.r12,
-                border: Border.all(color: AppColors.border),
               ),
-              child: Row(
-                children: [
-                  // ── Day pills ──────────────────────────────────────────
-                  Expanded(
-                    child: Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: _allDays.map((d) {
-                        final active = activeDays.contains(d);
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          width: 32,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color:
-                                active ? AppColors.primary : AppColors.surface,
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(
-                              color:
-                                  active ? AppColors.primary : AppColors.border,
-                              width: active ? 0 : 1,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            d.substring(0, 1), // M, T, W …
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: active ? Colors.white : AppColors.inkLight,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded,
+                    color: AppColors.inkLight, size: 20),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
+                onSelected: (val) {
+                  if (val == 'edit') onEdit();
+                  if (val == 'delete') onDelete();
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Row(children: const [
+                      Icon(Icons.edit_rounded,
+                          color: AppColors.primary, size: 17),
+                      SizedBox(width: 10),
+                      Text('Edit Section',
+                          style: TextStyle(
+                              color: AppColors.ink,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13)),
+                    ]),
                   ),
-                  const SizedBox(width: 12),
-                  // ── Vertical divider ───────────────────────────────────
-                  Container(width: 1, height: 36, color: AppColors.border),
-                  const SizedBox(width: 12),
-                  // ── Time ──────────────────────────────────────────────
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.schedule_rounded,
-                            size: 11,
-                            color: hasTime
-                                ? AppColors.primary
-                                : AppColors.inkLight,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'TIME',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: hasTime
-                                  ? AppColors.primary
-                                  : AppColors.inkLight,
-                              letterSpacing: 0.9,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        timeString ?? '—',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: hasTime ? AppColors.ink : AppColors.inkLight,
-                          height: 1.2,
-                        ),
-                        textAlign: TextAlign.right,
-                      ),
-                    ],
+                  const PopupMenuDivider(height: 1),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Row(children: const [
+                      Icon(Icons.delete_outline_rounded,
+                          color: AppColors.red, size: 17),
+                      SizedBox(width: 10),
+                      Text('Delete',
+                          style: TextStyle(
+                              color: AppColors.red,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13)),
+                    ]),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt,
+              borderRadius: AppColors.r12,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: _allDays.map((d) {
+                    final active = activeDays.contains(d);
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      width: 32,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.primary : AppColors.surface,
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(
+                          color: active ? AppColors.primary : AppColors.border,
+                          width: active ? 0 : 1,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(d.substring(0, 1),
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: active ? Colors.white : AppColors.inkLight,
+                              letterSpacing: 0.2)),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(width: 1, height: 36, color: AppColors.border),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.schedule_rounded,
+                        size: 11,
+                        color:
+                            hasTime ? AppColors.primary : AppColors.inkLight),
+                    const SizedBox(width: 4),
+                    Text('TIME',
+                        style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: hasTime
+                                ? AppColors.primary
+                                : AppColors.inkLight,
+                            letterSpacing: 0.9)),
+                  ]),
+                  const SizedBox(height: 5),
+                  Text(timeString ?? '—',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: hasTime ? AppColors.ink : AppColors.inkLight,
+                          height: 1.2),
+                      textAlign: TextAlign.right),
+                ],
+              ),
+            ]),
+          ),
+        ),
+      ]),
     );
   }
 }
 
-// ─── Reusable badge chip ──────────────────────────────────────────────────────
+// ─── Badge chip ────────────────────────────────────────────────────────────────
 class _Badge extends StatelessWidget {
-  const _Badge({
-    required this.label,
-    required this.color,
-    required this.bgColor,
-    this.icon,
-  });
+  const _Badge(
+      {required this.label,
+      required this.color,
+      required this.bgColor,
+      this.icon});
   final String label;
   final Color color;
   final Color bgColor;
   final IconData? icon;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: AppColors.r8,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: bgColor, borderRadius: AppColors.r8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (icon != null) ...[
             Icon(icon, size: 10, color: color),
             const SizedBox(width: 3),
           ],
           Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: color,
-                letterSpacing: 0.2,
-              ),
-            ),
+            child: Text(label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                    letterSpacing: 0.2)),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Section info cell ────────────────────────────────────────────────────────
-class _SectionInfoCell extends StatelessWidget {
-  const _SectionInfoCell({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 10, color: AppColors.inkLight),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.inkLight,
-                  letterSpacing: 0.6,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.inkMid,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Info chip ────────────────────────────────────────────────────────────────
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: AppColors.r8,
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: AppColors.inkMid),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.inkMid,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Small icon action button ─────────────────────────────────────────────────
-class _IconAction extends StatelessWidget {
-  const _IconAction({
-    required this.icon,
-    required this.color,
-    required this.bgColor,
-    required this.tooltip,
-    required this.onTap,
-  });
-  final IconData icon;
-  final Color color;
-  final Color bgColor;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: AppColors.r8,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: AppColors.r8,
-          ),
-          child: Icon(icon, size: 16, color: color),
-        ),
-      ),
-    );
-  }
+        ]),
+      );
 }
 
 // ─── TAB 3 — Students ─────────────────────────────────────────────────────────
 class _StudentsTab extends StatelessWidget {
-  const _StudentsTab({
-    required this.ws,
-    required this.vm,
-    required this.onError,
-  });
+  const _StudentsTab(
+      {required this.ws, required this.vm, required this.onError});
   final Workspace ws;
   final WorkspacesViewModel vm;
   final void Function(String) onError;
@@ -2097,14 +1983,10 @@ class _StudentsTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const _SectionHeader(
-          title: 'Students by Section',
-          icon: Icons.people_alt_rounded,
-        ),
+            title: 'Students by Section', icon: Icons.people_alt_rounded),
         const SizedBox(height: 6),
-        const Text(
-          'Tap a section to view or import students.',
-          style: TextStyle(fontSize: 12, color: AppColors.inkMid),
-        ),
+        const Text('Tap a section to view or import students.',
+            style: TextStyle(fontSize: 12, color: AppColors.inkMid)),
         const SizedBox(height: 14),
         if (ws.sections.isEmpty)
           const _EmptyState(
@@ -2114,29 +1996,22 @@ class _StudentsTab extends StatelessWidget {
                 'Create sections first, then import students for each one.',
           )
         else
-          ...ws.sections.map(
-            (s) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _SectionRosterCard(
-                section: s,
-                ws: ws,
-                vm: vm,
-                onError: onError,
-              ),
-            ),
-          ),
+          ...ws.sections.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _SectionRosterCard(
+                    section: s, ws: ws, vm: vm, onError: onError),
+              )),
       ],
     );
   }
 }
 
 class _SectionRosterCard extends StatefulWidget {
-  const _SectionRosterCard({
-    required this.section,
-    required this.ws,
-    required this.vm,
-    required this.onError,
-  });
+  const _SectionRosterCard(
+      {required this.section,
+      required this.ws,
+      required this.vm,
+      required this.onError});
   final Section section;
   final Workspace ws;
   final WorkspacesViewModel vm;
@@ -2169,10 +2044,8 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   Future<void> _loadRoster() async {
     setState(() => _loadingRoster = true);
     try {
-      final list = await widget.vm.api.listSectionStudents(
-        widget.ws.id,
-        widget.section.id,
-      );
+      final list = await widget.vm.api
+          .listSectionStudents(widget.ws.id, widget.section.id);
       if (mounted)
         setState(() {
           _students = list;
@@ -2202,8 +2075,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       widget.onError('File has no data.');
       return;
     }
-    // AFTER — read live section from VM
-
     final newHash = sha256.convert(bytes).toString();
     final liveSection = widget.vm.current?.sections.firstWhere(
         (s) => s.id == widget.section.id,
@@ -2220,10 +2091,9 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
             context: ctx,
             barrierColor: Colors.black.withOpacity(0.55),
             builder: (_) => _ReplaceRosterDialog(
-              filename: f.name,
-              existingCount: existingCount,
-              isSameFile: isSameFile,
-            ),
+                filename: f.name,
+                existingCount: existingCount,
+                isSameFile: isSameFile),
           ) ??
           false;
       if (!confirmed) return;
@@ -2239,25 +2109,20 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
       );
       widget.vm.recordImport(widget.section.id, result.imported);
       await _loadRoster();
-      // Silently refresh _current so lastImportHash is up to date for next import
       widget.vm.api.getWorkspace(widget.ws.id).then((fresh) {
         widget.vm.current = fresh;
       }).catchError((_) {});
       if (mounted) {
         setState(() => _importing = false);
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.imported > 0
-                  ? '✓ ${result.imported} student${result.imported == 1 ? "" : "s"} imported successfully'
-                  : 'No students found — check your file has name/email columns',
-            ),
-            backgroundColor:
-                result.imported > 0 ? AppColors.accent : AppColors.warn,
-            behavior: SnackBarBehavior.floating,
-            shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
-          ),
-        );
+        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+          content: Text(result.imported > 0
+              ? '✓ ${result.imported} student${result.imported == 1 ? "" : "s"} imported successfully'
+              : 'No students found — check your file has name/email columns'),
+          backgroundColor:
+              result.imported > 0 ? AppColors.accent : AppColors.warn,
+          behavior: SnackBarBehavior.floating,
+          shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
+        ));
       }
     } catch (e) {
       if (mounted) setState(() => _importing = false);
@@ -2285,12 +2150,10 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     final filtered = _search.isEmpty
         ? _students
         : _students
-            .where(
-              (s) =>
-                  s.name.toLowerCase().contains(_search.toLowerCase()) ||
-                  s.email.toLowerCase().contains(_search.toLowerCase()) ||
-                  s.studentNo.toLowerCase().contains(_search.toLowerCase()),
-            )
+            .where((s) =>
+                s.name.toLowerCase().contains(_search.toLowerCase()) ||
+                s.email.toLowerCase().contains(_search.toLowerCase()) ||
+                s.studentNo.toLowerCase().contains(_search.toLowerCase()))
             .toList();
 
     return AnimatedContainer(
@@ -2306,453 +2169,354 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
           width: _expanded ? 1.5 : 1,
         ),
       ),
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: _expanded
-                ? const BorderRadius.vertical(top: Radius.circular(16))
-                : AppColors.r16,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: _toggle,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Avatar
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: hasStudents
-                              ? AppColors.accentSoft
-                              : AppColors.primarySoft,
-                          borderRadius: AppColors.r10,
-                          border: Border.all(
-                            color: (hasStudents
-                                    ? AppColors.accent
-                                    : AppColors.primary)
-                                .withOpacity(0.18),
-                          ),
+      child: Column(children: [
+        ClipRRect(
+          borderRadius: _expanded
+              ? const BorderRadius.vertical(top: Radius.circular(16))
+              : AppColors.r16,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _toggle,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: hasStudents
+                            ? AppColors.accentSoft
+                            : AppColors.primarySoft,
+                        borderRadius: AppColors.r10,
+                        border: Border.all(
+                          color: (hasStudents
+                                  ? AppColors.accent
+                                  : AppColors.primary)
+                              .withOpacity(0.18),
                         ),
-                        child: Icon(
-                          Icons.groups_2_rounded,
+                      ),
+                      child: Icon(Icons.groups_2_rounded,
                           color: hasStudents
                               ? AppColors.accent
                               : AppColors.primary,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Name + meta
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              widget.section.name.isEmpty
-                                  ? 'Unnamed Section'
-                                  : widget.section.name,
-                              style: const TextStyle(
+                          size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.section.name.isEmpty
+                                ? 'Unnamed Section'
+                                : widget.section.name,
+                            style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
                                 color: AppColors.ink,
-                                letterSpacing: -0.2,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (days.isNotEmpty || time.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  if (days.isNotEmpty) ...[
-                                    const Icon(
-                                      Icons.calendar_today_rounded,
-                                      size: 10,
-                                      color: AppColors.inkLight,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Flexible(
-                                      child: Text(
-                                        days,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                letterSpacing: -0.2),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (days.isNotEmpty || time.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Row(children: [
+                              if (days.isNotEmpty) ...[
+                                const Icon(Icons.calendar_today_rounded,
+                                    size: 10, color: AppColors.inkLight),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(days,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
                                           fontSize: 11,
                                           color: AppColors.inkMid,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  if (days.isNotEmpty && time.isNotEmpty)
-                                    const Padding(
-                                      padding:
-                                          EdgeInsets.symmetric(horizontal: 5),
-                                      child: Text(
-                                        '·',
-                                        style: TextStyle(
+                                          fontWeight: FontWeight.w500)),
+                                ),
+                              ],
+                              if (days.isNotEmpty && time.isNotEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 5),
+                                  child: Text('·',
+                                      style: TextStyle(
                                           color: AppColors.inkLight,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                  if (time.isNotEmpty) ...[
-                                    const Icon(
-                                      Icons.schedule_rounded,
-                                      size: 10,
-                                      color: AppColors.inkLight,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Flexible(
-                                      child: Text(
-                                        time,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                          fontSize: 11)),
+                                ),
+                              if (time.isNotEmpty) ...[
+                                const Icon(Icons.schedule_rounded,
+                                    size: 10, color: AppColors.inkLight),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(time,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
                                           fontSize: 11,
                                           color: AppColors.inkMid,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
+                                          fontWeight: FontWeight.w500)),
+                                ),
+                              ],
+                            ]),
                           ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: hasStudents
+                            ? AppColors.accentSoft
+                            : AppColors.surfaceAlt,
+                        borderRadius: AppColors.r20,
+                        border: Border.all(
+                          color: hasStudents
+                              ? AppColors.accent.withOpacity(0.3)
+                              : AppColors.border,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      // Student count pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: hasStudents
-                              ? AppColors.accentSoft
-                              : AppColors.surfaceAlt,
-                          borderRadius: AppColors.r20,
-                          border: Border.all(
-                            color: hasStudents
-                                ? AppColors.accent.withOpacity(0.3)
-                                : AppColors.border,
-                          ),
-                        ),
-                        child: _importing
-                            ? const SizedBox(
-                                width: 36,
-                                height: 11,
-                                child: LinearProgressIndicator(
+                      child: _importing
+                          ? const SizedBox(
+                              width: 36,
+                              height: 11,
+                              child: LinearProgressIndicator(
                                   color: AppColors.accent,
-                                  backgroundColor: AppColors.accentSoft,
-                                ),
-                              )
-                            : Text(
-                                '$count student${count == 1 ? "" : "s"}',
-                                style: TextStyle(
+                                  backgroundColor: AppColors.accentSoft),
+                            )
+                          : Text(
+                              '$count student${count == 1 ? "" : "s"}',
+                              style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   color: hasStudents
                                       ? AppColors.accent
-                                      : AppColors.inkLight,
-                                ),
-                              ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Chevron
-                      AnimatedRotation(
-                        turns: _expanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 220),
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: _expanded
-                                ? AppColors.primarySoft
-                                : AppColors.surfaceAlt,
-                            borderRadius: AppColors.r8,
-                          ),
-                          child: Icon(
-                            Icons.keyboard_arrow_down_rounded,
+                                      : AppColors.inkLight),
+                            ),
+                    ),
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: _expanded
+                              ? AppColors.primarySoft
+                              : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r8,
+                        ),
+                        child: Icon(Icons.keyboard_arrow_down_rounded,
                             color: _expanded
                                 ? AppColors.primary
                                 : AppColors.inkMid,
-                            size: 18,
-                          ),
-                        ),
+                            size: 18),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-            child: _expanded
-                ? Column(
-                    children: [
-                      const Divider(height: 1, color: AppColors.border),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Material(
-                              color: _importing
-                                  ? AppColors.surfaceAlt
-                                  : AppColors.primarySoft,
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          child: _expanded
+              ? Column(children: [
+                  const Divider(height: 1, color: AppColors.border),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(children: [
+                      Material(
+                        color: _importing
+                            ? AppColors.surfaceAlt
+                            : AppColors.primarySoft,
+                        borderRadius: AppColors.r12,
+                        child: InkWell(
+                          onTap: _importing ? null : () => _import(context),
+                          borderRadius: AppColors.r12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 11),
+                            decoration: BoxDecoration(
                               borderRadius: AppColors.r12,
-                              child: InkWell(
-                                onTap:
-                                    _importing ? null : () => _import(context),
-                                borderRadius: AppColors.r12,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 11,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    borderRadius: AppColors.r12,
-                                    border: Border.all(
-                                      color: _importing
-                                          ? AppColors.border
-                                          : AppColors.primary.withOpacity(0.3),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.upload_file_rounded,
-                                        color: _importing
-                                            ? AppColors.inkLight
-                                            : AppColors.primary,
-                                        size: 17,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _importing
-                                              ? 'Importing…'
-                                              : 'Import student list (.csv / .xlsx)',
-                                          style: TextStyle(
-                                            color: _importing
-                                                ? AppColors.inkLight
-                                                : AppColors.primary,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      if (_importing)
-                                        const SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: AppColors.primary,
-                                          ),
-                                        )
-                                      else
-                                        const Icon(
-                                          Icons.arrow_forward_ios_rounded,
-                                          color: AppColors.primary,
-                                          size: 12,
-                                        ),
-                                    ],
-                                  ),
-                                ),
+                              border: Border.all(
+                                color: _importing
+                                    ? AppColors.border
+                                    : AppColors.primary.withOpacity(0.3),
                               ),
                             ),
-                            if (_loadingRoster)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 24),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.primary,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              )
-                            else if (_students.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 20,
-                                ),
-                                child: Column(
-                                  children: [
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: const BoxDecoration(
-                                        color: AppColors.surfaceAlt,
-                                        borderRadius: AppColors.r12,
-                                      ),
-                                      child: const Icon(
-                                        Icons.people_outline_rounded,
-                                        color: AppColors.inkLight,
-                                        size: 24,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    const Text(
-                                      'No students imported yet',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 13,
-                                        color: AppColors.inkMid,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    const Text(
-                                      'Upload a CSV/XLSX with name, email, student_no columns.',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.inkLight,
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            else ...[
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: _searchCtrl,
-                                onChanged: (v) => setState(() => _search = v),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.ink,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Search students…',
-                                  hintStyle: const TextStyle(
-                                    color: AppColors.inkLight,
-                                    fontSize: 12,
-                                  ),
-                                  prefixIcon: const Icon(
-                                    Icons.search_rounded,
-                                    color: AppColors.inkLight,
-                                    size: 18,
-                                  ),
-                                  suffixIcon: _search.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(
-                                            Icons.clear_rounded,
-                                            color: AppColors.inkLight,
-                                            size: 16,
-                                          ),
-                                          onPressed: () {
-                                            _searchCtrl.clear();
-                                            setState(() => _search = '');
-                                          },
-                                        )
-                                      : null,
-                                  filled: true,
-                                  fillColor: AppColors.surfaceAlt,
-                                  border: OutlineInputBorder(
-                                    borderRadius: AppColors.r12,
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              ...filtered.asMap().entries.map((e) {
-                                final i = e.key;
-                                final s = e.value;
-                                return Container(
-                                  color: i.isEven
-                                      ? Colors.transparent
-                                      : AppColors.surfaceAlt.withOpacity(0.45),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 9,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      SizedBox(
-                                        width: 28,
-                                        child: Text(
-                                          '${i + 1}',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.inkLight,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 3,
-                                        child: Text(
-                                          s.name.isEmpty ? '—' : s.name,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.ink,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 3,
-                                        child: Text(
-                                          s.email.isEmpty ? '—' : s.email,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.inkMid,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 56,
-                                        child: Text(
-                                          s.studentNo.isEmpty
-                                              ? '—'
-                                              : s.studentNo,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.inkLight,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                              const SizedBox(height: 6),
-                              Align(
-                                alignment: Alignment.centerRight,
+                            child: Row(children: [
+                              Icon(Icons.upload_file_rounded,
+                                  color: _importing
+                                      ? AppColors.inkLight
+                                      : AppColors.primary,
+                                  size: 17),
+                              const SizedBox(width: 8),
+                              Expanded(
                                 child: Text(
-                                  _search.isNotEmpty
-                                      ? '${filtered.length} of ${_students.length} shown'
-                                      : '${_students.length} student${_students.length == 1 ? "" : "s"} total',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.inkLight,
-                                  ),
+                                  _importing
+                                      ? 'Importing…'
+                                      : 'Import student list (.csv / .xlsx)',
+                                  style: TextStyle(
+                                      color: _importing
+                                          ? AppColors.inkLight
+                                          : AppColors.primary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600),
                                 ),
                               ),
-                            ],
-                          ],
+                              if (_importing)
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: AppColors.primary),
+                                )
+                              else
+                                const Icon(Icons.arrow_forward_ios_rounded,
+                                    color: AppColors.primary, size: 12),
+                            ]),
+                          ),
                         ),
                       ),
-                    ],
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ],
-      ),
+                      if (_loadingRoster)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(
+                              child: CircularProgressIndicator(
+                                  color: AppColors.primary, strokeWidth: 2)),
+                        )
+                      else if (_students.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Column(children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: const BoxDecoration(
+                                  color: AppColors.surfaceAlt,
+                                  borderRadius: AppColors.r12),
+                              child: const Icon(Icons.people_outline_rounded,
+                                  color: AppColors.inkLight, size: 24),
+                            ),
+                            const SizedBox(height: 10),
+                            const Text('No students imported yet',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                    color: AppColors.inkMid)),
+                            const SizedBox(height: 4),
+                            const Text(
+                                'Upload a CSV/XLSX with name, email, student_no columns.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.inkLight,
+                                    height: 1.4)),
+                          ]),
+                        )
+                      else ...[
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _searchCtrl,
+                          onChanged: (v) => setState(() => _search = v),
+                          style: const TextStyle(
+                              fontSize: 13, color: AppColors.ink),
+                          decoration: InputDecoration(
+                            hintText: 'Search students…',
+                            hintStyle: const TextStyle(
+                                color: AppColors.inkLight, fontSize: 12),
+                            prefixIcon: const Icon(Icons.search_rounded,
+                                color: AppColors.inkLight, size: 18),
+                            suffixIcon: _search.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded,
+                                        color: AppColors.inkLight, size: 16),
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() => _search = '');
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: AppColors.surfaceAlt,
+                            border: OutlineInputBorder(
+                                borderRadius: AppColors.r12,
+                                borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...filtered.asMap().entries.map((e) {
+                          final i = e.key;
+                          final s = e.value;
+                          return Container(
+                            color: i.isEven
+                                ? Colors.transparent
+                                : AppColors.surfaceAlt.withOpacity(0.45),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 9),
+                            child: Row(children: [
+                              SizedBox(
+                                width: 28,
+                                child: Text('${i + 1}',
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.inkLight,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                              Expanded(
+                                flex: 3,
+                                child: Text(s.name.isEmpty ? '—' : s.name,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.ink,
+                                        fontWeight: FontWeight.w600),
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                              Expanded(
+                                flex: 3,
+                                child: Text(s.email.isEmpty ? '—' : s.email,
+                                    style: const TextStyle(
+                                        fontSize: 11, color: AppColors.inkMid),
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                              SizedBox(
+                                width: 56,
+                                child: Text(
+                                    s.studentNo.isEmpty ? '—' : s.studentNo,
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.inkLight),
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ]),
+                          );
+                        }),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            _search.isNotEmpty
+                                ? '${filtered.length} of ${_students.length} shown'
+                                : '${_students.length} student${_students.length == 1 ? "" : "s"} total',
+                            style: const TextStyle(
+                                fontSize: 11, color: AppColors.inkLight),
+                          ),
+                        ),
+                      ],
+                    ]),
+                  ),
+                ])
+              : const SizedBox.shrink(),
+        ),
+      ]),
     );
   }
 }
@@ -2765,7 +2529,6 @@ class _AskTab extends StatelessWidget {
     required this.scrollCtrl,
     required this.asking,
     required this.onAsk,
-    // FIX #6: onReupload removed
   });
   final List<_ChatMsg> chat;
   final TextEditingController ctrl;
@@ -2775,85 +2538,72 @@ class _AskTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: chat.isEmpty
-              ? _AskEmptyState(onAsk: onAsk)
-              : ListView.builder(
-                  controller: scrollCtrl,
-                  padding: const EdgeInsets.all(14),
-                  itemCount: chat.length + (asking ? 1 : 0),
-                  itemBuilder: (_, i) {
-                    if (i == chat.length) return const _TypingIndicator();
-                    return _ChatBubble(msg: chat[i]);
-                  },
-                ),
-        ),
-        Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            border: Border(top: BorderSide(color: AppColors.border)),
-          ),
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: ctrl,
-                  style: const TextStyle(color: AppColors.ink, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Ask about the syllabus…',
-                    hintStyle: const TextStyle(color: AppColors.inkLight),
-                    filled: true,
-                    fillColor: AppColors.surfaceAlt,
-                    border: OutlineInputBorder(
-                      borderRadius: AppColors.r20,
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
-                  ),
-                  onSubmitted: onAsk,
-                  textInputAction: TextInputAction.send,
-                ),
+    return Column(children: [
+      Expanded(
+        child: chat.isEmpty
+            ? _AskEmptyState(onAsk: onAsk)
+            : ListView.builder(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.all(14),
+                itemCount: chat.length + (asking ? 1 : 0),
+                itemBuilder: (_, i) {
+                  if (i == chat.length) return const _TypingIndicator();
+                  return _ChatBubble(msg: chat[i]);
+                },
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: asking ? null : () => onAsk(ctrl.text),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: asking ? AppColors.inkLight : AppColors.primary,
-                    borderRadius: AppColors.r20,
-                  ),
-                  child: asking
-                      ? const Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          ),
-                        )
-                      : const Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                ),
-              ),
-            ],
-          ),
+      ),
+      Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border)),
         ),
-      ],
-    );
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+        child: Row(children: [
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              style: const TextStyle(color: AppColors.ink, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Ask about the syllabus…',
+                hintStyle: const TextStyle(color: AppColors.inkLight),
+                filled: true,
+                fillColor: AppColors.surfaceAlt,
+                border: OutlineInputBorder(
+                    borderRadius: AppColors.r20, borderSide: BorderSide.none),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              ),
+              onSubmitted: onAsk,
+              textInputAction: TextInputAction.send,
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: asking ? null : () => onAsk(ctrl.text),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: asking ? AppColors.inkLight : AppColors.primary,
+                borderRadius: AppColors.r20,
+              ),
+              child: asking
+                  ? const Center(
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.send_rounded,
+                      color: Colors.white, size: 18),
+            ),
+          ),
+        ]),
+      ),
+    ]);
   }
 }
 
@@ -2867,7 +2617,7 @@ class _AskEmptyState extends StatelessWidget {
       'What is the grading breakdown?',
       'What are the attendance rules?',
       'What textbooks are required?',
-      'when is the midterm?'
+      'When is the midterm?',
     ];
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -2882,110 +2632,77 @@ class _AskEmptyState extends StatelessWidget {
             ),
             borderRadius: AppColors.r20,
           ),
-          child: Column(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: AppColors.r16,
-                ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: Colors.white,
-                  size: 26,
-                ),
+          child: Column(children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: AppColors.r16,
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'Ask Your Syllabus',
+              child: const Icon(Icons.auto_awesome_rounded,
+                  color: Colors.white, size: 26),
+            ),
+            const SizedBox(height: 12),
+            const Text('Ask Your Syllabus',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                'Get instant answers from your course syllabus.',
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800)),
+            const SizedBox(height: 5),
+            Text('Get instant answers from your course syllabus.',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+                    color: Colors.white.withOpacity(0.8), fontSize: 12),
+                textAlign: TextAlign.center),
+          ]),
         ),
         const SizedBox(height: 18),
         const Padding(
           padding: EdgeInsets.only(left: 2, bottom: 8),
-          child: Text(
-            'Try asking…',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.inkMid,
-            ),
-          ),
+          child: Text('Try asking…',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.inkMid)),
         ),
-        ...suggestions.map(
-          (q) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: AppColors.surface,
-              borderRadius: AppColors.r12,
-              child: InkWell(
-                onTap: () => onAsk(q),
+        ...suggestions.map((q) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: AppColors.surface,
                 borderRadius: AppColors.r12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 13,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: AppColors.r12,
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(
-                    children: [
+                child: InkWell(
+                  onTap: () => onAsk(q),
+                  borderRadius: AppColors.r12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 13),
+                    decoration: BoxDecoration(
+                        borderRadius: AppColors.r12,
+                        border: Border.all(color: AppColors.border)),
+                    child: Row(children: [
                       Container(
                         width: 30,
                         height: 30,
                         decoration: const BoxDecoration(
-                          color: AppColors.primarySoft,
-                          borderRadius: AppColors.r8,
-                        ),
-                        child: const Icon(
-                          Icons.lightbulb_outline_rounded,
-                          color: AppColors.primary,
-                          size: 15,
-                        ),
+                            color: AppColors.primarySoft,
+                            borderRadius: AppColors.r8),
+                        child: const Icon(Icons.lightbulb_outline_rounded,
+                            color: AppColors.primary, size: 15),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          q,
-                          style: const TextStyle(
-                            color: AppColors.ink,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        size: 11,
-                        color: AppColors.inkLight,
-                      ),
-                    ],
+                          child: Text(q,
+                              style: const TextStyle(
+                                  color: AppColors.ink,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500))),
+                      const Icon(Icons.arrow_forward_ios_rounded,
+                          size: 11, color: AppColors.inkLight),
+                    ]),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
+            )),
       ],
     );
   }
@@ -3001,8 +2718,7 @@ class _ChatBubble extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.only(bottom: 8),
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.76,
-          ),
+              maxWidth: MediaQuery.of(context).size.width * 0.76),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           decoration: BoxDecoration(
             color: msg.isUser ? AppColors.primary : AppColors.surface,
@@ -3015,14 +2731,11 @@ class _ChatBubble extends StatelessWidget {
             boxShadow: AppColors.shadowSm,
             border: msg.isUser ? null : Border.all(color: AppColors.border),
           ),
-          child: Text(
-            msg.text,
-            style: TextStyle(
-              color: msg.isUser ? Colors.white : AppColors.ink,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
+          child: Text(msg.text,
+              style: TextStyle(
+                  color: msg.isUser ? Colors.white : AppColors.ink,
+                  fontSize: 13,
+                  height: 1.5)),
         ),
       );
 }
@@ -3046,54 +2759,40 @@ class _TypingIndicator extends StatelessWidget {
             ),
             border: Border.all(color: AppColors.border),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.auto_awesome_rounded,
-                  size: 13, color: AppColors.primary),
-              SizedBox(width: 5),
-              Text(
-                'Thinking…',
+          child: Row(mainAxisSize: MainAxisSize.min, children: const [
+            Icon(Icons.auto_awesome_rounded,
+                size: 13, color: AppColors.primary),
+            SizedBox(width: 5),
+            Text('Thinking…',
                 style: TextStyle(
-                  color: AppColors.inkLight,
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-          ),
+                    color: AppColors.inkLight,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic)),
+          ]),
         ),
       );
 }
 
 // ─── Shared widgets ────────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.title,
-    required this.icon,
-    this.trailing,
-  });
+  const _SectionHeader(
+      {required this.title, required this.icon, this.trailing});
   final String title;
   final IconData icon;
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Icon(icon, color: AppColors.primary, size: 17),
-          const SizedBox(width: 7),
-          Text(
-            title,
+  Widget build(BuildContext context) => Row(children: [
+        Icon(icon, color: AppColors.primary, size: 17),
+        const SizedBox(width: 7),
+        Text(title,
             style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: AppColors.ink,
-            ),
-          ),
-          const Spacer(),
-          if (trailing != null) trailing!,
-        ],
-      );
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: AppColors.ink)),
+        const Spacer(),
+        if (trailing != null) trailing!,
+      ]);
 }
 
 class _PillButton extends StatelessWidget {
@@ -3110,63 +2809,19 @@ class _PillButton extends StatelessWidget {
           borderRadius: AppColors.r20,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
+            child: Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12)),
           ),
-        ),
-      );
-}
-
-class _FormField extends StatelessWidget {
-  const _FormField({
-    required this.ctrl,
-    required this.label,
-    required this.icon,
-  });
-  final TextEditingController ctrl;
-  final String label;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => TextField(
-        controller: ctrl,
-        style: const TextStyle(color: AppColors.ink, fontSize: 13),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: AppColors.inkMid, fontSize: 12),
-          prefixIcon: Icon(icon, color: AppColors.primary, size: 15),
-          filled: true,
-          fillColor: AppColors.surfaceAlt,
-          border: OutlineInputBorder(
-            borderRadius: AppColors.r12,
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: AppColors.r12,
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: AppColors.r12,
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         ),
       );
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
+  const _EmptyState(
+      {required this.icon, required this.title, required this.subtitle});
   final IconData icon;
   final String title;
   final String subtitle;
@@ -3175,38 +2830,26 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) => Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Column(
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: const BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: AppColors.r20,
-                ),
-                child: Icon(icon, color: AppColors.primary, size: 34),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
+          child: Column(children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: const BoxDecoration(
+                  color: AppColors.primarySoft, borderRadius: AppColors.r20),
+              child: Icon(icon, color: AppColors.primary, size: 34),
+            ),
+            const SizedBox(height: 16),
+            Text(title,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  color: AppColors.ink,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: AppColors.ink)),
+            const SizedBox(height: 8),
+            Text(subtitle,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: AppColors.inkLight,
-                  fontSize: 13,
-                  height: 1.5,
-                ),
-              ),
-            ],
-          ),
+                    color: AppColors.inkLight, fontSize: 13, height: 1.5)),
+          ]),
         ),
       );
 }
@@ -3217,15 +2860,13 @@ class _ChatMsg {
   final bool isUser;
 }
 
-// ─── Replace Roster Confirmation Dialog ──────────────────────────────────────
-
+// ─── Replace Roster Dialog ────────────────────────────────────────────────────
 class _ReplaceRosterDialog extends StatelessWidget {
   const _ReplaceRosterDialog({
     required this.filename,
     required this.existingCount,
     required this.isSameFile,
   });
-
   final String filename;
   final int existingCount;
   final bool isSameFile;
@@ -3241,194 +2882,158 @@ class _ReplaceRosterDialog extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.14),
-              blurRadius: 40,
-              offset: const Offset(0, 16),
-            ),
+                color: Colors.black.withOpacity(0.14),
+                blurRadius: 40,
+                offset: const Offset(0, 16)),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Header ────────────────────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
-                color: isSameFile
-                    ? const Color(0xFFFFF8ED)
-                    : const Color(0xFFFFF0F0),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: isSameFile
+                  ? const Color(0xFFFFF8ED)
+                  : const Color(0xFFFFF0F0),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSameFile
+                      ? const Color(0xFFFFEDC2)
+                      : const Color(0xFFFFDDDD),
+                  border: Border.all(
+                    color: isSameFile
+                        ? const Color(0xFFFFD080)
+                        : const Color(0xFFFFAAAA),
+                    width: 1.5,
+                  ),
+                ),
+                child: Icon(
+                  isSameFile
+                      ? Icons.file_copy_rounded
+                      : Icons.swap_horiz_rounded,
+                  color: isSameFile
+                      ? const Color(0xFFE6920A)
+                      : const Color(0xFFD93025),
+                  size: 26,
                 ),
               ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSameFile
-                          ? const Color(0xFFFFEDC2)
-                          : const Color(0xFFFFDDDD),
-                      border: Border.all(
-                        color: isSameFile
-                            ? const Color(0xFFFFD080)
-                            : const Color(0xFFFFAAAA),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Icon(
-                      isSameFile
-                          ? Icons.file_copy_rounded
-                          : Icons.swap_horiz_rounded,
-                      color: isSameFile
-                          ? const Color(0xFFE6920A)
-                          : const Color(0xFFD93025),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    isSameFile ? 'Same File Detected' : 'Replace Student List?',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1A1A2E),
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isSameFile
-                        ? 'This file was already imported'
-                        : 'A different roster will replace the current one',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF888888),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 12),
+              Text(
+                isSameFile ? 'Same File Detected' : 'Replace Student List?',
+                style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1A1A2E),
+                    letterSpacing: -0.3),
               ),
-            ),
-            // ── Body ──────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7F5FF),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE0D9FF)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.insert_drive_file_rounded,
-                          color: Color(0xFF7C5CBF),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            filename,
-                            style: const TextStyle(
+              const SizedBox(height: 4),
+              Text(
+                isSameFile
+                    ? 'This file was already imported'
+                    : 'A different roster will replace the current one',
+                style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF888888),
+                    fontWeight: FontWeight.w500),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F5FF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE0D9FF)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.insert_drive_file_rounded,
+                        color: Color(0xFF7C5CBF), size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(filename,
+                          style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF2D2640),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                              color: Color(0xFF2D2640)),
+                          overflow: TextOverflow.ellipsis),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    isSameFile
-                        ? 'This appears to be the same file you imported before. '
-                            'Re-importing will refresh the list with $existingCount '
-                            'student${existingCount == 1 ? "" : "s"}.'
-                        : 'This section currently has $existingCount '
-                            'student${existingCount == 1 ? "" : "s"}. '
-                            'Uploading a new file will permanently replace '
-                            'the existing roster. This cannot be undone.',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF6B6480),
-                      height: 1.55,
-                    ),
-                  ),
-                ],
-              ),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  isSameFile
+                      ? 'This appears to be the same file you imported before. Re-importing will refresh the list with $existingCount student${existingCount == 1 ? "" : "s"}.'
+                      : 'This section currently has $existingCount student${existingCount == 1 ? "" : "s"}. Uploading a new file will permanently replace the existing roster. This cannot be undone.',
+                  style: const TextStyle(
+                      fontSize: 13, color: Color(0xFF6B6480), height: 1.55),
+                ),
+              ],
             ),
-            // ── Actions ───────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE0E0E0)),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Row(children: [
+              Expanded(
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFFE0E0E0)),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel',
+                      style: TextStyle(
                           color: Color(0xFF888888),
                           fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isSameFile
-                            ? const Color(0xFFE6920A)
-                            : const Color(0xFFD93025),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      icon: Icon(
-                        isSameFile
-                            ? Icons.refresh_rounded
-                            : Icons.swap_horiz_rounded,
-                        size: 16,
-                      ),
-                      label: Text(
-                        isSameFile ? 'Re-import Anyway' : 'Yes, Replace',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(context, true),
-                    ),
-                  ),
-                ],
+                          fontSize: 14)),
+                ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isSameFile
+                        ? const Color(0xFFE6920A)
+                        : const Color(0xFFD93025),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: Icon(
+                    isSameFile
+                        ? Icons.refresh_rounded
+                        : Icons.swap_horiz_rounded,
+                    size: 16,
+                  ),
+                  label: Text(
+                    isSameFile ? 'Re-import Anyway' : 'Yes, Replace',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  onPressed: () => Navigator.pop(context, true),
+                ),
+              ),
+            ]),
+          ),
+        ]),
       ),
     );
   }

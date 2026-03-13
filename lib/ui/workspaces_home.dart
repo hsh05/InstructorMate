@@ -1,8 +1,5 @@
-// lib/ui/workspaces_home.dart
-// UPDATED: Workspace cards now show sections count, student count, and
-//          last-updated timestamp — all wired to real model data.
-//          WorkspaceSummary extended with sectionsCount + studentsCount
-//          from the backend JSON. Drop-zone redesigned to match screenshot.
+// lib/ui/workspaces_home.dart — tap navigates instantly, no await on openWorkspace
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -50,9 +47,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
+                          strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.upload_file_rounded, color: Colors.white),
               onPressed: widget.vm.importing ? null : _pickFile,
@@ -78,16 +73,13 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.primary));
     }
-
     if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Text(
-            widget.vm.error!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.red),
-          ),
+          child: Text(widget.vm.error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red)),
         ),
       );
     }
@@ -107,17 +99,23 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
               itemCount: widget.vm.workspaces.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (_, i) => _WorkspaceCard(
-                workspace: widget.vm.workspaces[i],
-                onTap: () async {
-                  await widget.vm.openWorkspace(widget.vm.workspaces[i].id);
-                  if (context.mounted && widget.vm.current != null) {
-                    Navigator.of(context).pushNamed('/workspace');
-                  }
-                },
-                onDelete: () =>
-                    _confirmDelete(context, widget.vm.workspaces[i]),
-              ),
+              itemBuilder: (_, i) {
+                final ws = widget.vm.workspaces[i];
+                if (ws.isProcessing) {
+                  return _PollingWorkspaceCard(
+                    key: ValueKey(ws.id),
+                    workspace: ws,
+                    vm: widget.vm,
+                    onReady: () => setState(() {}),
+                    onDelete: () => _confirmDelete(context, ws),
+                  );
+                }
+                return _WorkspaceCard(
+                  workspace: ws,
+                  onTap: () => _openWorkspace(context, ws.id),
+                  onDelete: () => _confirmDelete(context, ws),
+                );
+              },
             ),
           )
         else
@@ -136,6 +134,15 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           ),
       ],
     );
+  }
+
+  // ── Instant open — no await ───────────────────────────────────────────────
+  void _openWorkspace(BuildContext context, String id) {
+    // Fire openWorkspace but don't await — it sets the shell _current and
+    // notifies immediately, then fetches full data in the background.
+    widget.vm.openWorkspace(id);
+    // Navigate right away — detail page handles loadingDetail state itself.
+    Navigator.of(context).pushNamed('/workspace');
   }
 
   Future<void> _pickFile() async {
@@ -173,10 +180,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 40,
-                    offset: const Offset(0, 16),
-                  ),
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 40,
+                      offset: const Offset(0, 16)),
                 ],
               ),
               child: Column(
@@ -190,55 +196,45 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       borderRadius:
                           BorderRadius.vertical(top: Radius.circular(24)),
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFEDC2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFFFFD080),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: const Icon(Icons.file_copy_rounded,
-                              color: Color(0xFFE6920A), size: 24),
+                    child: Column(children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFEDC2),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: const Color(0xFFFFD080), width: 1.5),
                         ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Duplicate Syllabus',
+                        child: const Icon(Icons.file_copy_rounded,
+                            color: Color(0xFFE6920A), size: 24),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Duplicate Syllabus',
                           style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF1A1A2E),
-                              letterSpacing: -0.3),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'This file was already imported',
+                              letterSpacing: -0.3)),
+                      const SizedBox(height: 4),
+                      const Text('This file was already imported',
                           style: TextStyle(
                               fontSize: 13,
                               color: Color(0xFF888888),
-                              fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
+                              fontWeight: FontWeight.w500)),
+                    ]),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Found existing workspace:',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFAAAAAA),
-                              letterSpacing: 0.5),
-                        ),
+                        const Text('Found existing workspace:',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFFAAAAAA),
+                                letterSpacing: 0.5)),
                         const SizedBox(height: 8),
                         Container(
                           width: double.infinity,
@@ -249,104 +245,100 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                             border: Border.all(
                                 color: AppColors.primary.withOpacity(0.2)),
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.school_rounded,
-                                    color: AppColors.primary, size: 20),
+                          child: Row(children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
+                              child: const Icon(Icons.school_rounded,
+                                  color: AppColors.primary, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    ws?.title.isNotEmpty == true
+                                        ? ws!.title
+                                        : filename,
+                                    style: const TextStyle(
+                                        color: Color(0xFF1A1A2E),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14),
+                                  ),
+                                  if (ws?.status != null) ...[
+                                    const SizedBox(height: 2),
                                     Text(
-                                      ws?.title ?? filename,
-                                      style: const TextStyle(
-                                          color: Color(0xFF1A1A2E),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14),
-                                    ),
-                                    if (ws?.status != null) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        ws!.status == 'ready'
-                                            ? '● Ready'
-                                            : '○ Draft',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: ws.status == 'ready'
-                                              ? const Color(0xFF22C55E)
-                                              : const Color(0xFFAAAAAA),
-                                        ),
+                                      ws!.status == 'ready'
+                                          ? '● Ready'
+                                          : '○ Draft',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: ws.status == 'ready'
+                                            ? const Color(0xFF22C55E)
+                                            : const Color(0xFFAAAAAA),
                                       ),
-                                    ],
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ]),
                         ),
                       ],
                     ),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side:
-                                    const BorderSide(color: Color(0xFFE0E0E0)),
-                              ),
+                    child: Row(children: [
+                      Expanded(
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: Color(0xFFE0E0E0)),
                             ),
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Dismiss',
-                                style: TextStyle(
-                                    color: Color(0xFF888888),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14)),
                           ),
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Dismiss',
+                              style: TextStyle(
+                                  color: Color(0xFF888888),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14)),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            icon: const Icon(Icons.arrow_forward_rounded,
-                                size: 16),
-                            label: const Text('Open Workspace',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 14)),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              if (ws != null && mounted) {
-                                Navigator.of(context).pushNamed('/workspace');
-                              }
-                            },
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
                           ),
+                          icon:
+                              const Icon(Icons.arrow_forward_rounded, size: 16),
+                          label: const Text('Open Workspace',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 14)),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            if (ws != null && mounted) {
+                              Navigator.of(context).pushNamed('/workspace');
+                            }
+                          },
                         ),
-                      ],
-                    ),
+                      ),
+                    ]),
                   ),
                 ],
               ),
@@ -358,15 +350,12 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     }
 
     if (widget.vm.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.vm.error!),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(widget.vm.error!),
+        backgroundColor: AppColors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
     }
   }
 
@@ -378,7 +367,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         title: const Text('Delete Workspace',
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
         content: Text(
-          'Delete "${workspace.title}"?\nThis permanently removes all sections, students, and files.',
+          'Delete "${workspace.title.isNotEmpty ? workspace.title : "this workspace"}"?\nThis permanently removes all sections, students, and files.',
           style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
         actions: [
@@ -399,12 +388,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               Navigator.pop(context);
               final ok = await widget.vm.deleteWorkspace(workspace.id);
               if (!ok && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(widget.vm.error ?? 'Delete failed'),
-                    backgroundColor: AppColors.red,
-                  ),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(widget.vm.error ?? 'Delete failed'),
+                  backgroundColor: AppColors.red,
+                ));
               }
             },
             child: const Text('Delete',
@@ -416,7 +403,206 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 }
 
-// ─── Workspace Card ───────────────────────────────────────────────────────────
+// ─── Polling wrapper for processing cards ─────────────────────────────────────
+class _PollingWorkspaceCard extends StatefulWidget {
+  const _PollingWorkspaceCard({
+    super.key,
+    required this.workspace,
+    required this.vm,
+    required this.onReady,
+    required this.onDelete,
+  });
+  final WorkspaceSummary workspace;
+  final WorkspacesViewModel vm;
+  final VoidCallback onReady;
+  final VoidCallback onDelete;
+
+  @override
+  State<_PollingWorkspaceCard> createState() => _PollingWorkspaceCardState();
+}
+
+class _PollingWorkspaceCardState extends State<_PollingWorkspaceCard> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _poll());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _poll() async {
+    try {
+      final fresh = await widget.vm.api.getWorkspace(widget.workspace.id);
+      if (!mounted) return;
+      if (!fresh.isProcessing) {
+        _timer?.cancel();
+        widget.vm.updateWorkspaceSummary(fresh.toSummary());
+        widget.onReady();
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      _ProcessingCard(onDelete: widget.onDelete);
+}
+
+// ─── Processing card ──────────────────────────────────────────────────────────
+class _ProcessingCard extends StatefulWidget {
+  const _ProcessingCard({required this.onDelete});
+  final VoidCallback onDelete;
+
+  @override
+  State<_ProcessingCard> createState() => _ProcessingCardState();
+}
+
+class _ProcessingCardState extends State<_ProcessingCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shimmer,
+      builder: (_, __) {
+        final shimmerColor =
+            Color.lerp(AppColors.border, AppColors.surfaceAlt, _shimmer.value)!;
+        return Material(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          elevation: 0,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: shimmerColor,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(Icons.hourglass_top_rounded,
+                      color: AppColors.primary.withOpacity(0.4), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 14,
+                        width: 160,
+                        decoration: BoxDecoration(
+                          color: shimmerColor,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 8,
+                                height: 8,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                  color: AppColors.primary
+                                      .withOpacity(0.6 + _shimmer.value * 0.4),
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              const Text('Processing…',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                      letterSpacing: 0.2)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          height: 10,
+                          width: 80,
+                          decoration: BoxDecoration(
+                            color: shimmerColor,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_horiz_rounded,
+                      color: AppColors.inkMid, size: 20),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 3,
+                  onSelected: (val) {
+                    if (val == 'delete') widget.onDelete();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(children: const [
+                        Icon(Icons.delete_outline_rounded,
+                            color: AppColors.red, size: 18),
+                        SizedBox(width: 10),
+                        Text('Delete',
+                            style: TextStyle(
+                                color: AppColors.red,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13)),
+                      ]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Regular Workspace Card ───────────────────────────────────────────────────
 class _WorkspaceCard extends StatelessWidget {
   const _WorkspaceCard({
     required this.workspace,
@@ -436,9 +622,6 @@ class _WorkspaceCard extends StatelessWidget {
             ? _timeAgoFromString(workspace.createdAt)
             : null);
 
-    final sectionCount = workspace.sectionsCount;
-    final studentCount = workspace.studentsCount;
-
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(16),
@@ -455,7 +638,6 @@ class _WorkspaceCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Icon avatar
               Container(
                 width: 48,
                 height: 48,
@@ -463,20 +645,18 @@ class _WorkspaceCard extends StatelessWidget {
                   color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(13),
                 ),
-                child: const Icon(
-                  Icons.school_rounded,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
+                child: const Icon(Icons.school_rounded,
+                    color: AppColors.primary, size: 24),
               ),
               const SizedBox(width: 12),
-              // Title + metadata
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      workspace.title,
+                      workspace.title.isNotEmpty
+                          ? workspace.title
+                          : 'Untitled Course',
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14.5,
@@ -487,24 +667,21 @@ class _WorkspaceCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 5),
-                    // Status badge + inline section · student count
-                    Row(
-                      children: [
-                        _StatusBadge(status: workspace.status),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '$sectionCount ${sectionCount == 1 ? "Section" : "Sections"} · $studentCount ${studentCount == 1 ? "Student" : "Students"}',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              color: AppColors.inkMid,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                    Row(children: [
+                      _StatusBadge(status: workspace.status),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${workspace.sectionsCount} ${workspace.sectionsCount == 1 ? "Section" : "Sections"} · ${workspace.studentsCount} ${workspace.studentsCount == 1 ? "Student" : "Students"}',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.inkMid,
+                            fontWeight: FontWeight.w500,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ],
-                    ),
+                      ),
+                    ]),
                     if (timeAgo != null) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -519,13 +696,9 @@ class _WorkspaceCard extends StatelessWidget {
                   ],
                 ),
               ),
-              // 3-dots menu
               PopupMenuButton<String>(
-                icon: const Icon(
-                  Icons.more_horiz_rounded,
-                  color: AppColors.inkMid,
-                  size: 20,
-                ),
+                icon: const Icon(Icons.more_horiz_rounded,
+                    color: AppColors.inkMid, size: 20),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 elevation: 3,
@@ -535,20 +708,16 @@ class _WorkspaceCard extends StatelessWidget {
                 itemBuilder: (_) => [
                   PopupMenuItem(
                     value: 'delete',
-                    child: Row(
-                      children: const [
-                        Icon(Icons.delete_outline_rounded,
-                            color: AppColors.red, size: 18),
-                        SizedBox(width: 10),
-                        Text(
-                          'Delete',
+                    child: Row(children: const [
+                      Icon(Icons.delete_outline_rounded,
+                          color: AppColors.red, size: 18),
+                      SizedBox(width: 10),
+                      Text('Delete',
                           style: TextStyle(
                               color: AppColors.red,
                               fontWeight: FontWeight.w600,
-                              fontSize: 13),
-                        ),
-                      ],
-                    ),
+                              fontSize: 13)),
+                    ]),
                   ),
                 ],
               ),
@@ -567,15 +736,13 @@ class _WorkspaceCard extends StatelessWidget {
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     final weeks = (diff.inDays / 7).floor();
     if (weeks < 5) return '${weeks}w ago';
-    final months = (diff.inDays / 30).floor();
-    return '${months}mo ago';
+    return '${(diff.inDays / 30).floor()}mo ago';
   }
 
   String? _timeAgoFromString(String raw) {
     if (raw.isEmpty) return null;
     try {
-      final dt = DateTime.parse(raw);
-      return _timeAgo(dt);
+      return _timeAgo(DateTime.parse(raw));
     } catch (_) {
       return null;
     }
@@ -590,15 +757,10 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isReady = status == 'ready';
-    final label = isReady ? 'Ready' : 'Draft';
-    final bg = isReady ? AppColors.accentSoft : AppColors.warnSoft;
-    final fg = isReady ? const Color(0xFF007A63) : const Color(0xFFB36200);
-    final dot = isReady ? AppColors.accent : AppColors.warn;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: bg,
+        color: isReady ? AppColors.accentSoft : AppColors.warnSoft,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -607,15 +769,19 @@ class _StatusBadge extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: isReady ? AppColors.accent : AppColors.warn,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 4),
           Text(
-            label,
+            isReady ? 'Ready' : 'Draft',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: fg,
+              color:
+                  isReady ? const Color(0xFF007A63) : const Color(0xFFB36200),
               letterSpacing: 0.2,
             ),
           ),
@@ -625,7 +791,7 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-// ─── Drag and Drop Zone ───────────────────────────────────────────────────────
+// ─── Drop Zone ────────────────────────────────────────────────────────────────
 class _DropZone extends StatelessWidget {
   const _DropZone({
     required this.dragOver,
@@ -666,7 +832,6 @@ class _DropZone extends StatelessWidget {
               border: Border.all(
                 color: dragOver ? AppColors.primary : AppColors.border,
                 width: dragOver ? 2 : 1.5,
-                style: BorderStyle.solid,
               ),
             ),
             child: importing
@@ -677,19 +842,14 @@ class _DropZone extends StatelessWidget {
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: AppColors.primary,
-                        ),
+                            strokeWidth: 2.5, color: AppColors.primary),
                       ),
                       SizedBox(height: 10),
-                      Text(
-                        'Importing syllabus…',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
+                      Text('Importing syllabus…',
+                          style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13)),
                     ],
                   )
                 : Column(
@@ -712,19 +872,14 @@ class _DropZone extends StatelessWidget {
                             ? 'Drop to upload'
                             : 'Drag & drop a PDF/DOCX here',
                         style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14),
                       ),
                       const SizedBox(height: 3),
-                      const Text(
-                        'or tap to browse — PDF, DOCX',
-                        style: TextStyle(
-                          color: AppColors.inkLight,
-                          fontSize: 12,
-                        ),
-                      ),
+                      const Text('or tap to browse — PDF, DOCX',
+                          style: TextStyle(
+                              color: AppColors.inkLight, fontSize: 12)),
                     ],
                   ),
           ),

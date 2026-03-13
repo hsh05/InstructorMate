@@ -5,6 +5,8 @@
 // FIX: Student moved here from api_client.dart — one canonical model.
 // UPDATE: WorkspaceSummary now includes sectionsCount, studentsCount, updatedAt
 //         so the home screen can display real numbers without opening each workspace.
+// FIX: WorkspaceSummary.isProcessing — true when status is 'draft' and no name
+//      has been extracted yet. Card shows shimmer instead of "Untitled Course".
 
 import '../utils/schedule_utils.dart';
 
@@ -31,6 +33,10 @@ class WorkspaceSummary {
     this.studentsCount = 0,
   });
 
+  /// True when the workspace is still being processed by the backend LLM
+  /// and no name has been extracted yet — show a loading card, not "Untitled".
+  bool get isProcessing => status == 'draft' && title.isEmpty;
+
   /// Parsed updatedAt — prefers updated_at, falls back to created_at.
   DateTime? get updatedAt {
     final raw = (updatedAtRaw?.isNotEmpty == true) ? updatedAtRaw! : createdAt;
@@ -44,6 +50,7 @@ class WorkspaceSummary {
 
   factory WorkspaceSummary.fromJson(Map<String, dynamic> j) {
     final fields = (j['fields'] as Map?) ?? {};
+    final status = (j['status'] ?? 'draft').toString();
 
     // Resolve title from fields map
     String title = '';
@@ -53,6 +60,13 @@ class WorkspaceSummary {
         title = v;
         break;
       }
+    }
+
+    // Only fall back to 'Untitled Course' when status is ready (extraction done).
+    // While draft with no name, keep title empty so isProcessing returns true
+    // and the card shows a loading shimmer instead of "Untitled Course".
+    if (title.isEmpty && status == 'ready') {
+      title = 'Untitled Course';
     }
 
     // sections_count: backend may expose this at the summary level
@@ -83,8 +97,8 @@ class WorkspaceSummary {
       updatedAtRaw: j['updated_at']?.toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['pdf_hash'] ?? '').toString(),
-      title: title.isEmpty ? 'Untitled Course' : title,
-      status: (j['status'] ?? 'draft').toString(),
+      title: title,
+      status: status,
       sectionsCount: sectionsCount,
       studentsCount: studentsCount,
     );
@@ -136,6 +150,9 @@ class Workspace {
 
   bool get isReady => status == 'ready';
 
+  /// True when backend is still extracting — no name yet and still draft.
+  bool get isProcessing => status == 'draft' && title.isEmpty;
+
   DateTime? get updatedAt {
     final raw = (updatedAtRaw?.isNotEmpty == true) ? updatedAtRaw! : createdAt;
     if (raw.isEmpty) return null;
@@ -157,7 +174,8 @@ class Workspace {
       final v = (fields[key] ?? '').trim();
       if (v.isNotEmpty) return v;
     }
-    return 'Untitled Course';
+    // Only show "Untitled Course" when ready — during draft/processing show nothing
+    return isReady ? 'Untitled Course' : '';
   }
 
   /// Converts this full Workspace into a WorkspaceSummary with real counts.
