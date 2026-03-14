@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="converter")
 # FIX #4: track in-flight workspace IDs so we never double-submit
 _in_flight: set[str] = set()
+# Workspace IDs that have been cancelled — background thread checks this and exits early
+_cancelled: set[str] = set()
 
 
 class WorkspaceService:
@@ -34,7 +36,7 @@ class WorkspaceService:
         self,
         repo: PgWorkspaceRepository,
         hash_service: PdfHashService,
-        converter_model: str = "gpt-4o-mini",
+        converter_model: str = "gpt-4o",
     ):
         self.repo         = repo
         self.hash_service = hash_service
@@ -71,6 +73,13 @@ class WorkspaceService:
 
         return {"already_uploaded": False, "workspace": workspace}
 
+    def cancel_if_in_flight(self, workspace_id: str) -> None:
+        """Mark a workspace as cancelled so the background thread exits early.
+        Safe to call even if no extraction is running for this workspace."""
+        if workspace_id in _in_flight:
+            _cancelled.add(workspace_id)
+            logger.info("Marked workspace=%s for cancellation", workspace_id)
+
     def update_workspace(self, workspace_id: str, updates: dict) -> Workspace:
         ws = self.repo.get_by_id(workspace_id)
         if ws is None:
@@ -81,13 +90,19 @@ class WorkspaceService:
 
     def _run_converter_bg(self, workspace_id: str, content: bytes, filename: str = "syllabus.pdf") -> None:
         """Runs in a background thread with its own DB session."""
+        # Check if this workspace was cancelled (e.g. deleted) before we even start
+        if workspace_id in _cancelled:
+            _cancelled.discard(workspace_id)
+            logger.info("Background converter: workspace %s was cancelled before start", workspace_id)
+            return
         from db.database import SessionLocal
         db = SessionLocal()
         try:
             repo = PgWorkspaceRepository(db)
             ws   = repo.get_by_id(workspace_id)
-            if ws is None:
-                logger.warning("Background converter: workspace %s not found, skipping", workspace_id)
+            if ws is None or workspace_id in _cancelled:
+                logger.warning("Background converter: workspace %s not found or cancelled, skipping", workspace_id)
+                _cancelled.discard(workspace_id)
                 return
             self._run_converter(workspace_id, content, filename, ws, repo)
         except Exception as e:

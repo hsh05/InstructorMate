@@ -19,6 +19,8 @@ class Workspace(Base):
     course_code  = Column(Text, nullable=False, default="")
     course_name  = Column(Text, nullable=False, default="")
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at   = Column(TIMESTAMP(timezone=True), server_default=func.now(),
+                          onupdate=func.now())
 
     sections = relationship("Section", back_populates="workspace",
                             cascade="all, delete-orphan")
@@ -67,7 +69,10 @@ class Student(Base):
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     workspace = relationship("Workspace", back_populates="students")
-    sections  = relationship("StudentSection", cascade="all, delete-orphan")
+    # FIX: No cascade here — StudentSection rows are owned by Section.
+    # Having cascade="all, delete-orphan" on BOTH Section.students and
+    # Student.sections caused a double-delete conflict → 500 on workspace delete.
+    sections  = relationship("StudentSection")
 
 
 class StudentSection(Base):

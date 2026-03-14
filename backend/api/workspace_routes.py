@@ -75,21 +75,6 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
         s["students_count"] = student_repo.count_by_section(workspace_id, s["section_id"])
     d["sections"] = sections
     d["students_count"] = sum(s["students_count"] for s in sections)
-    # While the background LLM extraction is still running, surface a clear
-    # "processing" display name so Flutter never shows "Untitled".
-    fields = d.get("fields", {})
-    has_name = bool(
-        fields.get("course_title") or fields.get("course_name") or fields.get("course_code")
-    )
-    if d.get("status") == "draft" and not has_name:
-        d["display_name"] = "Processing..."
-    else:
-        d["display_name"] = (
-            fields.get("course_title")
-            or fields.get("course_name")
-            or fields.get("course_code")
-            or "Untitled"
-        )
     return d
 
 
@@ -187,11 +172,19 @@ def delete_workspace(
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
 ):
-    # Cancel any in-flight background extraction before deleting,
-    # otherwise the background thread keeps writing after the DB row is gone.
+    # Cancel any in-flight background extraction first so the thread doesn't
+    # try to write to a row that no longer exists (prevents cascade errors).
     workspace_service.cancel_if_in_flight(workspace_id)
-    if not workspace_repo.delete(workspace_id):
+
+    try:
+        deleted = workspace_repo.delete(workspace_id)
+    except Exception as exc:
+        logger.error("Delete failed for workspace=%s: %s", workspace_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
+
+    if not deleted:
         raise HTTPException(status_code=404, detail="Workspace not found")
+
     logger.info("Deleted workspace id=%s", workspace_id)
     return {"deleted": True}
 
