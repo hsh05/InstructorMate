@@ -42,7 +42,7 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   void recordImport(String sectionId, int count) {
     sectionStudentCounts[sectionId] = count;
-    _syncCurrentToList();
+    _syncCurrentToList(wasUpdated: true);
     notifyListeners();
   }
 
@@ -275,7 +275,7 @@ class WorkspacesViewModel extends ChangeNotifier {
           await api.importWorkspace(bytes: bytes, filename: filename);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -297,7 +297,7 @@ class WorkspacesViewModel extends ChangeNotifier {
           await api.importWorkspace(bytes: picked.bytes, filename: picked.name);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -316,7 +316,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.updateWorkspaceFields(ws.id, Map.from(fields));
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -335,7 +335,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.createSection(ws.id, draft);
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -353,7 +353,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       _current = await api.updateSection(ws.id, sectionId, draft);
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -372,7 +372,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     try {
       _current = await api.deleteSection(ws.id, sectionId);
       sectionStudentCounts.remove(sectionId);
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -404,7 +404,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         result.imported,
       );
       _current = await api.getWorkspace(ws.id);
-      _syncCurrentToList();
+      _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -449,7 +449,7 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   // ── Sync ──────────────────────────────────────────────────────────────────
 
-  void _syncCurrentToList() {
+  void _syncCurrentToList({bool wasUpdated = false}) {
     final ws = _current;
     if (ws == null) return;
     final idx = workspaces.indexWhere((s) => s.id == ws.id);
@@ -462,12 +462,14 @@ class WorkspacesViewModel extends ChangeNotifier {
     final newSummary = WorkspaceSummary(
       id: ws.id,
       createdAt: idx != -1 ? workspaces[idx].createdAt : ws.createdAt,
-      // FIX: Never stamp DateTime.now() as updatedAt — that makes simply
-      // opening a workspace appear as if something was updated. Only use the
-      // real backend value; if absent, preserve whatever the list already had.
-      updatedAtRaw: ws.updatedAtRaw?.isNotEmpty == true
-          ? ws.updatedAtRaw
-          : (idx != -1 ? workspaces[idx].updatedAtRaw : null),
+      // If this is a real mutation (save fields, add section, import students etc.)
+      // stamp now immediately so the home card updates without waiting for a
+      // backend round-trip. Otherwise preserve the existing value.
+      updatedAtRaw: wasUpdated
+          ? DateTime.now().toIso8601String()
+          : (ws.updatedAtRaw?.isNotEmpty == true
+              ? ws.updatedAtRaw
+              : (idx != -1 ? workspaces[idx].updatedAtRaw : null)),
       originalFilename:
           idx != -1 ? workspaces[idx].originalFilename : ws.originalFilename,
       pdfHash: idx != -1 ? workspaces[idx].pdfHash : ws.pdfHash,
