@@ -37,12 +37,13 @@ class WorkspaceSummary {
   /// and no name has been extracted yet — show a loading card, not "Untitled".
   bool get isProcessing => status == 'draft' && title.isEmpty;
 
-  /// Parsed updatedAt — prefers updated_at, falls back to created_at.
+  /// Returns the real backend updated_at timestamp, or null if none.
+  /// Does NOT fall back to created_at — that caused opening a workspace
+  /// to appear as a content update.
   DateTime? get updatedAt {
-    final raw = (updatedAtRaw?.isNotEmpty == true) ? updatedAtRaw! : createdAt;
-    if (raw.isEmpty) return null;
+    if (updatedAtRaw?.isNotEmpty != true) return null;
     try {
-      return DateTime.parse(raw);
+      return DateTime.parse(updatedAtRaw!);
     } catch (_) {
       return null;
     }
@@ -154,10 +155,9 @@ class Workspace {
   bool get isProcessing => status == 'draft' && title.isEmpty;
 
   DateTime? get updatedAt {
-    final raw = (updatedAtRaw?.isNotEmpty == true) ? updatedAtRaw! : createdAt;
-    if (raw.isEmpty) return null;
+    if (updatedAtRaw?.isNotEmpty != true) return null;
     try {
-      return DateTime.parse(raw);
+      return DateTime.parse(updatedAtRaw!);
     } catch (_) {
       return null;
     }

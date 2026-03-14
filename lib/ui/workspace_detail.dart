@@ -117,15 +117,18 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
           );
         }
 
-        // FIX: didUpdateWidget never fires inside AnimatedBuilder because the
-        // widget instance doesn't change — only the VM notifies. Sync controllers
-        // on every rebuild so course_code/semester populate once loadingDetail
-        // transitions to false and the full workspace data arrives.
+        // FIX: didUpdateWidget never fires inside AnimatedBuilder — the widget
+        // instance stays the same, only VM notifies. Sync controllers on every
+        // rebuild so course_code/semester populate the moment loadingDetail
+        // becomes false and real workspace data arrives.
         if (!widget.vm.loadingDetail) {
           _syncControllersFromWorkspace();
         }
 
         final ready = _isReady(ws);
+        // Don't evaluate missing fields against the shell workspace while
+        // background fetch is running — empty fields would trigger the banner
+        // spuriously before real data arrives.
         final missing =
             widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
 
@@ -2463,52 +2466,62 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        ...filtered.asMap().entries.map((e) {
-                          final i = e.key;
-                          final s = e.value;
-                          return Container(
-                            color: i.isEven
-                                ? Colors.transparent
-                                : AppColors.surfaceAlt.withOpacity(0.45),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 9),
-                            child: Row(children: [
-                              SizedBox(
-                                width: 28,
-                                child: Text('${i + 1}',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.inkLight,
-                                        fontWeight: FontWeight.w600)),
-                              ),
-                              Expanded(
-                                flex: 3,
-                                child: Text(s.name.isEmpty ? '—' : s.name,
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.ink,
-                                        fontWeight: FontWeight.w600),
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                              Expanded(
-                                flex: 3,
-                                child: Text(s.email.isEmpty ? '—' : s.email,
-                                    style: const TextStyle(
-                                        fontSize: 11, color: AppColors.inkMid),
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                              SizedBox(
-                                width: 56,
-                                child: Text(
-                                    s.studentNo.isEmpty ? '—' : s.studentNo,
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.inkLight),
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                            ]),
-                          );
-                        }),
+                        // Virtualized list — only renders visible rows so
+                        // large rosters (300+ students) don't lag on open.
+                        // shrinkWrap + NeverScrollableScrollPhysics lets it
+                        // sit inside the parent AnimatedSize/Column without
+                        // fighting for scroll ownership.
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final s = filtered[i];
+                            return Container(
+                              color: i.isEven
+                                  ? Colors.transparent
+                                  : AppColors.surfaceAlt.withOpacity(0.45),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 9),
+                              child: Row(children: [
+                                SizedBox(
+                                  width: 28,
+                                  child: Text('${i + 1}',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkLight,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(s.name.isEmpty ? '—' : s.name,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.ink,
+                                          fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(s.email.isEmpty ? '—' : s.email,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkMid),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                                SizedBox(
+                                  width: 56,
+                                  child: Text(
+                                      s.studentNo.isEmpty ? '—' : s.studentNo,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkLight),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              ]),
+                            );
+                          },
+                        ),
                         const SizedBox(height: 6),
                         Align(
                           alignment: Alignment.centerRight,
