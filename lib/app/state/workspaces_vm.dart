@@ -227,6 +227,11 @@ class WorkspacesViewModel extends ChangeNotifier {
       fields: {
         'course_name': summary.title,
         'course_title': summary.title,
+        // Pre-populate other fields as empty — controllers will be
+        // corrected by _syncControllersFromWorkspace() once loadingDetail
+        // becomes false and the full workspace data arrives.
+        'course_code': '',
+        'semester': '',
       },
       sections: const [],
       studentsCount: summary.studentsCount,
@@ -457,7 +462,12 @@ class WorkspacesViewModel extends ChangeNotifier {
     final newSummary = WorkspaceSummary(
       id: ws.id,
       createdAt: idx != -1 ? workspaces[idx].createdAt : ws.createdAt,
-      updatedAtRaw: ws.updatedAtRaw ?? DateTime.now().toIso8601String(),
+      // FIX: Never stamp DateTime.now() as updatedAt — that makes simply
+      // opening a workspace appear as if something was updated. Only use the
+      // real backend value; if absent, preserve whatever the list already had.
+      updatedAtRaw: ws.updatedAtRaw?.isNotEmpty == true
+          ? ws.updatedAtRaw
+          : (idx != -1 ? workspaces[idx].updatedAtRaw : null),
       originalFilename:
           idx != -1 ? workspaces[idx].originalFilename : ws.originalFilename,
       pdfHash: idx != -1 ? workspaces[idx].pdfHash : ws.pdfHash,

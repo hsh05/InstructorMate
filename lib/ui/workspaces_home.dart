@@ -616,11 +616,13 @@ class _WorkspaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeAgo = workspace.updatedAt != null
+    // Only show a timestamp when the backend has provided a real updated_at.
+    // Falling back to created_at was misleading — it showed "just now" on
+    // every open because _syncCurrentToList was stamping DateTime.now().
+    // Now we only show "Updated X ago" for genuine content changes.
+    final timeAgo = workspace.updatedAtRaw?.isNotEmpty == true
         ? _timeAgo(workspace.updatedAt!)
-        : (workspace.createdAt.isNotEmpty
-            ? _timeAgoFromString(workspace.createdAt)
-            : null);
+        : null;
 
     return Material(
       color: AppColors.surface,
@@ -685,7 +687,7 @@ class _WorkspaceCard extends StatelessWidget {
                     if (timeAgo != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Last opened: $timeAgo',
+                        'Updated $timeAgo',
                         style: const TextStyle(
                           fontSize: 11.5,
                           color: AppColors.inkLight,

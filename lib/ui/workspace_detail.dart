@@ -116,6 +116,15 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             body: Center(child: Text('No workspace selected.')),
           );
         }
+
+        // FIX: didUpdateWidget never fires inside AnimatedBuilder because the
+        // widget instance doesn't change — only the VM notifies. Sync controllers
+        // on every rebuild so course_code/semester populate once loadingDetail
+        // transitions to false and the full workspace data arrives.
+        if (!widget.vm.loadingDetail) {
+          _syncControllersFromWorkspace();
+        }
+
         final ready = _isReady(ws);
         final missing =
             widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
@@ -1970,131 +1979,6 @@ class _Badge extends StatelessWidget {
       );
 }
 
-// ─── Section info cell ────────────────────────────────────────────────────────
-class _SectionInfoCell extends StatelessWidget {
-  const _SectionInfoCell({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 10, color: AppColors.inkLight),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.inkLight,
-                  letterSpacing: 0.6,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.inkMid,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Info chip ────────────────────────────────────────────────────────────────
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: AppColors.r8,
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: AppColors.inkMid),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.inkMid,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Small icon action button ─────────────────────────────────────────────────
-class _IconAction extends StatelessWidget {
-  const _IconAction({
-    required this.icon,
-    required this.color,
-    required this.bgColor,
-    required this.tooltip,
-    required this.onTap,
-  });
-  final IconData icon;
-  final Color color;
-  final Color bgColor;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: AppColors.r8,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: AppColors.r8,
-          ),
-          child: Icon(icon, size: 16, color: color),
-        ),
-      ),
-    );
-  }
-}
-
 // ─── TAB 3 — Students ─────────────────────────────────────────────────────────
 class _StudentsTab extends StatelessWidget {
   const _StudentsTab(
@@ -2941,44 +2825,6 @@ class _PillButton extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     fontSize: 12)),
           ),
-        ),
-      );
-}
-
-class _FormField extends StatelessWidget {
-  const _FormField({
-    required this.ctrl,
-    required this.label,
-    required this.icon,
-  });
-  final TextEditingController ctrl;
-  final String label;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => TextField(
-        controller: ctrl,
-        style: const TextStyle(color: AppColors.ink, fontSize: 13),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: AppColors.inkMid, fontSize: 12),
-          prefixIcon: Icon(icon, color: AppColors.primary, size: 15),
-          filled: true,
-          fillColor: AppColors.surfaceAlt,
-          border: OutlineInputBorder(
-            borderRadius: AppColors.r12,
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: AppColors.r12,
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: AppColors.r12,
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         ),
       );
 }

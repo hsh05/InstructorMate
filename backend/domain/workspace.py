@@ -3,6 +3,8 @@
 # FIX (DRY): REQUIRED_FIELDS was a hardcoded list here that was separate from
 # (and could drift from) the field list in CsvWorkspaceRepository.
 # Now imports REQUIRED_FIELD_NAMES from workspace_fields.py — one source of truth.
+# FIX: to_dict() now exposes real created_at and updated_at timestamps
+# that _to_domain attaches, instead of hardcoded empty strings.
 
 from typing import Dict, List
 from .enums import WorkspaceStatus
@@ -21,6 +23,9 @@ class Workspace:
         self._pdf_hash = pdf_hash
         self._fields = fields
         self._status = status
+        # Populated by the repository after construction
+        self._created_at: str = ""
+        self._updated_at: str = ""
 
     @property
     def workspace_id(self) -> str:
@@ -38,12 +43,15 @@ class Workspace:
     def status(self) -> WorkspaceStatus:
         return self._status
 
+    @status.setter
+    def status(self, value: WorkspaceStatus) -> None:
+        self._status = value
+
     def update_fields(self, updates: Dict[str, str]) -> None:
         self._fields.update(updates)
         self._recalculate_status()
 
     def get_missing_fields(self) -> List[str]:
-        # FIX: uses shared REQUIRED_FIELD_NAMES instead of its own hardcoded list
         return [f for f in REQUIRED_FIELD_NAMES if not self._fields.get(f)]
 
     def _recalculate_status(self) -> None:
@@ -55,7 +63,9 @@ class Workspace:
     def to_dict(self) -> dict:
         return {
             "id": self.workspace_id,
-            "created_at": "",
+            # FIX: expose real DB timestamps instead of hardcoded empty strings
+            "created_at": self._created_at,
+            "updated_at": self._updated_at,
             "original_filename": "",
             "pdf_hash": self.pdf_hash,
             "fields": self.fields,
