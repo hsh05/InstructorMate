@@ -108,3 +108,18 @@ def list_section_students(
 ):
     students = repo.list_by_section(workspace_id, section_id)
     return {"students": students, "count": len(students)}
+
+
+@router.delete("/workspaces/{workspace_id}/sections/{section_id}/students/{student_id}")
+def delete_student(
+    workspace_id: str,
+    section_id: str,
+    student_id: str,
+    repo: PgStudentRepository = Depends(get_student_repo),
+):
+    deleted = repo.delete_student(workspace_id, section_id, student_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Student not found in this section")
+    logger.info("Deleted student id=%s from section=%s workspace=%s",
+                student_id, section_id, workspace_id)
+    return {"deleted": True, "student_id": student_id}

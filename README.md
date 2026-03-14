@@ -60,6 +60,8 @@ flutter clean
 flutter pub get
 flutter build apk --release
 
+flutter devices 
+
 flutter clean
 flutter pub get
 flutter run

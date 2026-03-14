@@ -1,12 +1,4 @@
 // lib/app/api_client.dart
-//
-// CHANGES vs original:
-// FIX #2 — GET requests now retry up to 2 times with exponential back-off on
-//           network errors or 5xx responses. Upload/mutation calls do NOT retry
-//           (they are not idempotent).
-// FIX #6 — reuploadSyllabus() removed entirely.
-// .docx is still accepted by importWorkspace (backend auto-detects).
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -58,34 +50,6 @@ class ApiClient {
     return baseUri.resolve(p);
   }
 
-  // ── FIX #2: Retry helper for GET requests ──────────────────────────────────
-  // Retries up to [maxAttempts] times on network errors or 5xx responses.
-  // Waits [base * 2^attempt] seconds between retries.
-  Future<http.Response> _getWithRetry(
-    Uri uri, {
-    Duration timeout = const Duration(seconds: 15),
-    int maxAttempts = 3,
-    Duration base = const Duration(milliseconds: 600),
-  }) async {
-    Exception? lastError;
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
-      if (attempt > 0) {
-        await Future.delayed(base * (1 << (attempt - 1))); // 0.6s, 1.2s
-      }
-      try {
-        final resp = await http.get(uri).timeout(timeout);
-        if (resp.statusCode < 500)
-          return resp; // success or client error — don't retry
-        lastError = Exception('Server error ${resp.statusCode}');
-      } on TimeoutException catch (e) {
-        lastError = Exception('Request timed out: $e');
-      } catch (e) {
-        lastError = Exception('Network error: $e');
-      }
-    }
-    throw lastError ?? Exception('Request failed after $maxAttempts attempts');
-  }
-
   // ── Workspaces ─────────────────────────────────────────────────────────────
 
   Future<ImportWorkspaceResult> importWorkspace({
@@ -124,7 +88,7 @@ class ApiClient {
 
   Future<List<WorkspaceSummary>> listWorkspaces() async {
     final resp =
-        await _getWithRetry(_u('/workspaces'), timeout: AppConfig.shortTimeout);
+        await http.get(_u('/workspaces')).timeout(AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return (map['workspaces'] as List)
@@ -133,8 +97,8 @@ class ApiClient {
   }
 
   Future<Workspace> getWorkspace(String id) async {
-    final resp = await _getWithRetry(_u('/workspaces/$id'),
-        timeout: AppConfig.shortTimeout);
+    final resp =
+        await http.get(_u('/workspaces/$id')).timeout(AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
@@ -249,15 +213,30 @@ class ApiClient {
     String workspaceId,
     String sectionId,
   ) async {
-    final resp = await _getWithRetry(
-      _u('/workspaces/$workspaceId/sections/$sectionId/students'),
-      timeout: AppConfig.shortTimeout,
-    );
+    final resp = await http
+        .get(_u('/workspaces/$workspaceId/sections/$sectionId/students'))
+        .timeout(AppConfig.shortTimeout);
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return ((map['students'] as List?) ?? [])
         .map((e) => Student.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Remove a single student from a section.
+  /// Optimistic UI: Flutter removes from list immediately; this call
+  /// confirms deletion on the backend.
+  Future<void> deleteStudent(
+    String workspaceId,
+    String sectionId,
+    String studentId,
+  ) async {
+    final resp = await http
+        .delete(
+          _u('/workspaces/$workspaceId/sections/$sectionId/students/$studentId'),
+        )
+        .timeout(AppConfig.shortTimeout);
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
   }
 
   Future<String> ask(String wid, String question) async {

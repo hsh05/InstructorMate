@@ -2070,6 +2070,56 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     }
   }
 
+  Future<bool?> _confirmDeleteStudent(Student s) {
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Remove Student',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+        content: Text(
+          'Remove "${s.name.isNotEmpty ? s.name : s.email}" from this section?',
+          style: const TextStyle(fontSize: 13, color: AppColors.inkMid),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.inkLight)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.red,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteStudent(Student s) {
+    setState(() => _students.removeWhere((st) => st.studentId == s.studentId));
+    widget.vm.api
+        .deleteStudent(widget.ws.id, widget.section.id, s.studentId)
+        .then((_) {
+      // Refresh count in VM
+      widget.vm.recordImport(widget.section.id, _students.length);
+    }).catchError((e) {
+      // Re-add if API call failed
+      if (mounted) {
+        setState(() => _students.add(s));
+        widget.onError('Failed to remove student: $e');
+      }
+    });
+  }
+
   void _toggle() {
     setState(() => _expanded = !_expanded);
     if (_expanded) _loadRoster();
@@ -2477,48 +2527,73 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                           itemCount: filtered.length,
                           itemBuilder: (_, i) {
                             final s = filtered[i];
-                            return Container(
-                              color: i.isEven
-                                  ? Colors.transparent
-                                  : AppColors.surfaceAlt.withOpacity(0.45),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 9),
-                              child: Row(children: [
-                                SizedBox(
-                                  width: 28,
-                                  child: Text('${i + 1}',
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.inkLight,
-                                          fontWeight: FontWeight.w600)),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Text(s.name.isEmpty ? '—' : s.name,
-                                      style: const TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.ink,
-                                          fontWeight: FontWeight.w600),
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Text(s.email.isEmpty ? '—' : s.email,
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.inkMid),
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                                SizedBox(
-                                  width: 56,
-                                  child: Text(
-                                      s.studentNo.isEmpty ? '—' : s.studentNo,
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.inkLight),
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                              ]),
+                            return Dismissible(
+                              key: ValueKey(s.studentId),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 16),
+                                color: AppColors.red.withOpacity(0.12),
+                                child: const Icon(Icons.delete_outline_rounded,
+                                    color: AppColors.red, size: 18),
+                              ),
+                              confirmDismiss: (_) => _confirmDeleteStudent(s),
+                              onDismissed: (_) => _deleteStudent(s),
+                              child: Container(
+                                color: i.isEven
+                                    ? Colors.transparent
+                                    : AppColors.surfaceAlt.withOpacity(0.45),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 9),
+                                child: Row(children: [
+                                  SizedBox(
+                                    width: 28,
+                                    child: Text('${i + 1}',
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.inkLight,
+                                            fontWeight: FontWeight.w600)),
+                                  ),
+                                  Expanded(
+                                    flex: 3,
+                                    child: Text(s.name.isEmpty ? '—' : s.name,
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.ink,
+                                            fontWeight: FontWeight.w600),
+                                        overflow: TextOverflow.ellipsis),
+                                  ),
+                                  Expanded(
+                                    flex: 3,
+                                    child: Text(s.email.isEmpty ? '—' : s.email,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.inkMid),
+                                        overflow: TextOverflow.ellipsis),
+                                  ),
+                                  SizedBox(
+                                    width: 56,
+                                    child: Text(
+                                        s.studentNo.isEmpty ? '—' : s.studentNo,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.inkLight),
+                                        overflow: TextOverflow.ellipsis),
+                                  ),
+                                  // Tap delete icon as alternative to swipe
+                                  GestureDetector(
+                                    onTap: () async {
+                                      final ok = await _confirmDeleteStudent(s);
+                                      if (ok == true) _deleteStudent(s);
+                                    },
+                                    child: const Padding(
+                                      padding: EdgeInsets.only(left: 6),
+                                      child: Icon(Icons.delete_outline_rounded,
+                                          size: 15, color: AppColors.red),
+                                    ),
+                                  ),
+                                ]),
+                              ),
                             );
                           },
                         ),

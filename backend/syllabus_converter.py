@@ -104,16 +104,13 @@ class SafeJson:
 # ── PDF extractor ──────────────────────────────────────────────────────────────
 
 class PdfTextExtractor:
-    def extract_chunks(self, pdf_path: Path, max_pages: int = 0) -> List[PdfChunk]:
+    def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found: {pdf_path.resolve()}")
         reader = PdfReader(str(pdf_path))
         chunks: List[PdfChunk] = []
         chunk_id = 1
-        pages = reader.pages
-        if max_pages and max_pages < len(pages):
-            pages = pages[:max_pages]
-        for page_index, page in enumerate(pages, start=1):
+        for page_index, page in enumerate(reader.pages, start=1):
             text = (page.extract_text() or "").strip()
             if not text:
                 continue
@@ -144,7 +141,43 @@ class DocxTextExtractor:
             raise FileNotFoundError(f"DOCX not found: {docx_path.resolve()}")
 
         doc = DocxDocument(str(docx_path))
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+
+        # Collect all text in document order: paragraphs AND table cells.
+        # Many syllabi store course code / instructor info in a header table —
+        # doc.paragraphs alone skips all table content entirely.
+        all_text: list[str] = []
+        from docx.oxml.ns import qn
+
+        def _iter_block_items(parent):
+            """Yield paragraphs and tables in document order."""
+            from docx.table import Table
+            from docx.text.paragraph import Paragraph
+            for child in parent.element.body:
+                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                if tag == 'p':
+                    yield Paragraph(child, parent)
+                elif tag == 'tbl':
+                    yield Table(child, parent)
+
+        for block in _iter_block_items(doc):
+            from docx.table import Table
+            from docx.text.paragraph import Paragraph
+            if isinstance(block, Paragraph):
+                t = block.text.strip()
+                if t:
+                    all_text.append(t)
+            elif isinstance(block, Table):
+                for row in block.rows:
+                    row_cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    # Deduplicate merged cells (python-docx repeats them)
+                    seen = []
+                    for cell in row_cells:
+                        if not seen or cell != seen[-1]:
+                            seen.append(cell)
+                    if seen:
+                        all_text.append(' | '.join(seen))
+
+        paragraphs = all_text
 
         if not paragraphs:
             raise RuntimeError("No text extracted from DOCX. The file may be empty.")
@@ -183,7 +216,7 @@ class CsvSchemaLoader:
 # ── LLM field extractor ────────────────────────────────────────────────────────
 
 class SyllabusFieldExtractor:
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, model: str = "gpt-4o") -> None:
         self.client = OpenAI()
         self.model = model
 
@@ -209,7 +242,7 @@ class SyllabusFieldExtractor:
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
 
-        raw = self._call_llm(prompt)
+        raw = self._call_with_retries(prompt)
         data = SafeJson.loads_strict_or_extract(raw)
 
         if not isinstance(data, dict):
@@ -221,12 +254,19 @@ class SyllabusFieldExtractor:
             normalized[name] = str(value) if value is not None else ""
         return normalized
 
-    def _call_llm(self, prompt: str) -> str:
-        resp = self.client.responses.create(
-            model=self.model,
-            input=[{"role": "user", "content": prompt}],
-        )
-        return (resp.output_text or "").strip()
+    def _call_with_retries(self, prompt: str) -> str:
+        last_err: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                resp = self.client.responses.create(
+                    model=self.model,
+                    input=[{"role": "user", "content": prompt}],
+                )
+                return (resp.output_text or "").strip()
+            except Exception as e:
+                last_err = e
+                time.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(f"OpenAI call failed after retries: {last_err}")
 
     def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:
         first_pages = [c for c in chunks if c.page <= 3]
@@ -281,7 +321,7 @@ _SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
 
 
 class SyllabusConverterService:
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, model: str = "gpt-4o") -> None:
         self.pdf_extractor  = PdfTextExtractor()
         self.docx_extractor = DocxTextExtractor()
         self.schema_loader  = CsvSchemaLoader()
@@ -345,18 +385,11 @@ class SyllabusConverterService:
             )
 
         t0 = time.time()
-        # Full extraction for chunks (used by /ask pipeline)
         chunks = extractor.extract_chunks(doc_path)
         print(f"extract_chunks ({doc_path.suffix}) sec:", round(time.time() - t0, 2))
 
-        # Fast pass: only first 15 pages for LLM field extraction — _compact_text
-        # only uses pages 1-3 + keyword pages anyway, so reading 200 pages is waste.
         t1 = time.time()
-        if doc_path.suffix.lower() == ".pdf":
-            field_chunks = extractor.extract_chunks(doc_path, max_pages=15)
-        else:
-            field_chunks = chunks  # docx chunks are already small
-        single_row = self.field_extractor.extract_single_row(field_chunks, columns)
+        single_row = self.field_extractor.extract_single_row(chunks, columns)
         print("llm sec:", round(time.time() - t1, 2))
 
         self.writer.write_single_row(single_row_path, single_row)
@@ -373,7 +406,7 @@ class SyllabusConverterService:
 def convert_pdf_to_csvs(
     pdf_path: str,
     output_dir: str = "output",
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-4o",
     template_csv_path: str = "templates/default_template.csv",
     output_base_name: Optional[str] = None,
 ) -> Dict[str, str]:

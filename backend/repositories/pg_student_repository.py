@@ -138,6 +138,43 @@ class PgStudentRepository:
         self.db.commit()
         logger.info("Removed %d section links for section=%s", deleted, section_id)
         return deleted
+    def delete_student(self, workspace_id: str, section_id: str, student_id: str) -> bool:
+        """
+        Remove a single student from a section.
+        Deletes the StudentSection link. If the student has no other section
+        links in this workspace, also deletes the Student row itself.
+        Returns True if the student was found and removed.
+        """
+        link = self.db.query(StudentSectionModel).filter(
+            StudentSectionModel.student_id == student_id,
+            StudentSectionModel.section_id == section_id,
+        ).first()
+        if not link:
+            return False
+
+        self.db.delete(link)
+        self.db.flush()
+
+        # Check if student has any remaining section links in this workspace
+        remaining = (
+            self.db.query(StudentSectionModel)
+            .join(StudentModel, StudentModel.student_id == StudentSectionModel.student_id)
+            .filter(
+                StudentModel.workspace_id == workspace_id,
+                StudentSectionModel.student_id == student_id,
+            )
+            .count()
+        )
+        if remaining == 0:
+            # No other section links — safe to delete the student row too
+            self.db.query(StudentModel).filter(
+                StudentModel.student_id == student_id
+            ).delete()
+
+        self.db.commit()
+        logger.info("Deleted student id=%s from section=%s", student_id, section_id)
+        return True
+
     # ── Private ───────────────────────────────────────────────────────────────
 
     def _to_dict(self, row: StudentModel, section_id: str = "") -> dict:
