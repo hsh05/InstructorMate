@@ -138,6 +138,48 @@ class PgStudentRepository:
         self.db.commit()
         logger.info("Removed %d section links for section=%s", deleted, section_id)
         return deleted
+    def clear_section(self, workspace_id: str, section_id: str) -> int:
+        """
+        Remove all students from a section.
+        Deletes all StudentSection links for this section, then removes
+        any Student rows that have no remaining section links in this workspace.
+        Returns the number of students removed.
+        """
+        # Find all student IDs in this section
+        links = self.db.query(StudentSectionModel).filter(
+            StudentSectionModel.section_id == section_id
+        ).all()
+        student_ids = [l.student_id for l in links]
+
+        # Delete all StudentSection links for this section
+        self.db.query(StudentSectionModel).filter(
+            StudentSectionModel.section_id == section_id
+        ).delete()
+        self.db.flush()
+
+        # Delete orphaned Student rows (no other section links in this workspace)
+        removed = 0
+        for sid in student_ids:
+            remaining = (
+                self.db.query(StudentSectionModel)
+                .join(StudentModel, StudentModel.student_id == StudentSectionModel.student_id)
+                .filter(
+                    StudentModel.workspace_id == workspace_id,
+                    StudentSectionModel.student_id == sid,
+                )
+                .count()
+            )
+            if remaining == 0:
+                self.db.query(StudentModel).filter(
+                    StudentModel.student_id == sid
+                ).delete()
+                removed += 1
+
+        self.db.commit()
+        logger.info("Cleared %d students from section=%s workspace=%s",
+                    removed, section_id, workspace_id)
+        return removed
+
     def delete_student(self, workspace_id: str, section_id: str, student_id: str) -> bool:
         """
         Remove a single student from a section.

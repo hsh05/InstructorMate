@@ -110,6 +110,20 @@ def list_section_students(
     return {"students": students, "count": len(students)}
 
 
+@router.delete("/workspaces/{workspace_id}/sections/{section_id}/students")
+def clear_section_students(
+    workspace_id: str,
+    section_id: str,
+    repo: PgStudentRepository = Depends(get_student_repo),
+):
+    """Remove all students from a section (clears StudentSection links
+    and orphaned Student rows with no other section links)."""
+    count = repo.clear_section(workspace_id, section_id)
+    logger.info("Cleared %d students from section=%s workspace=%s",
+                count, section_id, workspace_id)
+    return {"deleted": count, "section_id": section_id}
+
+
 @router.delete("/workspaces/{workspace_id}/sections/{section_id}/students/{student_id}")
 def delete_student(
     workspace_id: str,

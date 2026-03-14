@@ -223,6 +223,19 @@ class ApiClient {
         .toList();
   }
 
+  /// Remove ALL students from a section in one call.
+  Future<void> clearSectionStudents(
+    String workspaceId,
+    String sectionId,
+  ) async {
+    final resp = await http
+        .delete(
+          _u('/workspaces/$workspaceId/sections/$sectionId/students'),
+        )
+        .timeout(AppConfig.shortTimeout);
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+  }
+
   /// Remove a single student from a section.
   /// Optimistic UI: Flutter removes from list immediately; this call
   /// confirms deletion on the backend.
