@@ -1,15 +1,4 @@
 # backend/repositories/pg_section_repository.py
-#
-# SCHEMA NOTE (normalized)
-# ────────────────────────
-# Section table no longer has 'days' or 'timezone' columns.
-# Days are stored in the SectionDay table (one row per day per section).
-# Timezone is not persisted — always returned as "UTC" placeholder;
-# the actual timezone context lives in the Flutter app.
-#
-# TIME FORMAT NOTE
-# ────────────────
-# start_time / end_time stored as-is from Flutter ("9:00 AM" or "09:00").
 
 import logging
 from typing import Dict, List

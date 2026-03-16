@@ -2,7 +2,6 @@
 #
 # SCHEMA NOTE
 # ───────────
-# Students no longer have a section_id column.
 # Import flow: save Student row (merge) + create StudentSection link.
 # Replace flow: delete StudentSection links for section, then re-import.
 
@@ -37,7 +36,7 @@ class StudentService:
 
         # If replacing an existing roster, clear the section links first.
         # Student rows themselves stay (they belong to the workspace);
-        # only the StudentSection links are removed so the count resets.
+        # only the StudentSection links are removed so the count resets. Beacuse same student might be in another section
         if section_id:
             self.repo.delete_by_section(section_id)
 
@@ -51,10 +50,10 @@ class StudentService:
                 name         = (row.get("name") or "").strip(),
                 email        = (row.get("email") or "").strip(),
             )
-            if not student.name and not student.email:
+            if not student.name and not student.email: #if the csv student list file has an empty row, skip it so that we dont inssert garbage data in our db
                 continue  # skip completely blank rows
-            self.repo.save(student)
-            students.append(student)
+            self.repo.save(student)  #save student to db
+            students.append(student) #add student to student list
 
         logger.info("Imported %d students workspace=%s section=%s",
                     len(students), workspace_id, section_id)

@@ -56,7 +56,7 @@ def get_section_repo(
 # ── Routes (unchanged) ────────────────────────────────────────────────────────
 
 @router.post("/workspaces/{workspace_id}/students/import")
-async def import_students(
+async def import_students( #This function may need to wait for something. When it waits, don’t freeze the server. Because reading files is I/O (Input/Output).
     workspace_id: str,
     file: UploadFile = File(...),
     section_id: Optional[str] = Form(None),
@@ -71,7 +71,7 @@ async def import_students(
             detail=f"Unsupported file type '{ext}'. Allowed: {sorted(_ALLOWED_EXTENSIONS)}",
         )
 
-    content = await file.read()
+    content = await file.read() #Start reading the file. While waiting for it to finish, let the server do other work.
       # Compute SHA-256 hash of uploaded file
     file_hash = hashlib.sha256(content).hexdigest()
     try:

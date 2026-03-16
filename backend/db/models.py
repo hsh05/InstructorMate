@@ -7,7 +7,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from db.database import Base
 
-
+#ORM model is Python class representing a database table
 class Workspace(Base):
     __tablename__ = "workspaces"
 

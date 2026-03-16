@@ -46,6 +46,36 @@ class SyllabusCsvStore:
         return chunks
 
 
+class SyllabusListStore:
+    """
+    In-memory store that wraps chunks already loaded from the database.
+
+    This is the preferred store for the /ask endpoint. It accepts the list of
+    chunk dicts returned by PgWorkspaceRepository.get_chunks_for_ask() and
+    converts them to CsvChunk objects directly in memory — no disk I/O, no
+    temp files, no cleanup required.
+
+    Each dict is expected to have the shape:
+        {"chunk_id": int, "page": int, "content": str}
+    which is exactly what get_chunks_for_ask() returns.
+    """
+
+    def __init__(self, chunks: List[Dict]) -> None:
+        self._chunks = chunks
+
+    def load(self) -> List[CsvChunk]:
+        result: List[CsvChunk] = []
+        for c in self._chunks:
+            result.append(
+                CsvChunk(
+                    chunk_id=int(c.get("chunk_id", 0)),
+                    page=int(c.get("page", 0)),
+                    text=str(c.get("content", "")),
+                )
+            )
+        return result
+
+
 class LightweightRetriever:
     def __init__(self, top_k: int = 10, score_threshold: float = 2.0) -> None:
         self.top_k = top_k
@@ -163,7 +193,12 @@ class SyllabusChatGPT:
 
 
 class AskPipeline:
-    def __init__(self, store: SyllabusCsvStore, retriever: LightweightRetriever, llm: SyllabusChatGPT) -> None:
+    def __init__(
+        self,
+        store: "SyllabusCsvStore | SyllabusListStore",
+        retriever: LightweightRetriever,
+        llm: SyllabusChatGPT,
+    ) -> None:
         self.store = store
         self.retriever = retriever
         self.llm = llm

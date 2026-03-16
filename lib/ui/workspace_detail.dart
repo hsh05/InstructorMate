@@ -117,18 +117,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
           );
         }
 
-        // FIX: didUpdateWidget never fires inside AnimatedBuilder — the widget
-        // instance stays the same, only VM notifies. Sync controllers on every
-        // rebuild so course_code/semester populate the moment loadingDetail
-        // becomes false and real workspace data arrives.
         if (!widget.vm.loadingDetail) {
           _syncControllersFromWorkspace();
         }
 
         final ready = _isReady(ws);
-        // Don't evaluate missing fields against the shell workspace while
-        // background fetch is running — empty fields would trigger the banner
-        // spuriously before real data arrives.
         final missing =
             widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
 
@@ -195,7 +188,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                   // ── Tab content ────────────────────────────────────────
                   Expanded(
                     child: widget.vm.loadingDetail
-                        // Background fetch still running → show skeleton
                         ? const _DetailSkeleton()
                         : widget.vm.loading
                             ? const Center(
@@ -275,7 +267,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     children: [
                       Expanded(
                         child: ws.title.isEmpty
-                            // Title still loading — subtle shimmer bar
                             ? _ShimmerBar(
                                 width: 200,
                                 height: 20,
@@ -433,9 +424,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 }
 
 // ─── Detail Skeleton ──────────────────────────────────────────────────────────
-// Shown in the tab content area while loadingDetail == true (background fetch).
-// The header already renders with title/status from the cached summary,
-// so only the tab body needs this treatment.
 class _DetailSkeleton extends StatefulWidget {
   const _DetailSkeleton();
 
@@ -477,7 +465,6 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
           physics: const NeverScrollableScrollPhysics(),
           children: [
-            // ── Row: section label ───────────────────────────────────────
             Row(children: [
               _pill(bright, w: 16, h: 16, r: 8),
               const SizedBox(width: 8),
@@ -486,8 +473,6 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
             const SizedBox(height: 6),
             _pill(bright, w: 200, h: 10),
             const SizedBox(height: 14),
-
-            // ── Card: 3 field rows ───────────────────────────────────────
             _skeletonCard(dim, bright, children: [
               _fieldRow(dim, bright),
               _divider(dim),
@@ -495,10 +480,7 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
               _divider(dim),
               _fieldRow(dim, bright),
             ]),
-
             const SizedBox(height: 22),
-
-            // ── Section label 2 ──────────────────────────────────────────
             Row(children: [
               _pill(bright, w: 16, h: 16, r: 8),
               const SizedBox(width: 8),
@@ -507,16 +489,11 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
               _pill(bright, w: 80, h: 28, r: 14),
             ]),
             const SizedBox(height: 14),
-
-            // ── Section cards ────────────────────────────────────────────
             _skeletonCard(dim, bright, children: [_sectionRow(dim, bright)]),
             const SizedBox(height: 10),
             _skeletonCard(dim, bright,
                 children: [_sectionRow(dim, bright, narrowName: true)]),
-
             const SizedBox(height: 28),
-
-            // ── Subtle spinner + label ────────────────────────────────────
             Center(
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 SizedBox(
@@ -612,7 +589,7 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
       );
 }
 
-// ─── Shimmer bar (used in header title while loading) ─────────────────────────
+// ─── Shimmer bar ──────────────────────────────────────────────────────────────
 class _ShimmerBar extends StatefulWidget {
   const _ShimmerBar(
       {required this.width,
@@ -2037,6 +2014,7 @@ class _SectionRosterCard extends StatefulWidget {
 class _SectionRosterCardState extends State<_SectionRosterCard> {
   bool _expanded = false;
   bool _importing = false;
+  bool _clearing = false;
   bool _loadingRoster = false;
   List<Student> _students = [];
   String _search = '';
@@ -2109,15 +2087,115 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     widget.vm.api
         .deleteStudent(widget.ws.id, widget.section.id, s.studentId)
         .then((_) {
-      // Refresh count in VM
       widget.vm.recordImport(widget.section.id, _students.length);
     }).catchError((e) {
-      // Re-add if API call failed
       if (mounted) {
         setState(() => _students.add(s));
         widget.onError('Failed to remove student: $e');
       }
     });
+  }
+
+  // ─── Compact professional clear-all dialog ────────────────────────────────
+  Future<void> _confirmClearAll() async {
+    final count = _students.length;
+    final sectionName =
+        widget.section.name.isNotEmpty ? widget.section.name : 'this section';
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          barrierColor: Colors.black.withOpacity(0.32),
+          builder: (_) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Clear all students from $sectionName?',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.ink,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '$count student${count == 1 ? "" : "s"} will be '
+                    'permanently removed. This cannot be undone.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkMid,
+                      height: 1.55,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.inkMid,
+                          side: const BorderSide(color: AppColors.border),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: const RoundedRectangleBorder(
+                              borderRadius: AppColors.r10),
+                        ),
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.red,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: const RoundedRectangleBorder(
+                              borderRadius: AppColors.r10),
+                        ),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Clear all',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ) ??
+        false;
+
+    if (!confirmed || !mounted) return;
+    setState(() => _clearing = true);
+    try {
+      await widget.vm.api.clearSectionStudents(widget.ws.id, widget.section.id);
+      if (!mounted) return;
+      setState(() {
+        _students = [];
+        _clearing = false;
+      });
+      widget.vm.recordImport(widget.section.id, 0);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _clearing = false);
+        widget.onError('Failed to clear students: $e');
+      }
+    }
   }
 
   void _toggle() {
@@ -2394,59 +2472,114 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                   Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(children: [
-                      Material(
-                        color: _importing
-                            ? AppColors.surfaceAlt
-                            : AppColors.primarySoft,
-                        borderRadius: AppColors.r12,
-                        child: InkWell(
-                          onTap: _importing ? null : () => _import(context),
-                          borderRadius: AppColors.r12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 11),
-                            decoration: BoxDecoration(
-                              borderRadius: AppColors.r12,
-                              border: Border.all(
-                                color: _importing
-                                    ? AppColors.border
-                                    : AppColors.primary.withOpacity(0.3),
-                              ),
-                            ),
-                            child: Row(children: [
-                              Icon(Icons.upload_file_rounded,
-                                  color: _importing
-                                      ? AppColors.inkLight
-                                      : AppColors.primary,
-                                  size: 17),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _importing
-                                      ? 'Importing…'
-                                      : 'Import student list (.csv / .xlsx)',
-                                  style: TextStyle(
-                                      color: _importing
-                                          ? AppColors.inkLight
-                                          : AppColors.primary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600),
+                      // ── Import + Clear row ──────────────────────────
+                      Row(children: [
+                        Expanded(
+                          child: Material(
+                            color: _importing
+                                ? AppColors.surfaceAlt
+                                : AppColors.primarySoft,
+                            borderRadius: AppColors.r10,
+                            child: InkWell(
+                              onTap: _importing ? null : () => _import(context),
+                              borderRadius: AppColors.r10,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: AppColors.r10,
+                                  border: Border.all(
+                                    color: _importing
+                                        ? AppColors.border
+                                        : AppColors.primary.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _importing
+                                        ? const SizedBox(
+                                            width: 13,
+                                            height: 13,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppColors.primary),
+                                          )
+                                        : const Icon(Icons.upload_file_rounded,
+                                            size: 14, color: AppColors.primary),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _importing
+                                          ? 'Importing…'
+                                          : 'Import student list',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _importing
+                                            ? AppColors.inkMid
+                                            : AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              if (_importing)
-                                const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: AppColors.primary),
-                                )
-                              else
-                                const Icon(Icons.arrow_forward_ios_rounded,
-                                    color: AppColors.primary, size: 12),
-                            ]),
+                            ),
                           ),
                         ),
-                      ),
+                        if (_students.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Material(
+                            color: Colors.transparent,
+                            borderRadius: AppColors.r10,
+                            child: InkWell(
+                              onTap: _clearing ? null : _confirmClearAll,
+                              borderRadius: AppColors.r10,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: AppColors.r10,
+                                  border: Border.all(
+                                    color: _clearing
+                                        ? AppColors.border
+                                        : AppColors.red.withOpacity(0.4),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _clearing
+                                        ? const SizedBox(
+                                            width: 13,
+                                            height: 13,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppColors.red),
+                                          )
+                                        : const Icon(
+                                            Icons.delete_outline_rounded,
+                                            size: 14,
+                                            color: AppColors.red,
+                                          ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _clearing ? 'Clearing…' : 'Clear all',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _clearing
+                                            ? AppColors.red.withOpacity(0.4)
+                                            : AppColors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ]),
+                      // ── Student list ────────────────────────────────
                       if (_loadingRoster)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
@@ -2516,11 +2649,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        // Virtualized list — only renders visible rows so
-                        // large rosters (300+ students) don't lag on open.
-                        // shrinkWrap + NeverScrollableScrollPhysics lets it
-                        // sit inside the parent AnimatedSize/Column without
-                        // fighting for scroll ownership.
                         ListView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
@@ -2580,7 +2708,6 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                             color: AppColors.inkLight),
                                         overflow: TextOverflow.ellipsis),
                                   ),
-                                  // Tap delete icon as alternative to swipe
                                   GestureDetector(
                                     onTap: () async {
                                       final ok = await _confirmDeleteStudent(s);

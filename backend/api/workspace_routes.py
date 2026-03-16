@@ -7,7 +7,6 @@
 
 
 import logging
-import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -19,7 +18,7 @@ from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
 from services.pdf_hash_service import PdfHashService
 from services.workspace_service import WorkspaceService
-from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore
+from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -200,42 +199,26 @@ async def ask_workspace_question(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
-    chunks_path: str | None = None
 
-    try:
-        if chunks_from_db:
-            # FIX: write temp file inside the try so cleanup is always reached
-            import tempfile, csv as _csv
-            tmp = tempfile.NamedTemporaryFile(
-                mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
+    if chunks_from_db:
+        # Preferred path: chunks are in the DB — pass them directly as a list.
+        # No disk I/O, no temp files, no cleanup needed.
+        store = SyllabusListStore(chunks_from_db)
+    else:
+        # Fallback path: chunks not yet in DB (legacy workspace before migration).
+        # Read from the on-disk CSV that was saved at upload time.
+        chunks_csv = workspace_repo.get_chunks_csv_path(workspace_id)
+        if not chunks_csv.exists():
+            raise HTTPException(
+                status_code=422,
+                detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
             )
-            writer = _csv.DictWriter(tmp, fieldnames=["chunk_id", "page", "text"])
-            writer.writeheader()
-            for c in chunks_from_db:
-                writer.writerow({"chunk_id": c["chunk_id"], "page": c["page"], "text": c["content"]})
-            tmp.close()
-            chunks_path = tmp.name
-        else:
-            chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
-            if not chunks_path_obj.exists():
-                raise HTTPException(
-                    status_code=422,
-                    detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
-                )
-            chunks_path = str(chunks_path_obj)
+        store = SyllabusCsvStore(str(chunks_csv))
 
-        pipeline = AskPipeline(
-            store=SyllabusCsvStore(chunks_path),
-            retriever=LightweightRetriever(),
-            llm=SyllabusChatGPT(),
-        )
-        answer = pipeline.run(req.question)
-
-    finally:
-        if chunks_from_db and chunks_path and os.path.exists(chunks_path):
-            try:
-                os.unlink(chunks_path)
-            except OSError:
-                pass
-
+    pipeline = AskPipeline(
+        store=store,
+        retriever=LightweightRetriever(),
+        llm=SyllabusChatGPT(),
+    )
+    answer = pipeline.run(req.question)
     return {"answer": answer}

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class ScheduleRequest(BaseModel):
+class ScheduleRequest(BaseModel):                #modelst that validate the json structure excepted by fastapi
     days: List[str] = Field(default_factory=list)
     start_time: str = ""
     end_time: str = ""
@@ -25,7 +25,7 @@ class ScheduleRequest(BaseModel):
     reminder_minutes: int = 10
 
 
-class SectionCreateRequest(BaseModel):
+class SectionCreateUpdateRequest(BaseModel):
     name: str = Field(..., min_length=1)
     location: str = ""
     schedule: ScheduleRequest = Field(default_factory=ScheduleRequest)
@@ -33,7 +33,7 @@ class SectionCreateRequest(BaseModel):
 
 # ── Dependency factories ──────────────────────────────────────────────────────
 
-def get_workspace_repo(db: Session = Depends(get_db)) -> PgWorkspaceRepository:
+def get_workspace_repo(db: Session = Depends(get_db)) -> PgWorkspaceRepository: #These functions build the objects needed by the route handlers.
     return PgWorkspaceRepository(db)
 
 
@@ -58,7 +58,7 @@ def get_section_service(
     return SectionService(section_repo, workspace_repo)
 
 
-def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
+def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict: #helper funciton that refreshes info after delete/update/create
     d = ws.to_dict()
     sections = section_repo.list_by_workspace(workspace_id)
     for s in sections:
@@ -73,36 +73,36 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
 @router.post("/workspaces/{workspace_id}/sections", status_code=201)
 def create_section(
     workspace_id: str,
-    body: SectionCreateRequest,
-    service:        SectionService        = Depends(get_section_service),
+    body: SectionCreateUpdateRequest, #This is the JSON body of the request, automatically validated using the Pydantic model, validates structure before logic runs
+    service:        SectionService        = Depends(get_section_service), #injetcs these so that helper method will refresha dn update direclty these 
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
-):
-    try:
-        section = service.create_section(workspace_id, body.model_dump())
+):       
+    try:                                                                    #error handeling: services may do errors, so routes needs to translate them into hhtp response
+        section = service.create_section(workspace_id, body.model_dump()) #body.model_dump(), converts pydantic model to python dictionary
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Workspace not found") #If the service says the workspace does not exist, return HTTP 404.
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) #valid structured data in json but semantically inavlid, value cannot be processed, ex schedule details
 
-    ws = workspace_repo.get_by_id(workspace_id)
-    logger.info("Created section in workspace=%s", workspace_id)
-    return {"section": section, "workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
+    ws = workspace_repo.get_by_id(workspace_id)  #Fetches the workspace again after creation. to refresh latest version 
+    logger.info("Created section in workspace=%s", workspace_id) #traces my backend events
+    return {"section": section, "workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)} #returns in json new created section + updated woekspace summary
 
 
 @router.patch("/workspaces/{workspace_id}/sections/{section_id}")
 def update_section(
     workspace_id: str,
     section_id:   str,
-    body: SectionCreateRequest,
+    body: SectionCreateUpdateRequest,
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
 ):
     """
     Update a section in-place, preserving section_id.
-    All students linked to this section remain intact.
+    All students linked to this section will not be lost.
     """
     if not workspace_repo.get_by_id(workspace_id):
         raise HTTPException(status_code=404, detail="Workspace not found")

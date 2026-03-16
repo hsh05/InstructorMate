@@ -9,7 +9,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
-import '../api_client.dart';
+import '../api_client.dart'; // also exports ApiException
 import '../../services/mobile_toast_service.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
@@ -17,11 +17,12 @@ import '../workspace_models.dart';
 import '../../utils/schedule_utils.dart';
 
 class WorkspacesViewModel extends ChangeNotifier {
+  // stores add state and async and notifices ui when state changes
   WorkspacesViewModel({required this.api});
 
   final ApiClient api;
 
-  bool loading = false;
+  bool loading = false; // for shimmer effects and loading spinners
   bool importing = false;
 
   /// True while background detail fetch is running after instant navigation.
@@ -189,6 +190,12 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       workspaces = await api.listWorkspaces();
+    } on ApiException catch (e) {
+      error = e.isNetworkError
+          ? 'No connection. Check your internet and try again.'
+          : e.isTimeout
+              ? 'Loading timed out. Pull to refresh.'
+              : e.message;
     } catch (e) {
       error = e.toString();
     } finally {
@@ -230,7 +237,9 @@ class WorkspacesViewModel extends ChangeNotifier {
         // Pre-populate other fields as empty — controllers will be
         // corrected by _syncControllersFromWorkspace() once loadingDetail
         // becomes false and the full workspace data arrives.
-        'course_code': '',
+        'course_code': summary.title,
+
+        /// ''
         'semester': '',
       },
       sections: const [],
@@ -249,6 +258,13 @@ class WorkspacesViewModel extends ChangeNotifier {
         sectionStudentCounts[s.id] = s.studentsCount;
       }
       _syncCurrentToList();
+    } on ApiException catch (e) {
+      // Non-fatal — shell workspace already displayed. Show a soft message.
+      error = e.isNetworkError
+          ? 'Could not load full details. Check your connection.'
+          : e.isTimeout
+              ? 'Details timed out. Swipe back and reopen to retry.'
+              : e.message;
     } catch (e) {
       error = e.toString();
     } finally {
@@ -276,6 +292,8 @@ class WorkspacesViewModel extends ChangeNotifier {
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
       _syncCurrentToList(wasUpdated: true);
+    } on ApiException catch (e) {
+      error = e.message;
     } catch (e) {
       error = e.toString();
     } finally {
@@ -298,6 +316,8 @@ class WorkspacesViewModel extends ChangeNotifier {
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
       _syncCurrentToList(wasUpdated: true);
+    } on ApiException catch (e) {
+      error = e.message;
     } catch (e) {
       error = e.toString();
     } finally {
@@ -317,6 +337,10 @@ class WorkspacesViewModel extends ChangeNotifier {
     try {
       _current = await api.updateWorkspaceFields(ws.id, Map.from(fields));
       _syncCurrentToList(wasUpdated: true);
+    } on ApiException catch (e) {
+      error = e.isTimeout
+          ? 'Save timed out. Check your connection and try again.'
+          : e.message;
     } catch (e) {
       error = e.toString();
     } finally {
@@ -424,6 +448,11 @@ class WorkspacesViewModel extends ChangeNotifier {
       workspaces.removeWhere((w) => w.id == workspaceId);
       if (_current?.id == workspaceId) _current = null;
       return true;
+    } on ApiException catch (e) {
+      error = e.isNetworkError
+          ? 'No connection. The workspace was not deleted.'
+          : e.message;
+      return false;
     } catch (e) {
       error = e.toString();
       return false;
@@ -440,6 +469,14 @@ class WorkspacesViewModel extends ChangeNotifier {
     if (ws == null) return null;
     try {
       return await api.ask(ws.id, question);
+    } on ApiException catch (e) {
+      error = e.isTimeout
+          ? 'Ask timed out. Try again.'
+          : e.isNetworkError
+              ? 'No connection. Check your internet.'
+              : e.message;
+      notifyListeners();
+      return null;
     } catch (e) {
       error = e.toString();
       notifyListeners();

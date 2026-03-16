@@ -37,7 +37,7 @@ class Workspace:
 
     @property
     def fields(self) -> Dict[str, str]:
-        return self._fields
+        return self._fields # return dict(self._fields)
 
     @property
     def status(self) -> WorkspaceStatus:
@@ -60,7 +60,7 @@ class Workspace:
             else WorkspaceStatus.DRAFT
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict: #translate json retuned by FastApi to python dictioanry 
         return {
             "id": self.workspace_id,
             # FIX: expose real DB timestamps instead of hardcoded empty strings

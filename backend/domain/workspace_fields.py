@@ -12,4 +12,5 @@ WORKSPACE_FIELD_NAMES: list[str] = [
 REQUIRED_FIELD_NAMES: list[str] = [
     "course_title",
     "semester",
+    "course_code",
 ]
