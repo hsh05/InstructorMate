@@ -312,6 +312,79 @@ class SyllabusChatGPT:
         return (response.output_text or "").strip()
 
 
+def _rewrite_query(
+    question: str,
+    history: List[Dict],
+    client: OpenAI,
+    model: str = "gpt-4o-mini",
+) -> str:
+    """
+    Rewrite a follow-up question into a self-contained search query.
+
+    Problem: short follow-up questions like "what chapters are included?"
+    have almost no semantic signal on their own. The retriever embeds them
+    and finds irrelevant chunks because the question doesn't mention what
+    it refers to ("the midterm", "that assignment", etc.).
+
+    Solution: use a fast GPT call to inject the missing context from the
+    conversation history, producing a query the retriever can actually use.
+
+    Example:
+        history:  "When is the midterm?"  →  "The midterm is on March 15."
+        question: "What chapters are included?"
+        rewritten: "What chapters are included in the midterm?"
+
+    Returns the original question unchanged if:
+      - There is no history (first question — already self-contained)
+      - The question is already self-contained (GPT returns it as-is)
+      - The rewrite API call fails (safe fallback)
+    """
+    if not history:
+        return question
+
+    # Build a compact summary of the last 3 turns for the rewrite prompt
+    recent = history[-6:]  # last 3 user+assistant pairs
+    history_text = "\n".join(
+        f"{t['role'].capitalize()}: {t['content']}" for t in recent
+    )
+
+    try:
+        resp = client.responses.create(
+            model=model,
+            input=[
+                {
+                    "role": "developer",
+                    "content": (
+                        "You rewrite follow-up questions into self-contained search queries.\n"
+                        "Rules:\n"
+                        "- If the question already makes sense on its own, return it unchanged.\n"
+                        "- If it refers to something in the conversation ('that', 'it', 'those', "
+                        "  'what about', 'and the', etc.), rewrite it so it is fully clear "
+                        "  without reading the history.\n"
+                        "- Keep it short — one sentence maximum.\n"
+                        "- Return ONLY the rewritten question, nothing else."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Conversation so far:\n{history_text}\n\n"
+                        f"Follow-up question: {question}\n\n"
+                        "Rewritten question:"
+                    ),
+                },
+            ],
+        )
+        rewritten = (resp.output_text or "").strip()
+        # Safety: if rewrite is empty or suspiciously long, fall back
+        if rewritten and len(rewritten) < 300:
+            return rewritten
+    except Exception:
+        pass  # fall back silently — never break the ask flow
+
+    return question
+
+
 class AskPipeline:
     def __init__(
         self,
@@ -322,6 +395,7 @@ class AskPipeline:
         self.store = store
         self.retriever = retriever
         self.llm = llm
+        self._openai_client = OpenAI()
 
     def run(
         self,
@@ -336,9 +410,24 @@ class AskPipeline:
         question : The current user question.
         history  : Optional prior conversation turns trimmed to last N.
                    Each entry: {"role": "user"|"assistant", "content": str}
+
+        Flow
+        ----
+        1. Rewrite question using history so retriever gets full context
+        2. Retrieve top-k chunks using the rewritten (self-contained) query
+        3. Answer using original question + history so GPT answers naturally
         """
+        # Step 1: rewrite vague follow-ups into self-contained retrieval queries.
+        # The rewritten query is ONLY used for chunk retrieval — GPT still sees
+        # the original question so the answer reads naturally.
+        retrieval_query = _rewrite_query(
+            question=question,
+            history=history or [],
+            client=self._openai_client,
+        )
+
         chunks = self.store.load()
-        top_chunks = self.retriever.retrieve(chunks, question)
+        top_chunks = self.retriever.retrieve(chunks, retrieval_query)
         return self.llm.answer(question, top_chunks, history=history)
 
 
