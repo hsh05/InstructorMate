@@ -2,7 +2,7 @@
 
 from sqlalchemy import (
     Column, Text, Integer, String,
-    ForeignKey, TIMESTAMP, func, UniqueConstraint
+    ForeignKey, TIMESTAMP, func, UniqueConstraint, JSON
 )
 from sqlalchemy.orm import relationship
 from db.database import Base
@@ -101,6 +101,10 @@ class SyllabusChunk(Base):
                           nullable=False)
     chunk_index  = Column(Integer, nullable=False)
     content      = Column(Text, nullable=False, default="")
+    # Embedding vector stored as a JSON array of floats.
+    # NULL for legacy chunks uploaded before embeddings were introduced —
+    # the retriever falls back to LightweightRetriever for those.
+    embedding    = Column(JSON, nullable=True)
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     workspace = relationship("Workspace", back_populates="chunks")

@@ -18,7 +18,7 @@ from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
 from services.pdf_hash_service import PdfHashService
 from services.workspace_service import WorkspaceService
-from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
+from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,8 +28,19 @@ _ALLOWED_SYLLABUS_EXTENSIONS = {".pdf", ".docx"}
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
+# Maximum number of prior conversation turns sent to the LLM.
+_MAX_HISTORY_TURNS = 6
+
+
+class ChatTurn(BaseModel):
+    role: str      # "user" or "assistant"
+    content: str
+
+
 class AskRequest(BaseModel):
     question: str
+    # Last N turns of conversation history, oldest first.
+    history: list[ChatTurn] = []
 
 
 class UpdateFieldsRequest(BaseModel):
@@ -201,12 +212,13 @@ async def ask_workspace_question(
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
 
     if chunks_from_db:
-        # Preferred path: chunks are in the DB — pass them directly as a list.
-        # No disk I/O, no temp files, no cleanup needed.
+        # Preferred path: chunks in DB — pure memory, no disk I/O.
         store = SyllabusListStore(chunks_from_db)
+        # Use semantic retrieval. EmbeddingRetriever automatically falls back
+        # to LightweightRetriever for legacy chunks that have no embedding yet.
+        retriever = EmbeddingRetriever(top_k=8)
     else:
-        # Fallback path: chunks not yet in DB (legacy workspace before migration).
-        # Read from the on-disk CSV that was saved at upload time.
+        # Fallback: legacy workspace whose chunks only exist on disk.
         chunks_csv = workspace_repo.get_chunks_csv_path(workspace_id)
         if not chunks_csv.exists():
             raise HTTPException(
@@ -214,11 +226,16 @@ async def ask_workspace_question(
                 detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
             )
         store = SyllabusCsvStore(str(chunks_csv))
+        retriever = LightweightRetriever(top_k=8)
+
+    # Trim history to last _MAX_HISTORY_TURNS pairs to keep token usage bounded.
+    raw_history = req.history[-(_MAX_HISTORY_TURNS * 2):]
+    history = [{"role": t.role, "content": t.content} for t in raw_history] or None
 
     pipeline = AskPipeline(
         store=store,
-        retriever=LightweightRetriever(),
+        retriever=retriever,
         llm=SyllabusChatGPT(),
     )
-    answer = pipeline.run(req.question)
+    answer = pipeline.run(req.question, history=history)
     return {"answer": answer}

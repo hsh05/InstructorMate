@@ -2,10 +2,11 @@ from __future__ import annotations  # forward references support
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -18,6 +19,9 @@ class CsvChunk:
     chunk_id: int
     page: int
     text: str
+    # Embedding vector, or None for legacy chunks without embeddings.
+    # Using a default so existing construction calls stay unchanged.
+    embedding: Optional[List[float]] = field(default=None, compare=False)
 
 
 class SyllabusCsvStore:
@@ -46,18 +50,17 @@ class SyllabusCsvStore:
         return chunks
 
 
+# ── SyllabusListStore ─────────────────────────────────────────────────────────
+
 class SyllabusListStore:
     """
     In-memory store that wraps chunks already loaded from the database.
 
-    This is the preferred store for the /ask endpoint. It accepts the list of
-    chunk dicts returned by PgWorkspaceRepository.get_chunks_for_ask() and
-    converts them to CsvChunk objects directly in memory — no disk I/O, no
-    temp files, no cleanup required.
+    Accepts the list of dicts returned by get_chunks_for_ask() and converts
+    them to CsvChunk objects directly in memory — no disk I/O, no temp files.
 
-    Each dict is expected to have the shape:
-        {"chunk_id": int, "page": int, "content": str}
-    which is exactly what get_chunks_for_ask() returns.
+    Each dict shape: {"chunk_id": int, "page": int, "content": str,
+                      "embedding": list[float] | None}
     """
 
     def __init__(self, chunks: List[Dict]) -> None:
@@ -66,14 +69,97 @@ class SyllabusListStore:
     def load(self) -> List[CsvChunk]:
         result: List[CsvChunk] = []
         for c in self._chunks:
+            raw_emb = c.get("embedding")
+            embedding: Optional[List[float]] = (
+                [float(v) for v in raw_emb]
+                if isinstance(raw_emb, (list, tuple)) and raw_emb
+                else None
+            )
             result.append(
                 CsvChunk(
                     chunk_id=int(c.get("chunk_id", 0)),
                     page=int(c.get("page", 0)),
                     text=str(c.get("content", "")),
+                    embedding=embedding,
                 )
             )
         return result
+
+
+# ── EmbeddingRetriever ────────────────────────────────────────────────────────
+
+_EMBED_MODEL = "text-embedding-3-small"
+
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    """Fast cosine similarity between two equal-length vectors."""
+    va = np.array(a, dtype=np.float32)
+    vb = np.array(b, dtype=np.float32)
+    denom = np.linalg.norm(va) * np.linalg.norm(vb)
+    if denom == 0.0:
+        return 0.0
+    return float(np.dot(va, vb) / denom)
+
+
+class EmbeddingRetriever:
+    """
+    Semantic retriever using OpenAI embeddings + cosine similarity.
+
+    At query time it embeds the user question (one API call, ~1 ms latency)
+    and ranks all chunks by cosine similarity against their stored embeddings.
+
+    Falls back to LightweightRetriever if a chunk has no stored embedding
+    (i.e. the workspace was uploaded before embeddings were introduced).
+
+    Why this is better than TF-IDF:
+    - Handles paraphrasing: "will I fail?" matches "grade penalty for absences"
+    - Handles synonyms: "textbooks" matches "required readings"
+    - Handles implicit references in follow-up questions
+    """
+
+    def __init__(self, top_k: int = 8) -> None:
+        self.top_k = top_k
+        self._client = OpenAI()
+        self._fallback = LightweightRetriever(top_k=top_k)
+
+    def _embed_question(self, question: str) -> Optional[List[float]]:
+        """Embed a single question string. Returns None on error."""
+        try:
+            resp = self._client.embeddings.create(
+                model=_EMBED_MODEL,
+                input=question.strip(),
+            )
+            return resp.data[0].embedding
+        except Exception:
+            return None
+
+    def retrieve(self, chunks: List[CsvChunk], question: str) -> List[CsvChunk]:
+        # Check whether chunks have embeddings stored
+        chunks_with_emb = [c for c in chunks if c.embedding]
+
+        if not chunks_with_emb:
+            # Legacy workspace — no embeddings stored yet, use keyword fallback
+            return self._fallback.retrieve(chunks, question)
+
+        if len(chunks_with_emb) < len(chunks):
+            # Partial coverage — some chunks lack embeddings (shouldn't normally
+            # happen, but handle gracefully by using only embedded ones)
+            chunks = chunks_with_emb
+
+        # Embed the question
+        q_embedding = self._embed_question(question)
+        if q_embedding is None:
+            # Embedding API failed — fall back to keyword retrieval
+            return self._fallback.retrieve(chunks, question)
+
+        # Rank all chunks by cosine similarity
+        scored: List[Tuple[float, CsvChunk]] = [
+            (_cosine_similarity(q_embedding, c.embedding), c)  # type: ignore[arg-type]
+            for c in chunks
+        ]
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        return [c for _, c in scored[: self.top_k]]
 
 
 class LightweightRetriever:
@@ -146,8 +232,24 @@ class SyllabusChatGPT:
         self.client = OpenAI()
         self.model = model
 
-    def answer(self, question: str, context_chunks: List[CsvChunk]) -> str:
-        # Cap per chunk + cap total context for speed/cost
+    def answer(
+        self,
+        question: str,
+        context_chunks: List[CsvChunk],
+        history: Optional[List[Dict]] = None,
+    ) -> str:
+        """
+        Answer a question grounded in syllabus chunks.
+
+        Parameters
+        ----------
+        question       : The current user question.
+        context_chunks : Top-ranked chunks from the retriever.
+        history        : Optional prior conversation turns, each a dict with
+                         keys "role" ("user"|"assistant") and "content" (str).
+                         Caller is responsible for trimming to last N turns.
+        """
+        # ── Build syllabus context ────────────────────────────────────────────
         per_chunk_cap = 1500
         total_cap = 9000
 
@@ -165,28 +267,46 @@ class SyllabusChatGPT:
 
         context_text = "\n\n---\n\n".join(parts)
 
+        # ── System prompt ─────────────────────────────────────────────────────
+        system_prompt = (
+            "You are an intelligent academic assistant embedded in a course management app. "
+            "Your job is to help students and instructors understand their course syllabus "
+            "clearly and accurately.\n\n"
+
+            "BEHAVIOUR:\n"
+            "- Answer questions strictly based on the syllabus context provided.\n"
+            "- If the answer is not in the syllabus, say clearly: "
+            "'That information isn't in the syllabus.' "
+            "Do NOT guess, infer, or invent any dates, percentages, or policies.\n"
+            "- If a follow-up question refers to something in the conversation history "
+            "(e.g. 'what about that?', 'and the deadline?'), use the history to resolve it.\n"
+            "- Be concise but complete. Aim for 2-5 lines. Use a numbered list only when "
+            "listing multiple distinct items (e.g. grading breakdown). "
+            "Otherwise use plain sentences.\n"
+            "- Speak in a warm, helpful tone like a knowledgeable teaching assistant.\n"
+            "- Never mention 'chunks', 'context', 'pages', or internal system details.\n"
+            "- Never repeat the question back to the user.\n"
+            "- If the question is ambiguous, answer the most likely interpretation "
+            "and briefly note your assumption.\n\n"
+
+            f"SYLLABUS CONTEXT:\n{context_text}"
+        )
+
+        # ── Build message list: system + history + current question ───────────
+        messages: List[Dict] = [{"role": "developer", "content": system_prompt}]
+
+        if history:
+            for turn in history:
+                role = turn.get("role", "")
+                msg_content = (turn.get("content") or "").strip()
+                if role in ("user", "assistant") and msg_content:
+                    messages.append({"role": role, "content": msg_content})
+
+        messages.append({"role": "user", "content": question})
+
         response = self.client.responses.create(
             model=self.model,
-            input=[
-                {
-                    "role": "developer",
-                    "content": (
-                        "You are a syllabus Q&A assistant.\n"
-                        "Rules:\n"
-                        "- Use ONLY the provided syllabus context.\n"
-                        "- If the answer is not explicitly present, reply exactly: 'Not found in the syllabus.'\n"
-                        "- Be concise (max 6 lines).\n"
-                        "- Respond in a clean user-friendly way.\n"
-                        "- Do NOT include citations.\n"
-                        "- Do NOT mention chunks or pages.\n"
-                        "- Do NOT invent dates/times/numbers.\n"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"SYLLABUS CONTEXT:\n{context_text}\n\nQUESTION:\n{question}",
-                },
-            ],
+            input=messages,
         )
 
         return (response.output_text or "").strip()
@@ -196,17 +316,30 @@ class AskPipeline:
     def __init__(
         self,
         store: "SyllabusCsvStore | SyllabusListStore",
-        retriever: LightweightRetriever,
+        retriever: "EmbeddingRetriever | LightweightRetriever",
         llm: SyllabusChatGPT,
     ) -> None:
         self.store = store
         self.retriever = retriever
         self.llm = llm
 
-    def run(self, question: str) -> str:
+    def run(
+        self,
+        question: str,
+        history: Optional[List[Dict]] = None,
+    ) -> str:
+        """
+        Run the full ask pipeline.
+
+        Parameters
+        ----------
+        question : The current user question.
+        history  : Optional prior conversation turns trimmed to last N.
+                   Each entry: {"role": "user"|"assistant", "content": str}
+        """
         chunks = self.store.load()
         top_chunks = self.retriever.retrieve(chunks, question)
-        return self.llm.answer(question, top_chunks)
+        return self.llm.answer(question, top_chunks, history=history)
 
 
 def main() -> None:

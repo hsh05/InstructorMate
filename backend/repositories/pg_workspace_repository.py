@@ -4,7 +4,9 @@ import csv
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
+from openai import OpenAI
 
 from sqlalchemy.orm import Session
 
@@ -116,14 +118,73 @@ class PgWorkspaceRepository:
         self.db.commit()
         logger.info("Saved %d chunks for workspace=%s", inserted, workspace_id)
 
-    def get_chunks_for_ask(self, workspace_id: str) -> List[dict]:
+    def get_chunks_for_ask(self, workspace_id: str) -> List[Dict[str, Any]]:
         rows = self.db.query(SyllabusChunkModel).filter(
             SyllabusChunkModel.workspace_id == workspace_id
         ).order_by(SyllabusChunkModel.chunk_index).all()
         return [
-            {"chunk_id": r.chunk_index, "page": r.chunk_index, "content": r.content}
+            {
+                "chunk_id":  r.chunk_index,
+                "page":      r.chunk_index,
+                "content":   r.content,
+                # embedding is None for legacy chunks — retriever handles fallback
+                "embedding": r.embedding,
+            }
             for r in rows
         ]
+
+    def generate_and_save_embeddings(self, workspace_id: str) -> int:
+        """
+        Generate OpenAI embeddings for all chunks of a workspace that do not
+        yet have one, then persist them to the DB.
+
+        Called once per workspace during the background conversion job.
+        Uses batched API calls (up to 100 texts per request) to minimise
+        round-trips and cost.
+
+        Returns the number of chunks that were embedded.
+        """
+        _EMBED_MODEL = "text-embedding-3-small"
+        _BATCH_SIZE  = 100
+
+        rows = self.db.query(SyllabusChunkModel).filter(
+            SyllabusChunkModel.workspace_id == workspace_id,
+            SyllabusChunkModel.embedding.is_(None),
+        ).order_by(SyllabusChunkModel.chunk_index).all()
+
+        if not rows:
+            logger.info("No chunks need embeddings for workspace=%s", workspace_id)
+            return 0
+
+        client = OpenAI()
+        total_embedded = 0
+
+        # Process in batches to stay within API limits
+        for i in range(0, len(rows), _BATCH_SIZE):
+            batch = rows[i : i + _BATCH_SIZE]
+            texts = [r.content for r in batch]
+
+            try:
+                resp = client.embeddings.create(model=_EMBED_MODEL, input=texts)
+                embeddings = [item.embedding for item in resp.data]
+            except Exception as exc:
+                logger.error(
+                    "Embedding batch %d failed for workspace=%s: %s",
+                    i // _BATCH_SIZE, workspace_id, exc,
+                )
+                # Skip this batch — chunks will have NULL embedding and the
+                # retriever will fall back to keyword search for them
+                continue
+
+            for row, emb in zip(batch, embeddings):
+                row.embedding = emb
+                total_embedded += 1
+
+        self.db.commit()
+        logger.info(
+            "Generated %d embeddings for workspace=%s", total_embedded, workspace_id
+        )
+        return total_embedded
 
     # ── Private ───────────────────────────────────────────────────────────────
 
