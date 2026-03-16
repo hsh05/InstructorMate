@@ -231,6 +231,8 @@ async def ask_workspace_question(
     # Trim history to last _MAX_HISTORY_TURNS pairs to keep token usage bounded.
     raw_history = req.history[-(_MAX_HISTORY_TURNS * 2):]
     history = [{"role": t.role, "content": t.content} for t in raw_history] or None
+    logger.info(">>> HISTORY LENGTH: %d", len(history) if history else 0)
+    logger.info(">>> RAW QUESTION: %s", req.question)
 
     pipeline = AskPipeline(
         store=store,
@@ -238,4 +240,5 @@ async def ask_workspace_question(
         llm=SyllabusChatGPT(),
     )
     answer = pipeline.run(req.question, history=history)
+    logger.info(">>> ANSWER: %s", answer[:100])
     return {"answer": answer}
