@@ -14,6 +14,10 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import docx
 from pptx import Presentation
+import firebase_admin
+from firebase_admin import credentials, storage
+import uuid
+import requests
 
 # Load the .env file
 load_dotenv()
@@ -26,6 +30,12 @@ if not api_key:
 
 # Initialize the client using the environment variable
 client = OpenAI(api_key=api_key)
+
+# --- NEW: Initialize Firebase ---
+cred = credentials.Certificate("firebase_credentials.json")
+firebase_admin.initialize_app(cred, {
+    'storageBucket': os.getenv("FIREBASE_BUCKET")
+})
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
@@ -98,14 +108,30 @@ async def upload_material(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    file_location = f"{UPLOAD_DIR}/{file.filename}"
-    with open(file_location, "wb+") as file_object:
-        shutil.copyfileobj(file.file, file_object)
+    try:
+        # 1. Connect to your Firebase bucket
+        bucket = storage.bucket()
+        
+        # 2. Create a unique cloud filename (prevents overwriting if two files have the same name)
+        unique_filename = f"courses/{course_id}/{uuid.uuid4()}_{file.filename}"
+        blob = bucket.blob(unique_filename)
+        
+        # 3. Upload the physical file from memory to Google's servers
+        contents = await file.read()
+        blob.upload_from_string(contents, content_type=file.content_type)
+        
+        # 4. Make the file public so we can read it later, and get the URL
+        blob.make_public()
+        file_url = blob.public_url
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Firebase: {str(e)}")
+
+    # 5. Save the CLOUD URL to NeonDB instead of a local folder path
     db_material = models.Material(
         course_id=course_id,
         file_name=file.filename,
-        file_path=file_location,
+        file_path=file_url,  # <--- Now saving the permanent cloud link!
         material_type=material_type
     )
     db.add(db_material)
@@ -134,21 +160,40 @@ async def generate_quiz(course_id: int, request: schemas.QuizGenerateRequest, db
 
     combined_text = ""
     for m in materials:
-        if os.path.exists(m.file_path):
-            try:
-                with open(m.file_path, "rb") as f:
-                    reader = PyPDF2.PdfReader(f)
-                    for page in reader.pages:
-                        combined_text += page.extract_text() or ""
-            except Exception as e:
-                print(f"Error reading file {m.file_name}: {e}")
+        try:
+            # NEW: Download the file from the Firebase URL directly into server RAM
+            response = requests.get(m.file_path)
+            response.raise_for_status() 
+            file_bytes = io.BytesIO(response.content)
+            
+            filename = m.file_name.lower()
+            
+            # Extract text from the downloaded bytes
+            if filename.endswith(".pdf"):
+                reader = PyPDF2.PdfReader(file_bytes)
+                for page in reader.pages:
+                    combined_text += page.extract_text() or ""
+            elif filename.endswith(".docx"):
+                doc = docx.Document(file_bytes)
+                for para in doc.paragraphs:
+                    combined_text += para.text + "\n"
+            elif filename.endswith(".pptx"):
+                ppt = Presentation(file_bytes)
+                for slide in ppt.slides:
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text"):
+                            combined_text += shape.text + "\n"
+            elif filename.endswith(".txt"):
+                combined_text += file_bytes.read().decode("utf-8") + "\n"
+                
+        except Exception as e:
+            print(f"Error reading cloud file {m.file_name}: {e}")
 
     if not combined_text.strip():
         raise HTTPException(status_code=400, detail="The selected files contain no readable text.")
 
     configs_as_dicts = [c.dict() for c in configs]
     
-    # NEW: Using the shared helper function
     questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
     
     return {"questions": questions}
