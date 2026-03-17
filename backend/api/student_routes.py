@@ -1,9 +1,11 @@
 # backend/api/student_routes.py
 
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import hashlib
 
@@ -137,3 +139,48 @@ def delete_student(
     logger.info("Deleted student id=%s from section=%s workspace=%s",
                 student_id, section_id, workspace_id)
     return {"deleted": True, "student_id": student_id}
+
+class AddStudentRequest(BaseModel):
+    name:       str = ""
+    email:      str = ""
+    student_no: str = ""
+
+
+@router.post("/workspaces/{workspace_id}/sections/{section_id}/students")
+def add_student(
+    workspace_id: str,
+    section_id:   str,
+    req:          AddStudentRequest,
+    repo:         PgStudentRepository = Depends(get_student_repo),
+):
+    """
+    Add a single student to a section manually.
+    Uses the same upsert logic as bulk import — safe to call multiple times
+    with the same email/student_no without creating duplicates.
+    """
+    from domain.student import Student as DomainStudent
+    if not req.name.strip() and not req.email.strip() and not req.student_no.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="At least one of name, email, or student number is required.",
+        )
+
+    student = DomainStudent(
+        student_id   = str(uuid.uuid4()),
+        workspace_id = workspace_id,
+        section_id   = section_id,
+        name         = req.name.strip(),
+        email        = req.email.strip(),
+        student_no   = req.student_no.strip(),
+    )
+    repo.save(student)
+    logger.info(
+        "Added student name=%s to workspace=%s section=%s",
+        req.name, workspace_id, section_id,
+    )
+    students = repo.list_by_section(workspace_id, section_id)
+    return {
+        "student_id":  student.student_id,
+        "section_id":  section_id,
+        "count":       len(students),
+    }

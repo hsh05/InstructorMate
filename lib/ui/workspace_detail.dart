@@ -384,22 +384,13 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   Future<void> _onAsk(String q) async {
     if (q.trim().isEmpty) return;
-
-    // Snapshot history BEFORE adding the new user message — these are the
-    // prior turns the backend needs to resolve follow-up questions.
-    final historySnapshot = _chat.map((m) => m.toHistoryEntry()).toList();
-
     setState(() {
       _chat.add(_ChatMsg(text: q, isUser: true));
       _asking = true;
     });
     _askCtrl.clear();
     _scrollChat();
-
-    final answer = await widget.vm.askInWorkspace(
-      q,
-      history: historySnapshot,
-    );
+    final answer = await widget.vm.askInWorkspace(q);
     setState(() {
       _chat.add(_ChatMsg(
         text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
@@ -2212,6 +2203,27 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     if (_expanded) _loadRoster();
   }
 
+  Future<void> _showAddStudent(BuildContext ctx) async {
+    await showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddStudentSheet(
+        onAdd: (name, email, studentNo) async {
+          await widget.vm.api.addStudent(
+            workspaceId: widget.ws.id,
+            sectionId: widget.section.id,
+            name: name,
+            email: email,
+            studentNo: studentNo,
+          );
+          widget.vm.recordImport(widget.section.id, _students.length + 1);
+          await _loadRoster();
+        },
+      ),
+    );
+  }
+
   Future<void> _import(BuildContext ctx) async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -2481,7 +2493,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                   Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(children: [
-                      // ── Import + Clear row ──────────────────────────
+                      // ── Import + Clear + Add row ─────────────────────
                       Row(children: [
                         Expanded(
                           child: Material(
@@ -2531,6 +2543,32 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                     ),
                                   ],
                                 ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // ── Add single student ─────────────────────
+                        Material(
+                          color: Colors.transparent,
+                          borderRadius: AppColors.r10,
+                          child: InkWell(
+                            onTap: () => _showAddStudent(context),
+                            borderRadius: AppColors.r10,
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                borderRadius: AppColors.r10,
+                                border: Border.all(
+                                  color: AppColors.primary.withOpacity(0.4),
+                                ),
+                                color: AppColors.primarySoft,
+                              ),
+                              child: const Icon(
+                                Icons.person_add_rounded,
+                                size: 18,
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -3092,12 +3130,6 @@ class _ChatMsg {
   const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
-
-  /// Converts to the shape the backend /ask endpoint expects.
-  Map<String, String> toHistoryEntry() => {
-        'role': isUser ? 'user' : 'assistant',
-        'content': text,
-      };
 }
 
 // ─── Replace Roster Dialog ────────────────────────────────────────────────────
@@ -3274,6 +3306,240 @@ class _ReplaceRosterDialog extends StatelessWidget {
             ]),
           ),
         ]),
+      ),
+    );
+  }
+}
+
+// ─── Add Student Sheet ────────────────────────────────────────────────────────
+class _AddStudentSheet extends StatefulWidget {
+  const _AddStudentSheet({required this.onAdd});
+  final Future<void> Function(String name, String email, String studentNo)
+      onAdd;
+
+  @override
+  State<_AddStudentSheet> createState() => _AddStudentSheetState();
+}
+
+class _AddStudentSheetState extends State<_AddStudentSheet> {
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _studentNoCtrl = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _studentNoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final studentNo = _studentNoCtrl.text.trim();
+
+    if (name.isEmpty && email.isEmpty && studentNo.isEmpty) {
+      setState(() => _error = 'Please fill in at least one field.');
+      return;
+    }
+    if (email.isNotEmpty && !email.contains('@')) {
+      setState(() => _error = 'Please enter a valid email address.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onAdd(name, email, studentNo);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _saving = false;
+          _error = e.toString();
+        });
+    }
+  }
+
+  Widget _field({
+    required TextEditingController ctrl,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.inkLight,
+                letterSpacing: 1.2)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: ctrl,
+          keyboardType: keyboardType,
+          onChanged: (_) => setState(() => _error = null),
+          style: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.ink),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 13),
+            prefixIcon: Icon(icon, color: AppColors.primary, size: 18),
+            filled: true,
+            fillColor: AppColors.surfaceAlt,
+            border: OutlineInputBorder(
+                borderRadius: AppColors.r12,
+                borderSide: const BorderSide(color: AppColors.border)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: AppColors.r12,
+                borderSide: const BorderSide(color: AppColors.border)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: AppColors.r12,
+                borderSide:
+                    const BorderSide(color: AppColors.primary, width: 1.5)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        left: 20,
+        right: 20,
+        top: 12,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 18),
+          // Header
+          Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: AppColors.r12,
+              ),
+              child: const Icon(Icons.person_add_rounded,
+                  color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Add Student',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink)),
+                Text('Fill in the details below',
+                    style: TextStyle(fontSize: 12, color: AppColors.inkLight)),
+              ],
+            ),
+          ]),
+          const SizedBox(height: 24),
+          _field(
+            ctrl: _nameCtrl,
+            label: 'FULL NAME',
+            hint: 'e.g. Sarah Johnson',
+            icon: Icons.person_outline_rounded,
+          ),
+          const SizedBox(height: 16),
+          _field(
+            ctrl: _studentNoCtrl,
+            label: 'STUDENT NUMBER',
+            hint: 'e.g. 202312345',
+            icon: Icons.badge_outlined,
+            keyboardType: TextInputType.text,
+          ),
+          const SizedBox(height: 16),
+          _field(
+            ctrl: _emailCtrl,
+            label: 'EMAIL ADDRESS',
+            hint: 'e.g. sarah@university.edu',
+            icon: Icons.email_outlined,
+            keyboardType: TextInputType.emailAddress,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.warnSoft,
+                borderRadius: AppColors.r10,
+                border: Border.all(color: AppColors.warn.withOpacity(0.4)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 15, color: AppColors.warn),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(_error!,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.warn,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ]),
+            ),
+          ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape:
+                    const RoundedRectangleBorder(borderRadius: AppColors.r12),
+              ),
+              onPressed: _saving ? null : _submit,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_rounded, size: 18),
+              label: Text(_saving ? 'Adding…' : 'Add Student',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 15)),
+            ),
+          ),
+        ],
       ),
     );
   }

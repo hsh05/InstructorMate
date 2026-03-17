@@ -223,6 +223,30 @@ class ApiClient {
         .toList();
   }
 
+  /// Add a single student manually to a section.
+  Future<int> addStudent({
+    required String workspaceId,
+    required String sectionId,
+    required String name,
+    required String email,
+    required String studentNo,
+  }) async {
+    final resp = await http
+        .post(
+          _u('/workspaces/$workspaceId/sections/$sectionId/students'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'name': name.trim(),
+            'email': email.trim(),
+            'student_no': studentNo.trim(),
+          }),
+        )
+        .timeout(AppConfig.shortTimeout);
+    if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    return int.tryParse((map['count'] ?? 0).toString()) ?? 0;
+  }
+
   /// Remove ALL students from a section in one call.
   Future<void> clearSectionStudents(
     String workspaceId,
@@ -252,19 +276,15 @@ class ApiClient {
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
   }
 
-  /// Sends the current question plus trimmed conversation history so the
-  /// backend LLM can resolve follow-up questions like "what about that?".
-  /// [history] is the full chat list from the UI (oldest first), each entry
-  /// a map with "role" ("user"|"assistant") and "content" keys.
+  /// Sends question + conversation history so the backend LLM can resolve
+  /// follow-up questions like "what about that?" or "and the deadline?".
   Future<String> ask(
     String wid,
     String question, {
     List<Map<String, String>> history = const [],
   }) async {
-    // Cap at 20 entries client-side (10 turns); backend trims to 6 turns.
     final trimmedHistory =
         history.length > 20 ? history.sublist(history.length - 20) : history;
-
     final resp = await http
         .post(
           _u('/workspaces/$wid/ask'),
