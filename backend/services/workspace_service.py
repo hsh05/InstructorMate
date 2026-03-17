@@ -43,10 +43,10 @@ class WorkspaceService:
         self.converter    = SyllabusConverterService(model=converter_model)
 
     def create_from_file(self, filename: str, content: bytes) -> dict:
-        pdf_hash = self.hash_service.compute(content)
+        file_hash = self.hash_service.compute(content)
 
         existing = next(
-            (ws for ws in self.repo.list_all() if ws.pdf_hash == pdf_hash),
+            (ws for ws in self.repo.list_all() if ws.file_hash == file_hash),
             None,
         )
         if existing:
@@ -56,7 +56,7 @@ class WorkspaceService:
 
         workspace = Workspace(
             workspace_id = str(uuid.uuid4()),
-            pdf_hash     = pdf_hash,
+            file_hash     = file_hash,
             fields       = {name: "" for name in WORKSPACE_FIELD_NAMES},
             status       = WorkspaceStatus.DRAFT,
         )
@@ -156,20 +156,6 @@ class WorkspaceService:
                 chunks_dst = repo.get_chunks_csv_path(workspace_id)
                 if chunks_src != chunks_dst:
                     shutil.copy2(str(chunks_src), str(chunks_dst))
-
-            # ── Generate and store embeddings ─────────────────────────────────
-            # Runs immediately after chunks are saved so that the very first
-            # /ask call against this workspace uses semantic retrieval.
-            # Failures are logged but do not block workspace creation —
-            # the retriever falls back to keyword search if embeddings are absent.
-            try:
-                n = repo.generate_and_save_embeddings(workspace_id)
-                logger.info("Stored %d embeddings for workspace=%s", n, workspace_id)
-            except Exception as emb_err:
-                logger.warning(
-                    "Embedding generation failed for workspace=%s (non-fatal): %s",
-                    workspace_id, emb_err,
-                )
 
             # ── Auto-fill workspace fields ───────────────────────────────────
             single_row_src = Path(result.single_row_csv)
