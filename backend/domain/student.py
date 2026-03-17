@@ -5,5 +5,6 @@ class Student: #its data holder, contains no logic, no recalculating, etc
     student_id:   str
     workspace_id: str
     name:         str
-    email:        str  #removed section id 
+    email:        str  
+    section_id:   str = ""
     student_no:   str = ""
