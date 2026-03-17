@@ -28,11 +28,14 @@ coverage/
 #pubspec.lock
 
 backend/.env
+# Firebase service account
+backend/firebase_credentials.json
 backend/output/
 backend/uploads/
 backend/syllabus_files/
 *.pdf
 __pycache__/
+
 
 
 # Android related
@@ -414,5 +417,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/flutter,node,python,windows
-. e n v  
+. e n v 
+ 
  
