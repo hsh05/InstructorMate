@@ -384,13 +384,14 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   Future<void> _onAsk(String q) async {
     if (q.trim().isEmpty) return;
+    final historySnapshot = _chat.map((m) => m.toHistoryEntry()).toList();
     setState(() {
       _chat.add(_ChatMsg(text: q, isUser: true));
       _asking = true;
     });
     _askCtrl.clear();
     _scrollChat();
-    final answer = await widget.vm.askInWorkspace(q);
+    final answer = await widget.vm.askInWorkspace(q, history: historySnapshot);
     setState(() {
       _chat.add(_ChatMsg(
         text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
@@ -2083,14 +2084,17 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
   }
 
   void _deleteStudent(Student s) {
+    // Optimistic remove
     setState(() => _students.removeWhere((st) => st.studentId == s.studentId));
+    // Update home screen count immediately
+    widget.vm.recordImport(widget.section.id, _students.length);
     widget.vm.api
         .deleteStudent(widget.ws.id, widget.section.id, s.studentId)
-        .then((_) {
-      widget.vm.recordImport(widget.section.id, _students.length);
-    }).catchError((e) {
+        .catchError((e) {
+      // Rollback on failure
       if (mounted) {
         setState(() => _students.add(s));
+        widget.vm.recordImport(widget.section.id, _students.length);
         widget.onError('Failed to remove student: $e');
       }
     });
@@ -2217,8 +2221,9 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
             email: email,
             studentNo: studentNo,
           );
-          widget.vm.recordImport(widget.section.id, _students.length + 1);
           await _loadRoster();
+          // Update home screen count after load completes
+          widget.vm.recordImport(widget.section.id, _students.length);
         },
       ),
     );
@@ -2493,7 +2498,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                   Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(children: [
-                      // ── Import + Clear + Add row ─────────────────────
+                      // ── Import + Clear row ──────────────────────────
                       Row(children: [
                         Expanded(
                           child: Material(
@@ -2528,17 +2533,18 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                                           )
                                         : const Icon(Icons.upload_file_rounded,
                                             size: 14, color: AppColors.primary),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      _importing
-                                          ? 'Importing…'
-                                          : 'Import student list',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: _importing
-                                            ? AppColors.inkMid
-                                            : AppColors.primary,
+                                    const SizedBox(width: 5),
+                                    Flexible(
+                                      child: Text(
+                                        _importing ? 'Importing…' : 'Import',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: _importing
+                                              ? AppColors.inkMid
+                                              : AppColors.primary,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -2548,7 +2554,7 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // ── Add single student ─────────────────────
+                        // ── Add single student ──────────────────────
                         Material(
                           color: Colors.transparent,
                           borderRadius: AppColors.r10,
@@ -3130,6 +3136,11 @@ class _ChatMsg {
   const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
+
+  Map<String, String> toHistoryEntry() => {
+        'role': isUser ? 'user' : 'assistant',
+        'content': text,
+      };
 }
 
 // ─── Replace Roster Dialog ────────────────────────────────────────────────────
@@ -3336,17 +3347,49 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
     super.dispose();
   }
 
+  String? _validate(String name, String email, String studentNo) {
+    // ── Name ──────────────────────────────────────────────────────────────────
+    if (name.isEmpty) return 'Full name is required.';
+    if (RegExp(r'[0-9]').hasMatch(name)) {
+      return 'Name cannot contain numbers.';
+    }
+
+    // ── Student number ────────────────────────────────────────────────────────
+    if (studentNo.isEmpty) return 'Student number is required.';
+    if (RegExp(r'[a-zA-Z]').hasMatch(studentNo)) {
+      return 'Student number cannot contain letters.';
+    }
+    if (studentNo.length != 9) {
+      return 'Student number must be exactly 9 digits.';
+    }
+    if (!studentNo.startsWith('20')) {
+      return 'Student number must start with 20.';
+    }
+    if (!RegExp(r'^[0-9]+$').hasMatch(studentNo)) {
+      return 'Student number must contain digits only.';
+    }
+
+    // ── Email ─────────────────────────────────────────────────────────────────
+    if (email.isEmpty) return 'Email address is required.';
+    if (!email.endsWith('@aau.ac.ae')) {
+      return 'Email must be a valid AAU address (e.g. 202210078@aau.ac.ae).';
+    }
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@aau\.ac\.ae$');
+    if (!emailRegex.hasMatch(email)) {
+      return 'Please enter a valid AAU email address.';
+    }
+
+    return null; // all good
+  }
+
   Future<void> _submit() async {
     final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final studentNo = _studentNoCtrl.text.trim();
 
-    if (name.isEmpty && email.isEmpty && studentNo.isEmpty) {
-      setState(() => _error = 'Please fill in at least one field.');
-      return;
-    }
-    if (email.isNotEmpty && !email.contains('@')) {
-      setState(() => _error = 'Please enter a valid email address.');
+    final validationError = _validate(name, email, studentNo);
+    if (validationError != null) {
+      setState(() => _error = validationError);
       return;
     }
 
@@ -3430,7 +3473,6 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle bar
           Center(
             child: Container(
               width: 36,
@@ -3441,7 +3483,6 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
             ),
           ),
           const SizedBox(height: 18),
-          // Header
           Row(children: [
             Container(
               width: 40,
@@ -3462,7 +3503,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: AppColors.ink)),
-                Text('Fill in the details below',
+                Text('Fill in the student details below',
                     style: TextStyle(fontSize: 12, color: AppColors.inkLight)),
               ],
             ),
@@ -3471,22 +3512,21 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
           _field(
             ctrl: _nameCtrl,
             label: 'FULL NAME',
-            hint: 'e.g. Sarah Johnson',
+            hint: 'e.g. Omar Ahmed (letters only)',
             icon: Icons.person_outline_rounded,
           ),
           const SizedBox(height: 16),
           _field(
             ctrl: _studentNoCtrl,
             label: 'STUDENT NUMBER',
-            hint: 'e.g. 202312345',
+            hint: 'e.g. 202210078 (9 digits, starts with 20)',
             icon: Icons.badge_outlined,
-            keyboardType: TextInputType.text,
           ),
           const SizedBox(height: 16),
           _field(
             ctrl: _emailCtrl,
             label: 'EMAIL ADDRESS',
-            hint: 'e.g. sarah@university.edu',
+            hint: 'e.g. 202210078@aau.ac.ae',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
           ),
@@ -3531,8 +3571,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
+                          strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.check_rounded, size: 18),
               label: Text(_saving ? 'Adding…' : 'Add Student',
                   style: const TextStyle(
