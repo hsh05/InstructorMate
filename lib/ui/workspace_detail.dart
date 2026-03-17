@@ -384,13 +384,22 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   Future<void> _onAsk(String q) async {
     if (q.trim().isEmpty) return;
+
+    // Snapshot history BEFORE adding the new user message — these are the
+    // prior turns the backend needs to resolve follow-up questions.
+    final historySnapshot = _chat.map((m) => m.toHistoryEntry()).toList();
+
     setState(() {
       _chat.add(_ChatMsg(text: q, isUser: true));
       _asking = true;
     });
     _askCtrl.clear();
     _scrollChat();
-    final answer = await widget.vm.askInWorkspace(q);
+
+    final answer = await widget.vm.askInWorkspace(
+      q,
+      history: historySnapshot,
+    );
     setState(() {
       _chat.add(_ChatMsg(
         text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
@@ -3083,6 +3092,12 @@ class _ChatMsg {
   const _ChatMsg({required this.text, required this.isUser});
   final String text;
   final bool isUser;
+
+  /// Converts to the shape the backend /ask endpoint expects.
+  Map<String, String> toHistoryEntry() => {
+        'role': isUser ? 'user' : 'assistant',
+        'content': text,
+      };
 }
 
 // ─── Replace Roster Dialog ────────────────────────────────────────────────────
