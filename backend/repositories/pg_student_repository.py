@@ -65,16 +65,20 @@ class PgStudentRepository:
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
-    def save(self, student) -> None:
+    def save(self, student, section_id: str = "") -> None:
         """
         Upsert student by natural key (workspace_id + email), or
         (workspace_id + student_no) if email is blank.
         Reuses existing student_id to avoid duplicates on re-import.
         Then creates a StudentSection link if not already present.
+
+        section_id is passed explicitly — it is NOT a property of the
+        Student domain object because a student can belong to multiple
+        sections via the StudentSection join table.
         """
         email      = (getattr(student, "email",      "") or "").strip()
         student_no = (getattr(student, "student_no", "") or "").strip()
-        section_id = (getattr(student, "section_id", "") or "").strip()
+        section_id = (section_id or "").strip()
 
         # Look up existing student by natural key
         existing = None
@@ -121,7 +125,6 @@ class PgStudentRepository:
                     section_id = section_id,
                 ))
 
-        self._touch_workspace(student.workspace_id)
         self.db.commit()
         logger.debug("Saved student id=%s workspace=%s section=%s",
                      actual_id, student.workspace_id, section_id)
@@ -176,7 +179,6 @@ class PgStudentRepository:
                 ).delete()
                 removed += 1
 
-        self._touch_workspace(workspace_id)
         self.db.commit()
         logger.info("Cleared %d students from section=%s workspace=%s",
                     removed, section_id, workspace_id)
@@ -215,31 +217,12 @@ class PgStudentRepository:
                 StudentModel.student_id == student_id
             ).delete()
 
-        # Find workspace_id for this student to touch the workspace
-        student_row = self.db.query(StudentModel).filter(
-            StudentModel.student_id == student_id
-        ).first()
-        if student_row:
-            self._touch_workspace(student_row.workspace_id)
-
+        self._touch_workspace(workspace_id)
         self.db.commit()
         logger.info("Deleted student id=%s from section=%s", student_id, section_id)
         return True
 
     # ── Private ───────────────────────────────────────────────────────────────
-
-    def _touch_workspace(self, workspace_id: str) -> None:
-        """
-        Update the workspace updated_at timestamp so Flutter shows the
-        correct "Updated X ago" time after student add/remove operations.
-        The onupdate trigger only fires when workspace fields change —
-        student mutations never touch the workspace row directly.
-        """
-        from sqlalchemy import func as sqlfunc
-        self.db.query(WorkspaceModel).filter(
-            WorkspaceModel.workspace_id == workspace_id
-        ).update({"updated_at": sqlfunc.now()}, synchronize_session=False)
-        # No commit here — callers commit after their own changes
 
     def _to_dict(self, row: StudentModel, section_id: str = "") -> dict:
         return {

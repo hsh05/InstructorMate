@@ -6,5 +6,4 @@ class Student: #its data holder, contains no logic, no recalculating, etc
     workspace_id: str
     name:         str
     email:        str  
-    section_id:   str = ""
     student_no:   str = ""

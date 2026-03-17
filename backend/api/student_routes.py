@@ -168,12 +168,12 @@ def add_student(
     student = DomainStudent(
         student_id   = str(uuid.uuid4()),
         workspace_id = workspace_id,
-        section_id   = section_id,
         name         = req.name.strip(),
         email        = req.email.strip(),
         student_no   = req.student_no.strip(),
     )
-    repo.save(student)
+    # section_id passed separately — not part of Student identity
+    repo.save(student, section_id=section_id)
     logger.info(
         "Added student name=%s to workspace=%s section=%s",
         req.name, workspace_id, section_id,

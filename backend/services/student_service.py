@@ -4,6 +4,10 @@
 # ───────────
 # Import flow: save Student row (merge) + create StudentSection link.
 # Replace flow: delete StudentSection links for section, then re-import.
+#
+# section_id is passed to repo.save() as an explicit parameter — it is NOT
+# stored on the Student domain object since a student can belong to multiple
+# sections via the StudentSection join table.
 
 import csv
 import io
@@ -36,7 +40,7 @@ class StudentService:
 
         # If replacing an existing roster, clear the section links first.
         # Student rows themselves stay (they belong to the workspace);
-        # only the StudentSection links are removed so the count resets. Beacuse same student might be in another section
+        # only the StudentSection links are removed so the count resets.
         if section_id:
             self.repo.delete_by_section(section_id)
 
@@ -45,15 +49,15 @@ class StudentService:
             student = Student(
                 student_id   = str(uuid.uuid4()),
                 workspace_id = workspace_id,
-                section_id   = section_id,
-                student_no   = (row.get("student_no") or "").strip(),
                 name         = (row.get("name") or "").strip(),
                 email        = (row.get("email") or "").strip(),
+                student_no   = (row.get("student_no") or "").strip(),
             )
-            if not student.name and not student.email: #if the csv student list file has an empty row, skip it so that we dont inssert garbage data in our db
+            if not student.name and not student.email:
                 continue  # skip completely blank rows
-            self.repo.save(student)  #save student to db
-            students.append(student) #add student to student list
+            # section_id passed separately — not part of Student identity
+            self.repo.save(student, section_id=section_id)
+            students.append(student)
 
         logger.info("Imported %d students workspace=%s section=%s",
                     len(students), workspace_id, section_id)
