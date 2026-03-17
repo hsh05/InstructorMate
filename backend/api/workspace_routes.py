@@ -16,7 +16,7 @@ from db.database import get_db
 from repositories.pg_workspace_repository import PgWorkspaceRepository
 from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
-from services.pdf_hash_service import PdfHashService
+from services.file_hash_service import FileHashService
 from services.workspace_service import WorkspaceService
 from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
 
@@ -72,7 +72,7 @@ def get_workspace_service(
 ) -> WorkspaceService:
     return WorkspaceService(
         repo         = workspace_repo,
-        hash_service = PdfHashService(),
+        hash_service = FileHashService(),
     )
 
 

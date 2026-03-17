@@ -59,7 +59,7 @@ class PgWorkspaceRepository:
         ).first()
 
         if row:
-            row.pdf_hash = workspace.pdf_hash
+            row.file_hash = workspace.file_hash
             row.status   = workspace.status.value
             for name in _DB_FIELD_NAMES:
                 setattr(row, name, workspace.fields.get(name, ""))
@@ -67,7 +67,7 @@ class PgWorkspaceRepository:
         else:
             row = WorkspaceModel(
                 workspace_id = workspace.workspace_id,
-                pdf_hash     = workspace.pdf_hash,
+                file_hash     = workspace.file_hash,
                 status       = workspace.status.value,
                 **{name: workspace.fields.get(name, "") for name in _DB_FIELD_NAMES},
             )
@@ -192,7 +192,7 @@ class PgWorkspaceRepository:
         fields = {name: getattr(row, name, "") or "" for name in _DB_FIELD_NAMES}
         ws = Workspace(
             workspace_id = row.workspace_id,
-            pdf_hash     = row.pdf_hash or "",
+            file_hash     = row.file_hash or "",
             status       = WorkspaceStatus(row.status or "draft"),
             fields       = fields,
         )

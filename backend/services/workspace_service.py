@@ -18,7 +18,7 @@ from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
 from domain.workspace_fields import WORKSPACE_FIELD_NAMES
 from repositories.pg_workspace_repository import PgWorkspaceRepository
-from services.pdf_hash_service import PdfHashService
+from services.file_hash_service import FileHashService
 from syllabus_converter import SyllabusConverterService
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class WorkspaceService:
     def __init__(
         self,
         repo: PgWorkspaceRepository,
-        hash_service: PdfHashService,
+        hash_service: FileHashService,
         converter_model: str = "gpt-4o",
     ):
         self.repo         = repo

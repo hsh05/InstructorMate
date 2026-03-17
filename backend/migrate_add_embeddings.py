@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Migration: add `embedding` column to syllabus_chunks table.
+Migration: rename `pdf_hash` column to `file_hash` in workspaces table.
 
-Run from your backend folder:
-    python migrate_add_embeddings.py
+The old name was misleading since the app now accepts both PDF and DOCX files.
 
-Loads DATABASE_URL from your .env file automatically — no manual
-environment variable setup needed.
+Run from backend folder:
+    python migrate_rename_pdf_hash.py
+
+Safe to run multiple times — checks if the column already exists.
 """
 
 import os
@@ -14,7 +15,6 @@ import sys
 from pathlib import Path
 
 # ── Load .env automatically ───────────────────────────────────────────────────
-# Walk up from this file looking for a .env file (backend/.env or root/.env)
 _here = Path(__file__).resolve().parent
 for _candidate in [_here, _here.parent, _here.parent.parent]:
     _env_file = _candidate / ".env"
@@ -33,7 +33,6 @@ from sqlalchemy import create_engine, inspect, text
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     print("❌  DATABASE_URL not found in environment or .env file.")
-    print("    Make sure your .env contains:  DATABASE_URL=postgresql://...")
     sys.exit(1)
 
 print("Connecting to database...")
@@ -41,19 +40,19 @@ engine = create_engine(DATABASE_URL)
 
 with engine.connect() as conn:
     inspector = inspect(engine)
-    columns = [c["name"] for c in inspector.get_columns("syllabus_chunks")]
+    columns = [c["name"] for c in inspector.get_columns("workspaces")]
 
-    if "embedding" in columns:
-        print("✅  Column 'embedding' already exists — nothing to do.")
-    else:
-        col_type = "JSONB" if engine.dialect.name == "postgresql" else "JSON"
+    if "file_hash" in columns and "pdf_hash" not in columns:
+        print("✅  Column already renamed to 'file_hash' — nothing to do.")
+    elif "pdf_hash" in columns:
         conn.execute(
-            text(f"ALTER TABLE syllabus_chunks ADD COLUMN embedding {col_type}")
+            text("ALTER TABLE workspaces RENAME COLUMN pdf_hash TO file_hash")
         )
         conn.commit()
-        print(f"✅  Added 'embedding' ({col_type}) column to syllabus_chunks.")
+        print("✅  Renamed 'pdf_hash' → 'file_hash' in workspaces table.")
         print()
         print("Next steps:")
-        print("  1. Restart your backend server.")
-        print("  2. New workspaces will get embeddings automatically on upload.")
-        print("  3. Existing workspaces fall back to keyword search until re-uploaded.")
+        print("  1. Also rename backend/services/pdf_hash_service.py → file_hash_service.py")
+        print("  2. Restart your backend server.")
+    else:
+        print("❌  Neither 'pdf_hash' nor 'file_hash' column found. Check your table.")

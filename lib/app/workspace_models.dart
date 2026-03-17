@@ -97,7 +97,7 @@ class WorkspaceSummary {
       createdAt: (j['created_at'] ?? '').toString(),
       updatedAtRaw: j['updated_at']?.toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
-      pdfHash: (j['pdf_hash'] ?? '').toString(),
+      pdfHash: (j['file_hash'] ?? '').toString(),
       title: title,
       status: status,
       sectionsCount: sectionsCount,
@@ -137,7 +137,7 @@ class Workspace {
       createdAt: (j['created_at'] ?? '').toString(),
       updatedAtRaw: j['updated_at']?.toString(),
       originalFilename: (j['original_filename'] ?? '').toString(),
-      pdfHash: (j['pdf_hash'] ?? '').toString(),
+      pdfHash: (j['file_hash'] ?? '').toString(),
       status: (j['status'] ?? 'draft').toString(),
       fields: fieldsRaw.map(
         (k, v) => MapEntry(k.toString(), (v ?? '').toString()),

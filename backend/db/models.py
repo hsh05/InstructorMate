@@ -12,7 +12,7 @@ class Workspace(Base):
     __tablename__ = "workspaces"
 
     workspace_id = Column(Text, primary_key=True)
-    pdf_hash     = Column(Text, nullable=False, default="")
+    file_hash     = Column(Text, nullable=False, default="")
     status       = Column(Text, nullable=False, default="draft")  # 'draft' | 'ready'
     course_title = Column(Text, nullable=False, default="")
     semester     = Column(Text, nullable=False, default="")
@@ -69,9 +69,6 @@ class Student(Base):
     created_at   = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     workspace = relationship("Workspace", back_populates="students")
-    # FIX: No cascade here — StudentSection rows are owned by Section.
-    # Having cascade="all, delete-orphan" on BOTH Section.students and
-    # Student.sections caused a double-delete conflict → 500 on workspace delete.
     sections  = relationship("StudentSection")
 
 

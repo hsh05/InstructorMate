@@ -15,12 +15,12 @@ class Workspace:
     def __init__(
         self,
         workspace_id: str,
-        pdf_hash: str,
+        file_hash: str,
         fields: Dict[str, str],
         status: WorkspaceStatus,
     ):
         self._workspace_id = workspace_id
-        self._pdf_hash = pdf_hash
+        self._file_hash = file_hash
         self._fields = fields
         self._status = status
         # Populated by the repository after construction
@@ -32,8 +32,8 @@ class Workspace:
         return self._workspace_id
 
     @property
-    def pdf_hash(self) -> str:
-        return self._pdf_hash
+    def file_hash(self) -> str:
+        return self._file_hash
 
     @property
     def fields(self) -> Dict[str, str]:
@@ -67,7 +67,7 @@ class Workspace:
             "created_at": self._created_at,
             "updated_at": self._updated_at,
             "original_filename": "",
-            "pdf_hash": self.pdf_hash,
+            "file_hash": self.file_hash,
             "fields": self.fields,
             "status": self.status.value,
             "sections": [],

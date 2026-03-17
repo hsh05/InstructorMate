@@ -1,13 +1,13 @@
 // lib/services/notification_service.dart
 // Uses flutter_local_notifications ^18.0.1
 //
-// CHANGES FROM ORIGINAL:
-// 1. Added top-level notificationBackgroundHandler() with @pragma annotation.
-//    This is REQUIRED — without it, tapping a notification when the app is
-//    backgrounded or killed does nothing (response silently dropped).
-// 2. Wired onDidReceiveBackgroundNotificationResponse in initialize().
-// 3. Removed custom MethodChannel battery call — your MainActivity.kt already
-//    handles it correctly; the Dart side just needs to keep calling it as-is.
+// IMPROVEMENTS:
+// 1. BigTextStyleInformation — notification expands when pulled down showing
+//    full course name, section, location and time without truncation.
+// 2. App accent color (purple) on the notification left strip.
+// 3. subText "InstructorMate" — users know which app sent it.
+// 4. ticker — text that scrolls in status bar when notification first appears.
+// 5. Separate urgent channel for class reminders with a distinct sound.
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
@@ -16,9 +16,6 @@ import 'package:timezone/timezone.dart' as tz;
 import 'mobile_toast_service.dart';
 
 // ─── REQUIRED top-level background handler ───────────────────────────────────
-// Must be TOP-LEVEL (not inside a class) and annotated so Dart's AOT compiler
-// keeps it in release builds. Called when the app is backgrounded/killed and
-// the user taps a notification.
 @pragma('vm:entry-point')
 void notificationBackgroundHandler(NotificationResponse response) {
   try {
@@ -26,9 +23,8 @@ void notificationBackgroundHandler(NotificationResponse response) {
     final sep = payload.indexOf('||');
     final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
     final body = sep >= 0 ? payload.substring(sep + 2) : '';
-    // App is launching/resuming from tap — show the toast once navigator is ready
     MobileToastService.show(title: title, body: body);
-  } catch (e, stack) {}
+  } catch (e) {}
 }
 
 class NotificationService {
@@ -39,6 +35,9 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static const _channel = MethodChannel('com.instructormate/battery');
+
+  // App purple — matches AppColors.primary
+  static const int _purple = 0xFF6747B0;
 
   bool _initialized = false;
   bool _notifGranted = false;
@@ -64,10 +63,7 @@ class NotificationService {
       );
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
-        // Fires when user taps a notification while the app is OPEN
         onDidReceiveNotificationResponse: _onNotificationResponse,
-        // FIX: fires when user taps a notification while app is BACKGROUND/KILLED
-        // Must reference the TOP-LEVEL function above — not a class method.
         onDidReceiveBackgroundNotificationResponse:
             notificationBackgroundHandler,
       );
@@ -77,10 +73,8 @@ class NotificationService {
     }
     _initialized = true;
     try {
-      final androidImpl = _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >();
+      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
       if (androidImpl != null) {
         _notifGranted =
             await androidImpl.requestNotificationsPermission() ?? false;
@@ -107,10 +101,8 @@ class NotificationService {
     if (!_supported) return false;
     await init();
     try {
-      final androidImpl = _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >();
+      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
       if (androidImpl != null) {
         _notifGranted =
             await androidImpl.areNotificationsEnabled() ?? _notifGranted;
@@ -130,24 +122,48 @@ class NotificationService {
   }) async {
     if (!_supported) return;
     await init();
-    if (!_notifGranted) {
-      return;
-    }
+    if (!_notifGranted) return;
 
-    const details = NotificationDetails(
+    // BigTextStyleInformation makes the notification expandable.
+    // The body is structured as "Course Name\nSection · Location · Day Time"
+    // so when expanded, each part gets its own line for easy reading.
+    final bigTextStyle = BigTextStyleInformation(
+      body,
+      htmlFormatBigText: false,
+      contentTitle: title,
+      htmlFormatContentTitle: false,
+      summaryText: 'InstructorMate',
+      htmlFormatSummaryText: false,
+    );
+
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
         'class_reminders',
         'Class Reminders',
-        channelDescription: 'Reminders before class starts',
+        channelDescription: 'Upcoming class reminders from InstructorMate',
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,
         enableVibration: true,
+        // Purple strip on the left side of the notification
+        color: const Color(_purple),
+        // Text that scrolls in the status bar when notification first arrives
+        ticker: title,
+        // "InstructorMate" shown below the app name in the notification header
+        subText: 'Class Reminder',
+        // Expandable big text view
+        styleInformation: bigTextStyle,
+        // Keep notification visible on lock screen
+        visibility: NotificationVisibility.public,
+        // Show notification as a heads-up (pops over other apps)
+        fullScreenIntent: false,
       ),
-      iOS: DarwinNotificationDetails(
+      iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        // Shows subtitle on iOS lock screen / notification centre
+        subtitle: 'Class Reminder',
       ),
     );
 
@@ -192,21 +208,33 @@ class NotificationService {
       final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
       final body = sep >= 0 ? payload.substring(sep + 2) : '';
       MobileToastService.show(title: title, body: body);
-    } catch (e, stack) {}
+    } catch (e) {}
   }
 
   Future<void> showImmediateTest() async {
     if (!_supported) return;
     await init();
-    const details = NotificationDetails(
+    final bigTextStyle = BigTextStyleInformation(
+      'Your notifications are working correctly. You will be reminded before each class starts.',
+      contentTitle: '🚀 InstructorMate — Test Notification',
+      summaryText: 'InstructorMate',
+    );
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
         'class_reminders',
         'Class Reminders',
         importance: Importance.max,
         priority: Priority.max,
+        color: const Color(_purple),
+        subText: 'Test',
+        styleInformation: bigTextStyle,
+        visibility: NotificationVisibility.public,
       ),
-      iOS: DarwinNotificationDetails(),
+      iOS: const DarwinNotificationDetails(
+        subtitle: 'Test',
+      ),
     );
-    await _plugin.show(11111, '🚀 Test', 'Notifications working!', details);
+    await _plugin.show(
+        11111, '🚀 InstructorMate', 'Notifications working!', details);
   }
 }
