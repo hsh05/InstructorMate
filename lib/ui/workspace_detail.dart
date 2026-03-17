@@ -2090,7 +2090,18 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     widget.vm.recordImport(widget.section.id, _students.length);
     widget.vm.api
         .deleteStudent(widget.ws.id, widget.section.id, s.studentId)
-        .catchError((e) {
+        .then((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            '✓ ${s.name.isNotEmpty ? s.name : "Student"} removed successfully',
+          ),
+          backgroundColor: AppColors.accent,
+          behavior: SnackBarBehavior.floating,
+          shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
+        ));
+      }
+    }).catchError((e) {
       // Rollback on failure
       if (mounted) {
         setState(() => _students.add(s));
@@ -2189,11 +2200,22 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
     try {
       await widget.vm.api.clearSectionStudents(widget.ws.id, widget.section.id);
       if (!mounted) return;
+      final cleared = count;
       setState(() {
         _students = [];
         _clearing = false;
       });
       widget.vm.recordImport(widget.section.id, 0);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            '✓ $cleared student${cleared == 1 ? "" : "s"} removed from $sectionName',
+          ),
+          backgroundColor: AppColors.accent,
+          behavior: SnackBarBehavior.floating,
+          shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
+        ));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _clearing = false);
@@ -2224,6 +2246,16 @@ class _SectionRosterCardState extends State<_SectionRosterCard> {
           await _loadRoster();
           // Update home screen count after load completes
           widget.vm.recordImport(widget.section.id, _students.length);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                '✓ ${name.isNotEmpty ? name : "Student"} added successfully',
+              ),
+              backgroundColor: AppColors.accent,
+              behavior: SnackBarBehavior.floating,
+              shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
+            ));
+          }
         },
       ),
     );
@@ -3372,7 +3404,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
     // ── Email ─────────────────────────────────────────────────────────────────
     if (email.isEmpty) return 'Email address is required.';
     if (!email.endsWith('@aau.ac.ae')) {
-      return 'Email must be a valid AAU address (e.g. 202210078@aau.ac.ae).';
+      return 'Email must be a valid AAU address (e.g. s202210078@aau.ac.ae).';
     }
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@aau\.ac\.ae$');
     if (!emailRegex.hasMatch(email)) {
@@ -3512,7 +3544,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
           _field(
             ctrl: _nameCtrl,
             label: 'FULL NAME',
-            hint: 'e.g. Omar Ahmed (letters only)',
+            hint: 'e.g. Sarah Johnson (letters only)',
             icon: Icons.person_outline_rounded,
           ),
           const SizedBox(height: 16),
@@ -3526,7 +3558,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
           _field(
             ctrl: _emailCtrl,
             label: 'EMAIL ADDRESS',
-            hint: 'e.g. 202210078@aau.ac.ae',
+            hint: 'e.g. s202210078@aau.ac.ae',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
           ),
