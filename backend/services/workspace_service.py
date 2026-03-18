@@ -156,6 +156,8 @@ class WorkspaceService:
                 chunks_dst = repo.get_chunks_csv_path(workspace_id)
                 if chunks_src != chunks_dst:
                     shutil.copy2(str(chunks_src), str(chunks_dst))
+                # Generate and persist embeddings for all newly saved chunks
+                repo.generate_and_save_embeddings(workspace_id)
 
             # ── Auto-fill workspace fields ───────────────────────────────────
             single_row_src = Path(result.single_row_csv)
