@@ -3404,7 +3404,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
     // ── Email ─────────────────────────────────────────────────────────────────
     if (email.isEmpty) return 'Email address is required.';
     if (!email.endsWith('@aau.ac.ae')) {
-      return 'Email must be a valid AAU address (e.g. s202210078@aau.ac.ae).';
+      return 'Email must be a valid AAU address (e.g. 202210078@aau.ac.ae).';
     }
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@aau\.ac\.ae$');
     if (!emailRegex.hasMatch(email)) {
@@ -3544,7 +3544,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
           _field(
             ctrl: _nameCtrl,
             label: 'FULL NAME',
-            hint: 'e.g. Sarah Johnson (letters only)',
+            hint: 'e.g. Omar Ahmed (letters only)',
             icon: Icons.person_outline_rounded,
           ),
           const SizedBox(height: 16),
@@ -3558,7 +3558,7 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
           _field(
             ctrl: _emailCtrl,
             label: 'EMAIL ADDRESS',
-            hint: 'e.g. s202210078@aau.ac.ae',
+            hint: 'e.g. 202210078@aau.ac.ae',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
           ),
