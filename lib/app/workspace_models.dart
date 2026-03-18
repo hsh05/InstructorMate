@@ -1,14 +1,4 @@
 // lib/app/workspace_models.dart
-//
-// FIX: SectionSchedule.formattedTimeRange now uses 12-h AM/PM format
-//      so "08:00 – 09:30" displays as "8:00 AM – 9:30 AM" in the UI.
-// FIX: Student moved here from api_client.dart — one canonical model.
-// UPDATE: WorkspaceSummary now includes sectionsCount, studentsCount, updatedAt
-//         so the home screen can display real numbers without opening each workspace.
-// FIX: WorkspaceSummary.isProcessing — true when status is 'draft' and no name
-//      has been extracted yet. Card shows shimmer instead of "Untitled Course".
-// FIX: updatedAtRaw is null when backend updated_at == created_at (new workspace)
-//      so the home card never shows "updated just now" on a fresh import.
 
 import '../utils/schedule_utils.dart';
 
@@ -94,15 +84,19 @@ class WorkspaceSummary {
       }
     }
 
-    // Only use updated_at if it's genuinely different from created_at.
-    // On creation the backend sets both to the same timestamp — showing
-    // "updated just now" on a brand new import is misleading.
+    // Only use updated_at if it's genuinely at least 5 seconds after created_at.
+    // String comparison misses millisecond differences — using DateTime diff
+    // prevents brand-new workspaces from showing a false "just now" timestamp.
     final createdAt = (j['created_at'] ?? '').toString();
     final rawUpdated = j['updated_at']?.toString();
-    final updatedAtRaw =
-        (rawUpdated != null && rawUpdated.isNotEmpty && rawUpdated != createdAt)
-            ? rawUpdated
-            : null;
+    final parsedCreated = DateTime.tryParse(createdAt);
+    final parsedUpdated =
+        rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
+    final updatedAtRaw = (parsedUpdated != null &&
+            parsedCreated != null &&
+            parsedUpdated.difference(parsedCreated).inSeconds >= 5)
+        ? rawUpdated
+        : null;
 
     return WorkspaceSummary(
       id: (j['id'] ?? '').toString(),
@@ -145,15 +139,19 @@ class Workspace {
     final fieldsRaw = (j['fields'] as Map?) ?? {};
     final sectionsRaw = (j['sections'] as List?) ?? [];
 
-    // Only use updated_at if it's genuinely different from created_at.
-    // On creation the backend sets both to the same timestamp — showing
-    // "updated just now" on a brand new import is misleading.
+    // Only use updated_at if it's genuinely at least 5 seconds after created_at.
+    // String comparison misses millisecond differences — using DateTime diff
+    // prevents brand-new workspaces from showing a false "just now" timestamp.
     final createdAt = (j['created_at'] ?? '').toString();
     final rawUpdated = j['updated_at']?.toString();
-    final updatedAtRaw =
-        (rawUpdated != null && rawUpdated.isNotEmpty && rawUpdated != createdAt)
-            ? rawUpdated
-            : null;
+    final parsedCreated = DateTime.tryParse(createdAt);
+    final parsedUpdated =
+        rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
+    final updatedAtRaw = (parsedUpdated != null &&
+            parsedCreated != null &&
+            parsedUpdated.difference(parsedCreated).inSeconds >= 5)
+        ? rawUpdated
+        : null;
 
     return Workspace(
       id: (j['id'] ?? '').toString(),

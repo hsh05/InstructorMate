@@ -821,18 +821,11 @@ class _WorkspaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Only show "Last Updated" if updated_at is meaningfully later than
-    // created_at — guards against backends that set both to the same value
-    // or within a few seconds of each other on creation.
+    // Show "Last Updated" whenever updatedAt is non-null.
+    // The fromJson layer already guards against same-timestamp-as-created_at,
+    // so no extra difference check is needed here.
     final updatedAt = workspace.updatedAt;
-    final createdAt = workspace.createdAt.isNotEmpty
-        ? DateTime.tryParse(workspace.createdAt)
-        : null;
-    final timeAgo = (updatedAt != null &&
-            (createdAt == null ||
-                updatedAt.difference(createdAt).inMinutes >= 1))
-        ? _timeAgo(updatedAt)
-        : null;
+    final timeAgo = updatedAt != null ? _timeAgo(updatedAt) : null;
 
     return Material(
       color: AppColors.surface,
