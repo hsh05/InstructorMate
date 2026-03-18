@@ -497,10 +497,6 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                         height: 1.5,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _DeleteBullet(
-                        icon: Icons.description_outlined,
-                        label: 'Syllabus file & extracted content'),
                     const SizedBox(height: 6),
                     _DeleteBullet(
                         icon: Icons.groups_2_outlined,
@@ -821,11 +817,18 @@ class _WorkspaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Show "Last Updated" whenever updatedAt is non-null.
-    // The fromJson layer already guards against same-timestamp-as-created_at,
-    // so no extra difference check is needed here.
+    // Only show "Last Updated" if updated_at is at least 5 seconds after
+    // created_at — filters out the false "just now" that appears on creation
+    // when the backend sets both timestamps within milliseconds of each other.
     final updatedAt = workspace.updatedAt;
-    final timeAgo = updatedAt != null ? _timeAgo(updatedAt) : null;
+    final createdAt = workspace.createdAt.isNotEmpty
+        ? DateTime.tryParse(workspace.createdAt)
+        : null;
+    final timeAgo = (updatedAt != null &&
+            (createdAt == null ||
+                updatedAt.difference(createdAt).inSeconds >= 5))
+        ? _timeAgo(updatedAt)
+        : null;
 
     return Material(
       color: AppColors.surface,
