@@ -20,6 +20,52 @@ class WorkspacesHome extends StatefulWidget {
 class _WorkspacesHomeState extends State<WorkspacesHome> {
   bool _dragOver = false;
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
+        const SizedBox(width: 8),
+        Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
+      ]),
+      backgroundColor: AppColors.accent,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.error_outline_rounded, color: Colors.white, size: 16),
+        const SizedBox(width: 8),
+        Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
+      ]),
+      backgroundColor: AppColors.red,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  void _showInfo(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.info_outline_rounded, color: Colors.white, size: 16),
+        const SizedBox(width: 8),
+        Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
+      ]),
+      backgroundColor: AppColors.inkMid,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -106,7 +152,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                     key: ValueKey(ws.id),
                     workspace: ws,
                     vm: widget.vm,
-                    onReady: () => setState(() {}),
+                    onReady: (title) => _showSuccess(
+                      '"$title" imported successfully ✓',
+                    ),
                     onDelete: () => _confirmDelete(context, ws),
                   );
                 }
@@ -349,96 +397,212 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
     // ── Error ─────────────────────────────────────────────────────────────
     if (widget.vm.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(widget.vm.error!),
-        backgroundColor: AppColors.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
+      _showError(widget.vm.error!);
       return;
     }
 
-    // ── Success ───────────────────────────────────────────────────────────
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Row(children: [
-        Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
-        SizedBox(width: 8),
-        Text('Syllabus imported — processing in background…'),
-      ]),
-      backgroundColor: AppColors.accent,
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    // ── Success — workspace queued for processing ─────────────────────────
+    _showInfo('Syllabus imported — processing in background…');
   }
 
+  // ── Delete confirmation ───────────────────────────────────────────────────
   void _confirmDelete(BuildContext context, WorkspaceSummary workspace) {
+    final title =
+        workspace.title.isNotEmpty ? workspace.title : 'this workspace';
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Text('Delete Workspace',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-        content: Text(
-          'Delete "${workspace.title.isNotEmpty ? workspace.title : "this workspace"}"?\nThis permanently removes all sections, students, and files.',
-          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 32,
+                offset: const Offset(0, 12),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.red,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              Navigator.pop(context);
-              final title =
-                  workspace.title.isNotEmpty ? workspace.title : 'Workspace';
-              final ok = await widget.vm.deleteWorkspace(workspace.id);
-              if (!context.mounted) return;
-              if (ok) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Row(children: [
-                    const Icon(Icons.delete_rounded,
-                        color: Colors.white, size: 16),
-                    const SizedBox(width: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Header ───────────────────────────────────────────────
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                decoration: BoxDecoration(
+                  color: AppColors.red.withOpacity(0.06),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.red.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.delete_outline_rounded,
+                          color: AppColors.red, size: 22),
+                    ),
+                    const SizedBox(width: 14),
                     Expanded(
-                      child: Text(
-                        '"$title" deleted successfully',
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Delete Workspace',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF1A1A2E),
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '"$title"',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.inkMid,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
-                  ]),
-                  backgroundColor: AppColors.inkMid,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 3),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ));
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(widget.vm.error ?? 'Delete failed'),
-                  backgroundColor: AppColors.red,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ));
-              }
-            },
-            child: const Text('Delete',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+              // ── Body ─────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'This action is permanent and cannot be undone. The following will be removed:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.inkMid,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _DeleteBullet(
+                        icon: Icons.description_outlined,
+                        label: 'Syllabus file & extracted content'),
+                    const SizedBox(height: 6),
+                    _DeleteBullet(
+                        icon: Icons.groups_2_outlined,
+                        label:
+                            '${workspace.sectionsCount} section${workspace.sectionsCount == 1 ? "" : "s"}'),
+                    const SizedBox(height: 6),
+                    _DeleteBullet(
+                        icon: Icons.people_outline_rounded,
+                        label:
+                            '${workspace.studentsCount} student${workspace.studentsCount == 1 ? "" : "s"}'),
+                  ],
+                ),
+              ),
+              // ── Actions ───────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.inkMid,
+                        side: const BorderSide(color: AppColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.red,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.delete_rounded, size: 16),
+                      label: const Text('Delete Permanently',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 14)),
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        final ok =
+                            await widget.vm.deleteWorkspace(workspace.id);
+                        if (!mounted) return;
+                        if (ok) {
+                          _showInfo(
+                              '"${workspace.title.isNotEmpty ? workspace.title : "Workspace"}" deleted');
+                        } else {
+                          _showError(
+                              widget.vm.error ?? 'Failed to delete workspace');
+                        }
+                      },
+                    ),
+                  ),
+                ]),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
+}
+
+// ─── Delete bullet item ───────────────────────────────────────────────────────
+class _DeleteBullet extends StatelessWidget {
+  const _DeleteBullet({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: AppColors.red.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: AppColors.red, size: 14),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.ink,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ]);
 }
 
 // ─── Polling wrapper for processing cards ─────────────────────────────────────
@@ -452,7 +616,7 @@ class _PollingWorkspaceCard extends StatefulWidget {
   });
   final WorkspaceSummary workspace;
   final WorkspacesViewModel vm;
-  final VoidCallback onReady;
+  final void Function(String title) onReady;
   final VoidCallback onDelete;
 
   @override
@@ -481,7 +645,10 @@ class _PollingWorkspaceCardState extends State<_PollingWorkspaceCard> {
       if (!fresh.isProcessing) {
         _timer?.cancel();
         widget.vm.updateWorkspaceSummary(fresh.toSummary());
-        widget.onReady();
+        // Pass the resolved title so the snackbar can show the course name
+        widget.onReady(
+          fresh.title.isNotEmpty ? fresh.title : 'Course',
+        );
       }
     } catch (_) {}
   }
@@ -654,8 +821,17 @@ class _WorkspaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeAgo = workspace.updatedAtRaw?.isNotEmpty == true
-        ? _timeAgo(workspace.updatedAt!)
+    // Only show "Last Updated" if updated_at is meaningfully later than
+    // created_at — guards against backends that set both to the same value
+    // or within a few seconds of each other on creation.
+    final updatedAt = workspace.updatedAt;
+    final createdAt = workspace.createdAt.isNotEmpty
+        ? DateTime.tryParse(workspace.createdAt)
+        : null;
+    final timeAgo = (updatedAt != null &&
+            (createdAt == null ||
+                updatedAt.difference(createdAt).inMinutes >= 1))
+        ? _timeAgo(updatedAt)
         : null;
 
     return Material(

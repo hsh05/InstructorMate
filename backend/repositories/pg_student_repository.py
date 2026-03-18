@@ -1,16 +1,4 @@
 # backend/repositories/pg_student_repository.py
-#
-# SCHEMA NOTE (normalized)
-# ────────────────────────
-# Student table has no section_id column.
-# Student <-> Section relationship is via StudentSection join table.
-#
-# DEDUPLICATION
-# ─────────────
-# Students are deduplicated by (workspace_id, email) as a natural key.
-# If a student with the same email already exists in this workspace,
-# save() reuses their existing student_id instead of creating a duplicate.
-# Falls back to (workspace_id, student_no) if email is blank.
 
 import logging
 from typing import List

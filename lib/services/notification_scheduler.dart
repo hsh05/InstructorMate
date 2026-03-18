@@ -1,23 +1,4 @@
 // lib/services/notification_scheduler.dart
-//
-// ARCHITECTURAL CHANGE: No longer uses matchDateTimeComponents (repeating).
-//
-// The "Missing type parameter" crash is caused by the repeating notification
-// serialization format (type=2) in flutter_local_notifications. The plugin's
-// Java deserializer is brittle — any mismatch in the stored JSON causes a
-// RuntimeException that cannot be caught in Dart.
-//
-// FIX: Schedule the next 4 individual one-time occurrences per section/day
-// instead of one repeating notification. Type=1 (one-shot) serialization
-// is simple and never causes deserialization crashes.
-// rescheduleAll() is already called on every app launch and after every
-// section change, so notifications stay current.
-//
-// NOTIFICATION STRUCTURE IMPROVEMENT:
-// Title is now always short ("⏰ Class starting in 10 minutes") so it never
-// gets truncated regardless of course name length. Full details are in the
-// expandable body: course name on line 1, section · location · day + time
-// on line 2.
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:timezone/timezone.dart' as tz;

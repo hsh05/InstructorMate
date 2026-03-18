@@ -1,13 +1,4 @@
 # backend/services/student_service.py
-#
-# SCHEMA NOTE
-# ───────────
-# Import flow: save Student row (merge) + create StudentSection link.
-# Replace flow: delete StudentSection links for section, then re-import.
-#
-# section_id is passed to repo.save() as an explicit parameter — it is NOT
-# stored on the Student domain object since a student can belong to multiple
-# sections via the StudentSection join table.
 
 import csv
 import io

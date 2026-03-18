@@ -1,7 +1,4 @@
 // lib/services/web_audio_impl.dart
-// Web-only audio implementation using dart:js_interop.
-// Never imported directly — only loaded via conditional import in
-// web_notification_service.dart when compiling for web.
 
 import 'dart:js_interop';
 

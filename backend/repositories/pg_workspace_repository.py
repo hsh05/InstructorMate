@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from domain.workspace import Workspace
@@ -57,8 +58,9 @@ class PgWorkspaceRepository:
         ).first()
 
         if row:
-            row.file_hash = workspace.file_hash
-            row.status    = workspace.status.value
+            row.file_hash  = workspace.file_hash
+            row.status     = workspace.status.value
+            row.updated_at = func.now()   # stamp updated_at on every save
             for name in _DB_FIELD_NAMES:
                 setattr(row, name, workspace.fields.get(name, ""))
             logger.info("Updated workspace id=%s", workspace.workspace_id)

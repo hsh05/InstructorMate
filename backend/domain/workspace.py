@@ -1,10 +1,5 @@
 # backend/domain/workspace.py
-#
-# FIX (DRY): REQUIRED_FIELDS was a hardcoded list here that was separate from
-# (and could drift from) the field list in CsvWorkspaceRepository.
-# Now imports REQUIRED_FIELD_NAMES from workspace_fields.py — one source of truth.
-# FIX: to_dict() now exposes real created_at and updated_at timestamps
-# that _to_domain attaches, instead of hardcoded empty strings.
+
 
 from typing import Dict, List
 from .enums import WorkspaceStatus

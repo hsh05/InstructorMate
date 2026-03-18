@@ -1,11 +1,4 @@
 # backend/services/workspace_service.py
-#
-# CHANGES vs original:
-# 1. FIX #1 — Background converter now sets status='error' when extraction fails,
-#    so Flutter can surface a real error state instead of polling forever.
-# 2. FIX #4 — _run_converter_bg is guarded: won't double-submit if already running.
-# 3. FIX #5 — _run_converter writes original filename extension to disk so
-#    syllabus_converter knows whether to use PdfTextExtractor or DocxTextExtractor.
 
 import csv
 import logging

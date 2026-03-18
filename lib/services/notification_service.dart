@@ -1,13 +1,4 @@
 // lib/services/notification_service.dart
-// Uses flutter_local_notifications ^18.0.1
-//
-// IMPROVEMENTS:
-// 1. BigTextStyleInformation — notification expands when pulled down showing
-//    full course name, section, location and time without truncation.
-// 2. App accent color (purple) on the notification left strip.
-// 3. subText "InstructorMate" — users know which app sent it.
-// 4. ticker — text that scrolls in status bar when notification first appears.
-// 5. Separate urgent channel for class reminders with a distinct sound.
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';

@@ -1,10 +1,4 @@
 # backend/api/workspace_routes.py
-#
-# CHANGES:
-# 1. Removed /reupload endpoint — no longer needed.
-# 2. Fixed temp-file leak in /ask: file write is now inside the try block.
-# 3. /upload now accepts .pdf and .docx (backend auto-detects by extension).
-
 
 import logging
 

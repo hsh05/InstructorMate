@@ -1,9 +1,4 @@
 # backend/syllabus_converter.py
-#
-# CHANGES:
-# 1. Added DocxTextExtractor — extracts text from .docx files paragraph-by-paragraph.
-# 2. SyllabusConverterService.convert() auto-detects pdf vs docx by extension.
-# 3. Removed reupload logic — callers simply call convert() again.
 
 from __future__ import annotations
 
@@ -19,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from openai import OpenAI
 from pypdf import PdfReader
 
-# docx support — install: pip install python-docx
+
 try:
     from docx import Document as DocxDocument
     _DOCX_AVAILABLE = True
@@ -141,10 +136,6 @@ class DocxTextExtractor:
             raise FileNotFoundError(f"DOCX not found: {docx_path.resolve()}")
 
         doc = DocxDocument(str(docx_path))
-
-        # Collect all text in document order: paragraphs AND table cells.
-        # Many syllabi store course code / instructor info in a header table —
-        # doc.paragraphs alone skips all table content entirely.
         all_text: list[str] = []
         from docx.oxml.ns import qn
 

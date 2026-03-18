@@ -418,7 +418,7 @@ class AskPipeline:
         3. Answer using original question + history so GPT answers naturally
         """
         # Step 1: rewrite vague follow-ups into self-contained retrieval queries.
-        # The rewritten query is ONLY used for chunk retrieval — GPT still sees
+        # The rewritten query is only used for chunk retrieval, GPT still sees
         # the original question so the answer reads naturally.
         retrieval_query = _rewrite_query(
             question=question,
