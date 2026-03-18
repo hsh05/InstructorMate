@@ -486,9 +486,9 @@ class WorkspacesViewModel extends ChangeNotifier {
       // backend round-trip. Otherwise preserve the existing value.
       updatedAtRaw: wasUpdated
           ? DateTime.now().toIso8601String()
-          : (ws.updatedAtRaw?.isNotEmpty == true
-              ? ws.updatedAtRaw
-              : (idx != -1 ? workspaces[idx].updatedAtRaw : null)),
+          : (idx != -1
+              ? workspaces[idx].updatedAtRaw // preserve existing card value
+              : null), // brand new — show nothing
       originalFilename:
           idx != -1 ? workspaces[idx].originalFilename : ws.originalFilename,
       pdfHash: idx != -1 ? workspaces[idx].pdfHash : ws.pdfHash,

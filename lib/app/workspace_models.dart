@@ -7,6 +7,8 @@
 //         so the home screen can display real numbers without opening each workspace.
 // FIX: WorkspaceSummary.isProcessing — true when status is 'draft' and no name
 //      has been extracted yet. Card shows shimmer instead of "Untitled Course".
+// FIX: updatedAtRaw is null when backend updated_at == created_at (new workspace)
+//      so the home card never shows "updated just now" on a fresh import.
 
 import '../utils/schedule_utils.dart';
 
@@ -92,10 +94,20 @@ class WorkspaceSummary {
       }
     }
 
+    // Only use updated_at if it's genuinely different from created_at.
+    // On creation the backend sets both to the same timestamp — showing
+    // "updated just now" on a brand new import is misleading.
+    final createdAt = (j['created_at'] ?? '').toString();
+    final rawUpdated = j['updated_at']?.toString();
+    final updatedAtRaw =
+        (rawUpdated != null && rawUpdated.isNotEmpty && rawUpdated != createdAt)
+            ? rawUpdated
+            : null;
+
     return WorkspaceSummary(
       id: (j['id'] ?? '').toString(),
-      createdAt: (j['created_at'] ?? '').toString(),
-      updatedAtRaw: j['updated_at']?.toString(),
+      createdAt: createdAt,
+      updatedAtRaw: updatedAtRaw,
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['file_hash'] ?? '').toString(),
       title: title,
@@ -132,10 +144,21 @@ class Workspace {
   factory Workspace.fromJson(Map<String, dynamic> j) {
     final fieldsRaw = (j['fields'] as Map?) ?? {};
     final sectionsRaw = (j['sections'] as List?) ?? [];
+
+    // Only use updated_at if it's genuinely different from created_at.
+    // On creation the backend sets both to the same timestamp — showing
+    // "updated just now" on a brand new import is misleading.
+    final createdAt = (j['created_at'] ?? '').toString();
+    final rawUpdated = j['updated_at']?.toString();
+    final updatedAtRaw =
+        (rawUpdated != null && rawUpdated.isNotEmpty && rawUpdated != createdAt)
+            ? rawUpdated
+            : null;
+
     return Workspace(
       id: (j['id'] ?? '').toString(),
-      createdAt: (j['created_at'] ?? '').toString(),
-      updatedAtRaw: j['updated_at']?.toString(),
+      createdAt: createdAt,
+      updatedAtRaw: updatedAtRaw,
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['file_hash'] ?? '').toString(),
       status: (j['status'] ?? 'draft').toString(),

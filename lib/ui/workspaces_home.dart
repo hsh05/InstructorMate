@@ -138,10 +138,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   // ── Instant open — no await ───────────────────────────────────────────────
   void _openWorkspace(BuildContext context, String id) {
-    // Fire openWorkspace but don't await — it sets the shell _current and
-    // notifies immediately, then fetches full data in the background.
     widget.vm.openWorkspace(id);
-    // Navigate right away — detail page handles loadingDetail state itself.
     Navigator.of(context).pushNamed('/workspace');
   }
 
@@ -162,6 +159,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     await widget.vm.importSyllabusBytes(bytes: bytes, filename: filename);
     if (!mounted) return;
 
+    // ── Duplicate ─────────────────────────────────────────────────────────
     if (widget.vm.lastImportWasDuplicate) {
       widget.vm.lastImportWasDuplicate = false;
       final ws = widget.vm.current;
@@ -349,6 +347,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       return;
     }
 
+    // ── Error ─────────────────────────────────────────────────────────────
     if (widget.vm.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(widget.vm.error!),
@@ -356,7 +355,21 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
+      return;
     }
+
+    // ── Success ───────────────────────────────────────────────────────────
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Row(children: [
+        Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
+        SizedBox(width: 8),
+        Text('Syllabus imported — processing in background…'),
+      ]),
+      backgroundColor: AppColors.accent,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
   }
 
   void _confirmDelete(BuildContext context, WorkspaceSummary workspace) {
@@ -386,11 +399,36 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             ),
             onPressed: () async {
               Navigator.pop(context);
+              final title =
+                  workspace.title.isNotEmpty ? workspace.title : 'Workspace';
               final ok = await widget.vm.deleteWorkspace(workspace.id);
-              if (!ok && context.mounted) {
+              if (!context.mounted) return;
+              if (ok) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Row(children: [
+                    const Icon(Icons.delete_rounded,
+                        color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '"$title" deleted successfully',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ]),
+                  backgroundColor: AppColors.inkMid,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 3),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ));
+              } else {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(widget.vm.error ?? 'Delete failed'),
                   backgroundColor: AppColors.red,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ));
               }
             },
@@ -616,10 +654,6 @@ class _WorkspaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Only show a timestamp when the backend has provided a real updated_at.
-    // Falling back to created_at was misleading — it showed "just now" on
-    // every open because _syncCurrentToList was stamping DateTime.now().
-    // Now we only show "Updated X ago" for genuine content changes.
     final timeAgo = workspace.updatedAtRaw?.isNotEmpty == true
         ? _timeAgo(workspace.updatedAt!)
         : null;
@@ -687,7 +721,7 @@ class _WorkspaceCard extends StatelessWidget {
                     if (timeAgo != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Last Updated $timeAgo',
+                        'Last Updated: $timeAgo',
                         style: const TextStyle(
                           fontSize: 11.5,
                           color: AppColors.inkLight,
