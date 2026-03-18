@@ -270,7 +270,7 @@ class SyllabusChatGPT:
         # ── System prompt ─────────────────────────────────────────────────────
         system_prompt = (
             "You are an intelligent academic assistant embedded in a course management app. "
-            "Your job is to help students and instructors understand their course syllabus "
+            "Your job is to help instructors understand their course syllabus "
             "clearly and accurately.\n\n"
 
             "BEHAVIOUR:\n"

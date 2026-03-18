@@ -2,6 +2,8 @@
 // FIX: openWorkspace() now navigates instantly using summary data already
 //      in hand. Full workspace fetch happens in the background so the
 //      detail page appears in <100ms instead of waiting 2-3s for the API.
+// FIX: chatHistory persisted per workspace in VM so AI conversation
+//      survives navigation and is only cleared on workspace delete or app kill.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -15,6 +17,7 @@ import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
 import '../workspace_models.dart';
 import '../../utils/schedule_utils.dart';
+import '../../ui/workspace_ask.dart';
 
 class WorkspacesViewModel extends ChangeNotifier {
   // stores add state and async and notifices ui when state changes
@@ -40,6 +43,11 @@ class WorkspacesViewModel extends ChangeNotifier {
   }
 
   final Map<String, int> sectionStudentCounts = {};
+
+  /// Persists chat history per workspace for the lifetime of the VM.
+  /// Key = workspace id, Value = list of chat messages.
+  /// Survives navigation — only cleared on deleteWorkspace() or app kill.
+  final Map<String, List<ChatMsg>> chatHistory = {};
 
   void recordImport(String sectionId, int count) {
     sectionStudentCounts[sectionId] = count;
@@ -426,6 +434,8 @@ class WorkspacesViewModel extends ChangeNotifier {
       await api.deleteWorkspace(workspaceId);
       workspaces.removeWhere((w) => w.id == workspaceId);
       if (_current?.id == workspaceId) _current = null;
+      // Clean up chat history for deleted workspace
+      chatHistory.remove(workspaceId);
       return true;
     } catch (e) {
       error = e.toString();
