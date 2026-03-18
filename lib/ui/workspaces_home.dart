@@ -687,7 +687,7 @@ class _WorkspaceCard extends StatelessWidget {
                     if (timeAgo != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Updated $timeAgo',
+                        'Last Updated $timeAgo',
                         style: const TextStyle(
                           fontSize: 11.5,
                           color: AppColors.inkLight,

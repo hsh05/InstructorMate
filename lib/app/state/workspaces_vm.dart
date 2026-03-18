@@ -286,7 +286,9 @@ class WorkspacesViewModel extends ChangeNotifier {
           await api.importWorkspace(bytes: bytes, filename: filename);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      _syncCurrentToList(wasUpdated: true);
+      // wasUpdated: false — this is a new upload, not a user edit,
+      // so we don't want to stamp "updated just now" on the home card.
+      _syncCurrentToList(wasUpdated: false);
     } catch (e) {
       error = e.toString();
     } finally {
@@ -308,7 +310,8 @@ class WorkspacesViewModel extends ChangeNotifier {
           await api.importWorkspace(bytes: picked.bytes, filename: picked.name);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      _syncCurrentToList(wasUpdated: true);
+      // wasUpdated: false — new upload, not a user edit.
+      _syncCurrentToList(wasUpdated: false);
     } catch (e) {
       error = e.toString();
     } finally {
