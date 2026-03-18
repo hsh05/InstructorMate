@@ -7,7 +7,6 @@
 
 
 import logging
-import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -19,7 +18,7 @@ from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
 from services.file_hash_service import FileHashService
 from services.workspace_service import WorkspaceService
-from ask_syllabus import AskPipeline, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore
+from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,8 +28,19 @@ _ALLOWED_SYLLABUS_EXTENSIONS = {".pdf", ".docx"}
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
+# Maximum number of prior conversation turns sent to the LLM.
+_MAX_HISTORY_TURNS = 6
+
+
+class ChatTurn(BaseModel):
+    role: str      # "user" or "assistant"
+    content: str
+
+
 class AskRequest(BaseModel):
     question: str
+    # Last N turns of conversation history, oldest first.
+    history: list[ChatTurn] = []
 
 
 class UpdateFieldsRequest(BaseModel):
@@ -200,42 +210,35 @@ async def ask_workspace_question(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
-    chunks_path: str | None = None
 
-    try:
-        if chunks_from_db:
-            # FIX: write temp file inside the try so cleanup is always reached
-            import tempfile, csv as _csv
-            tmp = tempfile.NamedTemporaryFile(
-                mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
+    if chunks_from_db:
+        # Preferred path: chunks in DB — pure memory, no disk I/O.
+        store = SyllabusListStore(chunks_from_db)
+        # Use semantic retrieval. EmbeddingRetriever automatically falls back
+        # to LightweightRetriever for legacy chunks that have no embedding yet.
+        retriever = EmbeddingRetriever(top_k=8)
+    else:
+        # Fallback: legacy workspace whose chunks only exist on disk.
+        chunks_csv = workspace_repo.get_chunks_csv_path(workspace_id)
+        if not chunks_csv.exists():
+            raise HTTPException(
+                status_code=422,
+                detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
             )
-            writer = _csv.DictWriter(tmp, fieldnames=["chunk_id", "page", "text"])
-            writer.writeheader()
-            for c in chunks_from_db:
-                writer.writerow({"chunk_id": c["chunk_id"], "page": c["page"], "text": c["content"]})
-            tmp.close()
-            chunks_path = tmp.name
-        else:
-            chunks_path_obj = workspace_repo.get_chunks_csv_path(workspace_id)
-            if not chunks_path_obj.exists():
-                raise HTTPException(
-                    status_code=422,
-                    detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
-                )
-            chunks_path = str(chunks_path_obj)
+        store = SyllabusCsvStore(str(chunks_csv))
+        retriever = LightweightRetriever(top_k=8)
 
-        pipeline = AskPipeline(
-            store=SyllabusCsvStore(chunks_path),
-            retriever=LightweightRetriever(),
-            llm=SyllabusChatGPT(),
-        )
-        answer = pipeline.run(req.question)
+    # Trim history to last _MAX_HISTORY_TURNS pairs to keep token usage bounded.
+    raw_history = req.history[-(_MAX_HISTORY_TURNS * 2):]
+    history = [{"role": t.role, "content": t.content} for t in raw_history] or None
+    logger.info(">>> HISTORY LENGTH: %d", len(history) if history else 0)
+    logger.info(">>> RAW QUESTION: %s", req.question)
 
-    finally:
-        if chunks_from_db and chunks_path and os.path.exists(chunks_path):
-            try:
-                os.unlink(chunks_path)
-            except OSError:
-                pass
-
+    pipeline = AskPipeline(
+        store=store,
+        retriever=retriever,
+        llm=SyllabusChatGPT(),
+    )
+    answer = pipeline.run(req.question, history=history)
+    logger.info(">>> ANSWER: %s", answer[:100])
     return {"answer": answer}
