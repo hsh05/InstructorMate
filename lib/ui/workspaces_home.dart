@@ -209,7 +209,6 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     // ── Duplicate ─────────────────────────────────────────────────────────
     if (widget.vm.lastImportWasDuplicate) {
       widget.vm.lastImportWasDuplicate = false;
-      final ws = widget.vm.current;
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -944,15 +943,6 @@ class _WorkspaceCard extends StatelessWidget {
     final weeks = (diff.inDays / 7).floor();
     if (weeks < 5) return '${weeks}w ago';
     return '${(diff.inDays / 30).floor()}mo ago';
-  }
-
-  String? _timeAgoFromString(String raw) {
-    if (raw.isEmpty) return null;
-    try {
-      return _timeAgo(DateTime.parse(raw));
-    } catch (_) {
-      return null;
-    }
   }
 }
 
