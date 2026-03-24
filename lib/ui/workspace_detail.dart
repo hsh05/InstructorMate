@@ -806,24 +806,26 @@ String _hintFor(String key) {
 
 // ─── Shared Widgets ───────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(
-      {required this.title, required this.icon, this.trailing});
+  const _SectionHeader({required this.title, required this.icon});
+  
   final String title;
   final IconData icon;
-  final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) => Row(children: [
-        Icon(icon, color: AppColors.primary, size: 17),
-        const SizedBox(width: 7),
-        Text(title,
+  Widget build(BuildContext context) => Row(
+        children: [
+          Icon(icon, color: AppColors.primary, size: 17),
+          const SizedBox(width: 7),
+          Text(
+            title,
             style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: AppColors.ink)),
-        const Spacer(),
-        if (trailing != null) trailing!,
-      ]);
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: AppColors.ink,
+            ),
+          ),
+        ],
+      );
 }
 
 class _StatPill extends StatelessWidget {

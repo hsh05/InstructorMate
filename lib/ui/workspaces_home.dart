@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import '../app/state/workspaces_vm.dart';
 import '../app/workspace_models.dart';
 import '../config/app_colors.dart';
