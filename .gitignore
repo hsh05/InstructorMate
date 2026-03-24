@@ -3,6 +3,15 @@
 
 ### Flutter ###
 # Flutter/Dart/Pub related
+# Local IDE / Flutter files
+# Local secrets / outputs (do not commit)
+.env
+output/
+uploads/
+syllabus_files/
+*.pdf
+.idea/
+.metadata
 **/doc/api/
 .dart_tool/
 .flutter-plugins
@@ -13,11 +22,21 @@
 .pub/
 build/
 coverage/
-lib/generated_plugin_registrant.dart
 # For library packages, don’t commit the pubspec.lock file.
 # Regenerating the pubspec.lock file lets you test your package against the latest compatible versions of its dependencies.
 # See https://dart.dev/guides/libraries/private-files#pubspeclock
 #pubspec.lock
+
+backend/.env
+# Firebase service account
+backend/firebase_credentials.json
+backend/output/
+backend/uploads/
+backend/syllabus_files/
+*.pdf
+__pycache__/
+
+
 
 # Android related
 **/android/**/gradle-wrapper.jar
@@ -398,3 +417,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/flutter,node,python,windows
+. e n v 
+ 
+ 
