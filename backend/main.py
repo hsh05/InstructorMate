@@ -111,18 +111,21 @@ async def upload_material(
     try:
         # 1. Connect to your Firebase bucket
         bucket = storage.bucket()
-        
-        # 2. Create a unique cloud filename (prevents overwriting if two files have the same name)
         unique_filename = f"courses/{course_id}/{uuid.uuid4()}_{file.filename}"
         blob = bucket.blob(unique_filename)
         
-        # 3. Upload the physical file from memory to Google's servers
+        # 2. Upload the file to Google's servers FIRST (The bulldozer)
         contents = await file.read()
         blob.upload_from_string(contents, content_type=file.content_type)
         
-        # 4. Make the file public so we can read it later, and get the URL
-        blob.make_public()
-        file_url = blob.public_url
+        # 3. GENERATE AND STAMP THE TOKEN (The Patch method)
+        download_token = str(uuid.uuid4())
+        blob.metadata = {"firebaseStorageDownloadTokens": download_token}
+        blob.patch() # <--- THIS is the magic command. It forces Firebase to save the token.
+        
+        # 4. Construct the official Firebase URL
+        encoded_path = urllib.parse.quote(unique_filename, safe='')
+        file_url = f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{encoded_path}?alt=media&token={download_token}"
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Firebase: {str(e)}")
