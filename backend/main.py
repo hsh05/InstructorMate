@@ -19,6 +19,7 @@ import firebase_admin
 from firebase_admin import credentials, storage
 import uuid
 import requests
+from api.quiz_routes import router as quiz_router
 
 # Load the .env file
 load_dotenv()
@@ -306,5 +307,6 @@ def health():
 app.include_router(workspace_router)
 app.include_router(section_router)
 app.include_router(student_router)
+app.include_router(quiz_router)
 
 logger.info("InstructorMate API started.")
