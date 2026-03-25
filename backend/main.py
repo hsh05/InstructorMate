@@ -1,7 +1,7 @@
 import json
 import os
 import shutil
-import PyPDF2
+import pypdf
 import io
 import urllib.parse
 from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
@@ -174,7 +174,7 @@ async def generate_quiz(course_id: int, request: schemas.QuizGenerateRequest, db
             
             # Extract text from the downloaded bytes
             if filename.endswith(".pdf"):
-                reader = PyPDF2.PdfReader(file_bytes)
+                reader = pypdf.PdfReader(file_bytes)
                 for page in reader.pages:
                     combined_text += page.extract_text() or ""
             elif filename.endswith(".docx"):
@@ -237,7 +237,7 @@ async def generate_direct(
         filename = file.filename.lower()
         
         if filename.endswith(".pdf"):
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
+            pdf_reader = pypdf.PdfReader(io.BytesIO(contents))
             for page in pdf_reader.pages:
                 text = page.extract_text()
                 if text:
