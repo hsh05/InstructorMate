@@ -6,7 +6,7 @@ import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'web_notification_service.dart';
 // Note: Ensure this path is correct relative to this file
 import '../main.dart' show navigatorKey; 
-import '../ui/widgets/notification_toast.dart';
+import '../screens/widgets/notification_toast.dart';
 
 class MobileToastService {
   MobileToastService._();

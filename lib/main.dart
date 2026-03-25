@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 // --- Your New UI Screens ---
-import 'ui/workspaces_home.dart';
-import 'ui/workspace_detail.dart';
+import 'screens/workspaces_home.dart';
+import 'screens/workspace_detail.dart';
 
 // --- Your API and State Management ---
 import 'services/api_service.dart';

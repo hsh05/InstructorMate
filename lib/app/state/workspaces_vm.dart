@@ -11,7 +11,7 @@ import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
 import '../workspace_models.dart';
 import '../../utils/schedule_utils.dart';
-import '../../ui/workspace_ask.dart';
+import '../../screens/workspace_ask.dart';
 
 class WorkspacesViewModel extends ChangeNotifier {
   // stores add state and async and notifices ui when state changes
