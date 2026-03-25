@@ -1,12 +1,11 @@
 // lib/app/state/workspaces_vm.dart
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
-import '../api_client.dart';
+import '../../services/api_service.dart';
 import '../../services/mobile_toast_service.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
@@ -18,7 +17,7 @@ class WorkspacesViewModel extends ChangeNotifier {
   // stores add state and async and notifices ui when state changes
   WorkspacesViewModel({required this.api});
 
-  final ApiClient api;
+  final ApiService api;
 
   bool loading = false; // for shimmer effects and loading spinners
   bool importing = false;
