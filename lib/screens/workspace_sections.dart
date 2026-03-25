@@ -1,4 +1,4 @@
-// lib/ui/workspace_sections.dart
+// lib/screens/workspace_sections.dart
 
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';

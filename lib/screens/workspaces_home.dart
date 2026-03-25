@@ -1,4 +1,4 @@
-// lib/ui/workspaces_home.dart — tap navigates instantly, no await on openWorkspace
+// lib/screens/workspaces_home.dart — tap navigates instantly, no await on openWorkspace
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';

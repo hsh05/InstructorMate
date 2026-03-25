@@ -1,4 +1,4 @@
-// lib/ui/workspace_detail.dart
+// lib/screens/workspace_detail.dart
 
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
