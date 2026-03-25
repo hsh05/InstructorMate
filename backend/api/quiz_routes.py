@@ -7,6 +7,11 @@ from pptx import Presentation
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from openai import OpenAI
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from database import get_db
+import models
+import schemas
 
 # Load the .env file
 load_dotenv()
@@ -133,3 +138,8 @@ async def generate_direct(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/courses/", response_model=list[schemas.CourseResponse])
+def get_courses_with_materials(db: Session = Depends(get_db)):
+    courses = db.query(models.Course).all()
+    return courses

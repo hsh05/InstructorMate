@@ -46,43 +46,51 @@ class _GenerateScreenState extends State<GenerateScreen> {
   Future<void> _loadCourses() async {
     setState(() {
       _isLoading = true;
-      _statusMessage = "Loading courses...";
+      _statusMessage = "Loading workspace data...";
     });
-    try {
-      var courses = await _apiService.fetchCourses();
-      setState(() {
-        _courses = courses;
 
-        // Get the name of the currently open Workspace
-        final workspaceName = widget.vm.current?.title ?? '';
+    // 1. Grab the workspace you are currently looking at from the ViewModel
+    final currentWorkspace = widget.vm.current;
 
-        if (workspaceName.isNotEmpty && _courses.isNotEmpty) {
-          try {
-            // Hunt for a Course in the DB with the exact same name
-            _selectedCourse = _courses.firstWhere(
-              (c) => c.title.toLowerCase() == workspaceName.toLowerCase(),
-            );
-            
-            // Auto-check all the materials for this course!
-            _selectedMaterialIds.clear();
-            _selectedMaterialIds.addAll(_selectedCourse!.materials.map((m) => m.id));
-            
-            _statusMessage = "Auto-selected: ${_selectedCourse!.title}";
-          } catch (_) {
-            // If the names don't match, just select the first course in the list
-            _selectedCourse = _courses.first;
-            _statusMessage = "Ready";
-          }
-        } else if (_courses.isNotEmpty && _selectedCourse == null) {
-          _selectedCourse = _courses.first;
-          _statusMessage = "Ready";
+    setState(() {
+      if (currentWorkspace != null) {
+        // 2. Create a "Mock" Course using the Workspace data so your UI doesn't break
+        // 2. Create a "Mock" Course using the Workspace data
+        _courses = [
+          Course(
+            // Safely convert the String ID into a unique integer
+            id: currentWorkspace.id.hashCode, 
+            title: currentWorkspace.fields['course_name'] ?? currentWorkspace.title,
+            materials: currentWorkspace.originalFilename.isNotEmpty
+                ? [
+                    CourseMaterial( // 👉 Changed to CourseMaterial!
+                      id: currentWorkspace.id.hashCode,
+                      courseId: currentWorkspace.id.hashCode,
+                      fileName: currentWorkspace.originalFilename,
+                      materialType: 'Syllabus',
+                      filePath: '',
+                    )
+                  ]
+                : [],
+          )
+        ];
+        
+        _selectedCourse = _courses.first;
+        
+        // 3. Auto-check the syllabus box!
+        _selectedMaterialIds.clear();
+        if (_selectedCourse!.materials.isNotEmpty) {
+          _selectedMaterialIds.add(_selectedCourse!.materials.first.id);
         }
-      });
-    } catch (e) {
-      setState(() => _statusMessage = "Could not connect to database.");
-    } finally {
-      setState(() => _isLoading = false);
-    }
+        
+        _statusMessage = "Ready";
+      } else {
+        _courses = [];
+        _statusMessage = "No active workspace. Use Local Files.";
+      }
+      
+      _isLoading = false;
+    });
   }
 
   void _uploadToDatabase() async {
@@ -307,7 +315,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_courses.isEmpty)
-              const Text("No courses found. Create one via API first.", style: TextStyle(color: Colors.red))
+              Text(_statusMessage ?? "No workspace detected.", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))
             else
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
