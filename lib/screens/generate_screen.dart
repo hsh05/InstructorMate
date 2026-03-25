@@ -7,9 +7,12 @@ import '../models/question_model.dart';
 import '../services/api_service.dart';
 import '../services/openai_service.dart';
 import 'review_screen.dart';
+import '../app/state/workspaces_vm.dart';
 
 class GenerateScreen extends StatefulWidget {
-  const GenerateScreen({super.key});
+  final WorkspacesViewModel vm; 
+
+  const GenerateScreen({super.key, required this.vm});
 
   @override
   State<GenerateScreen> createState() => _GenerateScreenState();
@@ -49,15 +52,31 @@ class _GenerateScreenState extends State<GenerateScreen> {
       var courses = await _apiService.fetchCourses();
       setState(() {
         _courses = courses;
-        if (_courses.isNotEmpty && _selectedCourse == null) {
+
+        // Get the name of the currently open Workspace
+        final workspaceName = widget.vm.current?.title ?? '';
+
+        if (workspaceName.isNotEmpty && _courses.isNotEmpty) {
+          try {
+            // Hunt for a Course in the DB with the exact same name
+            _selectedCourse = _courses.firstWhere(
+              (c) => c.title.toLowerCase() == workspaceName.toLowerCase(),
+            );
+            
+            // Auto-check all the materials for this course!
+            _selectedMaterialIds.clear();
+            _selectedMaterialIds.addAll(_selectedCourse!.materials.map((m) => m.id));
+            
+            _statusMessage = "Auto-selected: ${_selectedCourse!.title}";
+          } catch (_) {
+            // If the names don't match, just select the first course in the list
+            _selectedCourse = _courses.first;
+            _statusMessage = "Ready";
+          }
+        } else if (_courses.isNotEmpty && _selectedCourse == null) {
           _selectedCourse = _courses.first;
-        } else if (_selectedCourse != null) {
-          _selectedCourse = _courses.firstWhere(
-            (c) => c.id == _selectedCourse!.id,
-            orElse: () => _courses.first,
-          );
+          _statusMessage = "Ready";
         }
-        _statusMessage = "Ready";
       });
     } catch (e) {
       setState(() => _statusMessage = "Could not connect to database.");

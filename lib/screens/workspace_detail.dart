@@ -124,6 +124,18 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
         return Scaffold(
           backgroundColor: AppColors.bg,
+
+          floatingActionButton: ready ? FloatingActionButton.extended(
+            onPressed: () {
+              Navigator.pushNamed(context, '/generate');
+            },
+            icon: const Icon(Icons.auto_awesome_rounded), 
+            label: const Text('Generate', style: TextStyle(fontWeight: FontWeight.w700)),
+            backgroundColor: AppColors.primary, 
+            foregroundColor: Colors.white,
+            elevation: 4,
+          ) : null, // Only show the button if the workspace is "Ready"
+          
           body: ScrollConfiguration(
             behavior:
                 ScrollConfiguration.of(context).copyWith(scrollbars: false),

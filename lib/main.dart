@@ -35,6 +35,8 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
     // Use the new class name here:
     final apiService = ApiService(); 
     _workspacesVM = WorkspacesViewModel(api: apiService);
+
+    _workspacesVM.load();
   }
 
   @override
@@ -50,7 +52,7 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       // 4. Define the routes for navigation
       routes: {
         '/workspace': (context) => WorkspaceDetailPage(vm: _workspacesVM),
-        '/generate': (context) => const GenerateScreen(), // Your original screen is safe here!
+        '/generate': (context) => GenerateScreen(vm: _workspacesVM), 
       },
     );
   }
