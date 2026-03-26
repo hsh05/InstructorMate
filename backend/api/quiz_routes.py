@@ -12,6 +12,7 @@ from fastapi import Depends
 from database import get_db
 import models
 import schemas
+import requests
 
 # Load the .env file
 load_dotenv()
@@ -143,3 +144,57 @@ async def generate_direct(
 def get_courses_with_materials(db: Session = Depends(get_db)):
     courses = db.query(models.Course).all()
     return courses
+
+@router.post("/courses/{course_id}/generate-quiz/")
+async def generate_quiz(course_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
+    selected_ids = request.selected_material_ids
+    configs = request.configs
+    
+    # 1. Find the selected files in NeonDB
+    materials = db.query(models.Material).filter(
+        models.Material.course_id == course_id,
+        models.Material.id.in_(selected_ids)
+    ).all()
+    
+    if not materials:
+        raise HTTPException(status_code=404, detail="No materials selected or found.")
+
+    combined_text = ""
+    for m in materials:
+        try:
+            # 2. Download the file from the Firebase URL directly into server RAM
+            response = requests.get(m.file_path)
+            response.raise_for_status() 
+            file_bytes = io.BytesIO(response.content)
+            
+            filename = m.file_name.lower()
+            
+            # 3. Extract text from the downloaded bytes
+            if filename.endswith(".pdf"):
+                reader = pypdf.PdfReader(file_bytes)
+                for page in reader.pages:
+                    combined_text += page.extract_text() or ""
+            elif filename.endswith(".docx"):
+                doc = docx.Document(file_bytes)
+                for para in doc.paragraphs:
+                    combined_text += para.text + "\n"
+            elif filename.endswith(".pptx"):
+                ppt = Presentation(file_bytes)
+                for slide in ppt.slides:
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text"):
+                            combined_text += shape.text + "\n"
+            elif filename.endswith(".txt"):
+                combined_text += file_bytes.read().decode("utf-8") + "\n"
+                
+        except Exception as e:
+            print(f"Error reading cloud file {m.file_name}: {e}")
+
+    if not combined_text.strip():
+        raise HTTPException(status_code=400, detail="The selected files contain no readable text.")
+
+    # 4. Send the extracted text to your AI helper!
+    configs_as_dicts = [c.dict() for c in configs]
+    questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
+    
+    return {"questions": questions}
