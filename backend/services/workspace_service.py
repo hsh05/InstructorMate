@@ -176,6 +176,22 @@ class WorkspaceService:
                         logger.info("Auto-filled fields %s for workspace=%s",
                                     list(updates.keys()), workspace_id)
 
+                        # 👉 THE BACKGROUND BRIDGE: Rename the Course once the AI finds the real name!
+                        new_title = updates.get("course_title") or updates.get("course_name")
+                        if new_title and new_title != filename:
+                            try:
+                                # Pull in your old Course model
+                                from models import Course
+                                # The background thread uses repo.db to talk to NeonDB
+                                course_to_update = repo.db.query(Course).filter(Course.title == filename).first()
+                                
+                                if course_to_update:
+                                    course_to_update.title = new_title
+                                    repo.db.commit()
+                                    logger.info(f"🔗 Background Bridge: Auto-Renamed Course from '{filename}' to '{new_title}'")
+                            except Exception as e:
+                                logger.error(f"Background Bridge failed to rename Course: {e}")
+
             # Mark ready
             workspace.status = WorkspaceStatus.READY
             repo.save(workspace)

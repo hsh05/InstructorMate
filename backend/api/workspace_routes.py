@@ -1,6 +1,9 @@
 # backend/api/workspace_routes.py
 
 import logging
+import uuid
+import urllib.parse
+from firebase_admin import storage
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -115,7 +118,7 @@ async def import_workspace(
     section_repo:      PgSectionRepository   = Depends(get_section_repo),
     student_repo:      PgStudentRepository   = Depends(get_student_repo),
     workspace_service: WorkspaceService      = Depends(get_workspace_service),
-    db: Session = Depends(get_db), # 👉 1. ADD THE DATABASE CONNECTION
+    db: Session = Depends(get_db), 
 ):
     filename = file.filename or ""
     ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
@@ -129,38 +132,60 @@ async def import_workspace(
     result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
     
-    # 👉 2. THE COMPLETE BRIDGE: Create Course AND Material!
+    # 👉 1. FIREBASE UPLOAD: Push the file to the Cloud!
+    firebase_url = ws.workspace_id # Fallback just in case Firebase fails
     if not result["already_uploaded"]:
         try:
-            # Pull in both of your old models
+            bucket = storage.bucket()
+            # Create a dedicated folder named after the workspace ID
+            blob_path = f"workspaces/{ws.workspace_id}/{filename}"
+            blob = bucket.blob(blob_path)
+            
+            # Upload the raw bytes to Google's servers
+            blob.upload_from_string(content, content_type=file.content_type)
+            
+            # Generate the permanent download token
+            download_token = str(uuid.uuid4())
+            blob.metadata = {"firebaseStorageDownloadTokens": download_token}
+            blob.patch()
+            
+            # Construct the official Firebase URL
+            encoded_path = urllib.parse.quote(blob_path, safe='')
+            firebase_url = f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{encoded_path}?alt=media&token={download_token}"
+            
+            logger.info(f"☁️ Firebase Success: Uploaded to {blob_path}")
+        except Exception as e:
+            logger.error(f"Firebase upload failed: {e}")
+
+    # 👉 2. THE COMPLETE BRIDGE: Create Course AND Material
+    if not result["already_uploaded"]:
+        try:
             from models import Course, Material 
             
-            # 1. Create the Course (The Folder)
+            # A. Create the Course
             new_course = Course(
                 title=filename,
                 description="Auto-generated from Workspace upload" 
             )
             db.add(new_course)
             db.commit()
-            
-            # Tell SQLAlchemy to fetch the brand new ID that NeonDB just generated
             db.refresh(new_course) 
             
-            # 2. Create the Material (The File inside the Folder)
+            # B. Create the Material with the REAL FIREBASE URL
             new_material = Material(
-                course_id=new_course.id,  # Link it to the course we just made!
+                course_id=new_course.id,  
                 file_name=filename,
-                file_path=ws.workspace_id, # Storing the new workspace ID here as a placeholder
+                file_path=firebase_url, # 👈 Saving the Cloud Link here!
                 material_type="Syllabus"
             )
             db.add(new_material)
             db.commit()
             
-            logger.info(f"🔗 Bridge Success: Created Course '{filename}' with attached Material")
+            logger.info(f"🔗 Bridge Success: Created Course '{filename}' with Firebase Material")
             
         except Exception as e:
             logger.error(f"Failed to create equivalent Course/Material: {e}")
-            db.rollback() # Safety net just in case something fails
+            db.rollback() 
 
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
                 ws.workspace_id, result["already_uploaded"], ext)
@@ -225,6 +250,7 @@ def delete_workspace(
     workspace_id: str,
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
+    db: Session = Depends(get_db), # 👉 1. ADD THE DATABASE CONNECTION
 ):
     # Cancel any in-flight background extraction first so the thread doesn't
     # try to write to a row that no longer exists (prevents cascade errors).
@@ -238,6 +264,28 @@ def delete_workspace(
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # 👉 2. THE DELETION BRIDGE: Clean up the old database!
+    try:
+        from models import Course, Material
+        
+        # Find the material that holds this exact workspace_id 
+        linked_material = db.query(Material).filter(Material.file_path == workspace_id).first()
+        
+        if linked_material:
+            course_id_to_delete = linked_material.course_id
+            
+            # Step A: Delete the materials first (prevents Foreign Key crash)
+            db.query(Material).filter(Material.course_id == course_id_to_delete).delete()
+            
+            # Step B: Delete the empty Course folder
+            db.query(Course).filter(Course.id == course_id_to_delete).delete()
+            
+            db.commit()
+            logger.info(f"🔗 Bridge Success: Deleted old Course (ID: {course_id_to_delete}) and its Materials")
+    except Exception as e:
+        logger.error(f"Failed to delete equivalent Course/Material: {e}")
+        db.rollback() # Safety net
 
     logger.info("Deleted workspace id=%s", workspace_id)
     return {"deleted": True}
