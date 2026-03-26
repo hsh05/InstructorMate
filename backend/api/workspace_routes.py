@@ -114,7 +114,8 @@ async def import_workspace(
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:      PgSectionRepository   = Depends(get_section_repo),
     student_repo:      PgStudentRepository   = Depends(get_student_repo),
-    workspace_service: WorkspaceService       = Depends(get_workspace_service),
+    workspace_service: WorkspaceService      = Depends(get_workspace_service),
+    db: Session = Depends(get_db), # 👉 1. ADD THE DATABASE CONNECTION
 ):
     filename = file.filename or ""
     ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
@@ -127,6 +128,40 @@ async def import_workspace(
     content = await file.read()
     result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
+    
+    # 👉 2. THE COMPLETE BRIDGE: Create Course AND Material!
+    if not result["already_uploaded"]:
+        try:
+            # Pull in both of your old models
+            from models import Course, Material 
+            
+            # 1. Create the Course (The Folder)
+            new_course = Course(
+                title=filename,
+                description="Auto-generated from Workspace upload" 
+            )
+            db.add(new_course)
+            db.commit()
+            
+            # Tell SQLAlchemy to fetch the brand new ID that NeonDB just generated
+            db.refresh(new_course) 
+            
+            # 2. Create the Material (The File inside the Folder)
+            new_material = Material(
+                course_id=new_course.id,  # Link it to the course we just made!
+                file_name=filename,
+                file_path=ws.workspace_id, # Storing the new workspace ID here as a placeholder
+                material_type="Syllabus"
+            )
+            db.add(new_material)
+            db.commit()
+            
+            logger.info(f"🔗 Bridge Success: Created Course '{filename}' with attached Material")
+            
+        except Exception as e:
+            logger.error(f"Failed to create equivalent Course/Material: {e}")
+            db.rollback() # Safety net just in case something fails
+
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
                 ws.workspace_id, result["already_uploaded"], ext)
     return {
@@ -135,21 +170,42 @@ async def import_workspace(
     }
 
 
-@router.get("/workspaces/{workspace_id}")
-def get_workspace(
+@router.patch("/workspaces/{workspace_id}")
+def update_workspace(
     workspace_id: str,
+    data: UpdateFieldsRequest,
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
+    db: Session = Depends(get_db), # 👉 1. ADD THE DATABASE CONNECTION
 ):
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    d = _ws_dict(workspace_id, ws, section_repo, student_repo)
-    # FIX: expose whether background extraction is still running so Flutter
-    # can poll until status == 'ready' and all required fields are filled.
-    fields = d.get("fields", {})
-    return {"workspace": d}
+        
+    # Grab the old name before we overwrite it
+    old_title = ws.fields.get("course_title") or ws.fields.get("course_name") or ""
+
+    mirrored_fields = _mirror_course_name_fields(data.fields)
+    ws.update_fields(mirrored_fields)
+    workspace_repo.save(ws)
+    
+    # 👉 2. THE BRIDGE: Rename the Course so Flutter can still match them!
+    new_title = mirrored_fields.get("course_title") or mirrored_fields.get("course_name")
+    if new_title and old_title and new_title != old_title:
+        try:
+            from models import Course
+            # Find the old course by its previous name and update it
+            course_to_update = db.query(Course).filter(Course.title == old_title).first()
+            if course_to_update:
+                course_to_update.title = new_title
+                db.commit()
+                logger.info(f"🔗 Bridge Success: Renamed old Course to '{new_title}'")
+        except Exception as e:
+            logger.error(f"Failed to rename equivalent Course: {e}")
+
+    logger.info("Updated workspace id=%s", workspace_id)
+    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
 
 
 @router.patch("/workspaces/{workspace_id}")

@@ -46,51 +46,50 @@ class _GenerateScreenState extends State<GenerateScreen> {
   Future<void> _loadCourses() async {
     setState(() {
       _isLoading = true;
-      _statusMessage = "Loading workspace data...";
+      _statusMessage = "Loading course data...";
     });
-
-    // 1. Grab the workspace you are currently looking at from the ViewModel
-    final currentWorkspace = widget.vm.current;
-
-    setState(() {
-      if (currentWorkspace != null) {
-        // 2. Create a "Mock" Course using the Workspace data so your UI doesn't break
-        // 2. Create a "Mock" Course using the Workspace data
-        _courses = [
-          Course(
-            // Safely convert the String ID into a unique integer
-            id: currentWorkspace.id.hashCode, 
-            title: currentWorkspace.fields['course_name'] ?? currentWorkspace.title,
-            materials: currentWorkspace.originalFilename.isNotEmpty
-                ? [
-                    CourseMaterial( // 👉 Changed to CourseMaterial!
-                      id: currentWorkspace.id.hashCode,
-                      courseId: currentWorkspace.id.hashCode,
-                      fileName: currentWorkspace.originalFilename,
-                      materialType: 'Syllabus',
-                      filePath: '',
-                    )
-                  ]
-                : [],
-          )
-        ];
-        
-        _selectedCourse = _courses.first;
-        
-        // 3. Auto-check the syllabus box!
-        _selectedMaterialIds.clear();
-        if (_selectedCourse!.materials.isNotEmpty) {
-          _selectedMaterialIds.add(_selectedCourse!.materials.first.id);
-        }
-        
-        _statusMessage = "Ready";
-      } else {
-        _courses = [];
-        _statusMessage = "No active workspace. Use Local Files.";
-      }
+    
+    try {
+      // 1. Fetch EVERYTHING from the database
+      var allCourses = await _apiService.fetchCourses();
       
-      _isLoading = false;
-    });
+      setState(() {
+        // 2. Get the exact name of the currently open Workspace
+        final workspaceName = widget.vm.current?.title.trim().toLowerCase() ?? '';
+
+        if (workspaceName.isNotEmpty) {
+          // 3. STRICT FILTER: Only keep the course that exactly matches the workspace name
+          var matchedCourses = allCourses.where(
+            (c) => c.title.trim().toLowerCase() == workspaceName
+          ).toList();
+          
+          if (matchedCourses.isNotEmpty) {
+            _courses = matchedCourses; // The dropdown will now ONLY have this 1 course
+            _selectedCourse = _courses.first;
+            
+            // Auto-check the real materials!
+            _selectedMaterialIds.clear();
+            _selectedMaterialIds.addAll(_selectedCourse!.materials.map((m) => m.id));
+            
+            _statusMessage = "Locked to Workspace: ${_selectedCourse!.title}";
+          } else {
+            // If the names don't match, it means they haven't uploaded to DB for this specific workspace yet
+            _courses = [];
+            _selectedCourse = null;
+            _statusMessage = "No DB files for this workspace yet. Use Local Files.";
+          }
+        } else {
+          // Fallback just in case they open the screen without a workspace
+          _courses = allCourses;
+          if (_courses.isNotEmpty) _selectedCourse = _courses.first;
+          _statusMessage = "Ready";
+        }
+      });
+    } catch (e) {
+      setState(() => _statusMessage = "Error fetching from DB: $e");
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   void _uploadToDatabase() async {
