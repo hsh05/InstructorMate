@@ -169,6 +169,18 @@ async def import_workspace(
         "already_uploaded": result["already_uploaded"],
     }
 
+@router.get("/workspaces/{workspace_id}")
+def get_workspace(
+    workspace_id: str,
+    workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
+    section_repo:   PgSectionRepository   = Depends(get_section_repo),
+    student_repo:   PgStudentRepository   = Depends(get_student_repo),
+):
+    ws = workspace_repo.get_by_id(workspace_id)
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    d = _ws_dict(workspace_id, ws, section_repo, student_repo)
+    return {"workspace": d}
 
 @router.patch("/workspaces/{workspace_id}")
 def update_workspace(
@@ -177,7 +189,7 @@ def update_workspace(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
-    db: Session = Depends(get_db), # 👉 1. ADD THE DATABASE CONNECTION
+    db: Session = Depends(get_db), 
 ):
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
@@ -190,7 +202,7 @@ def update_workspace(
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     
-    # 👉 2. THE BRIDGE: Rename the Course so Flutter can still match them!
+    # THE BRIDGE: Rename the Course so Flutter can still match them!
     new_title = mirrored_fields.get("course_title") or mirrored_fields.get("course_name")
     if new_title and old_title and new_title != old_title:
         try:
@@ -204,24 +216,6 @@ def update_workspace(
         except Exception as e:
             logger.error(f"Failed to rename equivalent Course: {e}")
 
-    logger.info("Updated workspace id=%s", workspace_id)
-    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
-
-
-@router.patch("/workspaces/{workspace_id}")
-def update_workspace(
-    workspace_id: str,
-    data: UpdateFieldsRequest,
-    workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
-    section_repo:   PgSectionRepository   = Depends(get_section_repo),
-    student_repo:   PgStudentRepository   = Depends(get_student_repo),
-):
-    ws = workspace_repo.get_by_id(workspace_id)
-    if not ws:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    mirrored_fields = _mirror_course_name_fields(data.fields)
-    ws.update_fields(mirrored_fields)
-    workspace_repo.save(ws)
     logger.info("Updated workspace id=%s", workspace_id)
     return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
 
