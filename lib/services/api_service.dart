@@ -98,6 +98,39 @@ class ApiService {
     }
   }
 
+  Future<List<QuizQuestion>> generateQuiz(int courseId, List<int> selectedMaterialIds, List<QuestionTypeConfig> configs) async {
+    // 1. Package the configurations into JSON
+    List<Map<String, dynamic>> configList = configs.map((c) => {
+      'type': c.name,
+      'count': c.count,
+      'difficulty': c.difficulty,
+      'topic': c.topicController.text,
+    }).toList();
+
+    // 2. Build the request body matching the backend schema
+    Map<String, dynamic> requestBody = {
+      'selected_material_ids': selectedMaterialIds,
+      'configs': configList,
+    };
+
+    // 3. Send the POST request to the cloud route
+    // Notice we use your _u() helper to prevent the double-slash bug!
+    final response = await http.post(
+      _u('/courses/$courseId/generate-quiz/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(requestBody),
+    ).timeout(AppConfig.uploadTimeout); // Using a longer timeout since AI generation takes time
+
+    // 4. Parse the results
+    if (response.statusCode == 200) {
+      final decodedData = jsonDecode(response.body);
+      List<dynamic> questionsList = decodedData['questions'] ?? decodedData;
+      return questionsList.map((q) => QuizQuestion.fromJson(q)).toList();
+    } else {
+      throw Exception(_extractDetail(response));
+    }
+  }
+
   // =========================================================================
   // ── TEAMMATE'S METHODS (Adapted for ApiService) ──────────────────────────
   // =========================================================================

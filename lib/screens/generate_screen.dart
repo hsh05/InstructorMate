@@ -5,7 +5,6 @@ import '../models/config_model.dart';
 import '../models/course_model.dart';
 import '../models/question_model.dart';
 import '../services/api_service.dart';
-import '../services/openai_service.dart';
 import 'review_screen.dart';
 import '../app/state/workspaces_vm.dart';
 
@@ -20,7 +19,6 @@ class GenerateScreen extends StatefulWidget {
 
 class _GenerateScreenState extends State<GenerateScreen> {
   final List<File> _selectedFiles = [];
-  final OpenAIService _aiService = OpenAIService();
   final ApiService _apiService = ApiService();
 
   List<Course> _courses = [];
@@ -160,18 +158,18 @@ class _GenerateScreenState extends State<GenerateScreen> {
       // 1. Generate from Local Files (Direct to RAM)
       if (hasLocalFiles) {
         for (var file in _selectedFiles) {
-          // FIXED: Now passing activeConfigs along with the file
           var questions = await _apiService.generateDirectlyFromFile(file, activeConfigs);
           allQuestions.addAll(questions);
         }
       }
 
-      // 2. Generate from Database Materials
+      // 2. Generate from Database Materials using the NEW API ROUTE
       if (hasDbFiles && _selectedCourse != null) {
-        var questions = await _aiService.generateQuiz(
+        // 👉 NEW CODE: Using _apiService instead of the deleted _aiService
+        var questions = await _apiService.generateQuiz(
           _selectedCourse!.id,
-          activeConfigs,
           _selectedMaterialIds.toList(),
+          activeConfigs,
         );
         allQuestions.addAll(questions);
       }
