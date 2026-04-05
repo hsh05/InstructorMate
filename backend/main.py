@@ -19,10 +19,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 # --- Internal Imports ---
-import models
+from db import models
 import schemas
-from database import engine, get_db
-from models import Material, Course
+from db.database import engine, get_db
+from db.models import Material, Workspace
 
 # --- External Services ---
 from openai import OpenAI
