@@ -194,15 +194,15 @@ class PgWorkspaceRepository:
     def _to_domain(self, row: WorkspaceModel) -> Workspace:
         # Re-construct the fields dictionary for the legacy domain model
         fields = {
-            "workspace_code":  row.workspace_code,
+            "course_code":  row.course_code,
             "semester":     row.semester,
-            "workspace_title": row.workspace_title
+            "course_title": row.course_title
         }
         
         ws = Workspace(
-            workspace_id = str(row.workspace_id), # Cast back to string for Flutter
-            file_hash    = "",
-            status       = WorkspaceStatus("ready" if row.content else "draft"),
+            workspace_id = str(row.workspace_id),
+            file_hash    = row.file_hash if hasattr(row, 'file_hash') and row.file_hash else "",
+            status       = WorkspaceStatus("ready" if getattr(row, 'content', None) else "draft"),
             fields       = fields,
         )
         ws._created_at = ""
