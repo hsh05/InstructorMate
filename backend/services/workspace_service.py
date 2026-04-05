@@ -181,7 +181,7 @@ class WorkspaceService:
                         if new_title and new_title != filename:
                             try:
                                 # Pull in your old Course model
-                                from models import Course
+                                from db.models import Course
                                 # The background thread uses repo.db to talk to NeonDB
                                 course_to_update = repo.db.query(Course).filter(Course.title == filename).first()
                                 

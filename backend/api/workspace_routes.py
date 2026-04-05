@@ -160,7 +160,7 @@ async def import_workspace(
     # 👉 2. THE COMPLETE BRIDGE: Create Course AND Material
     if not result["already_uploaded"]:
         try:
-            from models import Course, Material 
+            from db.models import Course, Material 
             
             # A. Create the Course
             new_course = Course(
@@ -231,7 +231,7 @@ def update_workspace(
     new_title = mirrored_fields.get("course_title") or mirrored_fields.get("course_name")
     if new_title and old_title and new_title != old_title:
         try:
-            from models import Course
+            from db.models import Course
             # Find the old course by its previous name and update it
             course_to_update = db.query(Course).filter(Course.title == old_title).first()
             if course_to_update:
@@ -267,7 +267,7 @@ def delete_workspace(
 
     # 👉 2. THE DELETION BRIDGE: Clean up the old database!
     try:
-        from models import Course, Material
+        from db.models import Course, Material
         
         # Find the material that holds this exact workspace_id 
         linked_material = db.query(Material).filter(Material.file_path == workspace_id).first()

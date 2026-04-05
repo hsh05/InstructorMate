@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from fastapi import Depends
 from database import get_db
-import models
+from db import models
 import schemas
 import requests
 
