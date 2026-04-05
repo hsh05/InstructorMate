@@ -3,6 +3,7 @@
 import csv
 import logging
 import shutil
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -13,10 +14,9 @@ from sqlalchemy.orm import Session
 from domain.workspace import Workspace
 from domain.enums import WorkspaceStatus
 from domain.workspace_fields import WORKSPACE_FIELD_NAMES
-from db.models import (
-    Workspace as WorkspaceModel,
-    SyllabusChunk as SyllabusChunkModel,
-)
+
+# 👈 FIXED: SyllabusChunk has been removed from imports!
+from db.models import Workspace as WorkspaceModel
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,10 @@ class PgWorkspaceRepository:
 
     # ── Path helpers ──────────────────────────────────────────────────────────
 
-    def workspace_dir(self, workspace_id: str) -> Path:
-        return self.data_dir / workspace_id
+    def workspace_dir(self, workspace_id: int) -> Path: # 👈 ID changed to int
+        return self.data_dir / str(workspace_id)
 
-    def get_chunks_csv_path(self, workspace_id: str) -> Path:
+    def get_chunks_csv_path(self, workspace_id: int) -> Path:
         return self.workspace_dir(workspace_id) / "chunks.csv"
 
     # ── Read ──────────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ class PgWorkspaceRepository:
         rows = self.db.query(WorkspaceModel).all()
         return [self._to_domain(row) for row in rows]
 
-    def get_by_id(self, workspace_id: str) -> Optional[Workspace]:
+    def get_by_id(self, workspace_id: int) -> Optional[Workspace]:
         row = self.db.query(WorkspaceModel).filter(
             WorkspaceModel.workspace_id == workspace_id
         ).first()
@@ -53,30 +53,33 @@ class PgWorkspaceRepository:
     # ── Write ─────────────────────────────────────────────────────────────────
 
     def save(self, workspace: Workspace) -> None:
+        # Note: workspace_id must be an integer!
         row = self.db.query(WorkspaceModel).filter(
-            WorkspaceModel.workspace_id == workspace.workspace_id
+            WorkspaceModel.workspace_id == int(workspace.workspace_id)
         ).first()
 
         if row:
-            row.file_hash  = workspace.file_hash
-            row.status     = workspace.status.value
-            row.updated_at = func.now()   # stamp updated_at on every save
-            for name in _DB_FIELD_NAMES:
-                setattr(row, name, workspace.fields.get(name, ""))
+            # We removed file_hash and status from the Workspace ERD earlier, 
+            # so we only update the fields that still exist!
+            row.course_code  = workspace.fields.get('course_code', "")
+            row.semester     = workspace.fields.get('semester', "")
+            row.course_title = workspace.fields.get('course_title', "")
+            # row.updated_at = func.now() # We removed updated_at as well
             logger.info("Updated workspace id=%s", workspace.workspace_id)
         else:
             row = WorkspaceModel(
-                workspace_id = workspace.workspace_id,
-                file_hash    = workspace.file_hash,
-                status       = workspace.status.value,
-                **{name: workspace.fields.get(name, "") for name in _DB_FIELD_NAMES},
+                workspace_id  = int(workspace.workspace_id),
+                instructor_id = 1, # NOTE: Hardcoded to 1 for now until auth is fully linked!
+                course_code   = workspace.fields.get('course_code', "N/A"),
+                semester      = workspace.fields.get('semester', "N/A"),
+                course_title  = workspace.fields.get('course_title', "Untitled"),
             )
             self.db.add(row)
             logger.info("Created workspace id=%s", workspace.workspace_id)
 
         self.db.commit()
 
-    def delete(self, workspace_id: str) -> bool:
+    def delete(self, workspace_id: int) -> bool:
         row = self.db.query(WorkspaceModel).filter(
             WorkspaceModel.workspace_id == workspace_id
         ).first()
@@ -91,104 +94,100 @@ class PgWorkspaceRepository:
             logger.info("Deleted workspace folder for id=%s", workspace_id)
         return True
 
-    def save_chunks(self, workspace_id: str, chunks_csv_path: Path) -> None:
-        self.db.query(SyllabusChunkModel).filter(
-            SyllabusChunkModel.workspace_id == workspace_id
-        ).delete()
-        self.db.commit()
+    def save_chunks(self, workspace_id: int, chunks_csv_path: Path) -> None:
+        """
+        Reads the CSV of extracted text and combines it into a single string 
+        to be saved directly into the Workspace.content column!
+        """
+        combined_content = ""
+        
+        try:
+            with open(chunks_csv_path, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    content = (row.get("text") or "").strip()
+                    if content:
+                        combined_content += content + "\n\n"
+        except FileNotFoundError:
+            logger.error("Could not find chunks CSV for workspace %s", workspace_id)
+            return
 
-        inserted = 0
-        with open(chunks_csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    chunk_index = int(row.get("chunk_id") or 0)
-                except (ValueError, TypeError):
-                    chunk_index = 0
-                content = (row.get("text") or "").strip()
-                if not content:
-                    continue
-                self.db.add(SyllabusChunkModel(
-                    workspace_id=workspace_id,
-                    chunk_index=chunk_index,
-                    content=content,
-                ))
-                inserted += 1
+        workspace = self.db.query(WorkspaceModel).filter(
+            WorkspaceModel.workspace_id == workspace_id
+        ).first()
 
-        self.db.commit()
-        logger.info("Saved %d chunks for workspace=%s", inserted, workspace_id)
+        if workspace:
+            workspace.content = combined_content.strip()
+            self.db.commit()
+            logger.info("Saved consolidated content for workspace=%s", workspace_id)
 
-    def get_chunks_for_ask(self, workspace_id: str) -> List[Dict[str, Any]]:
-        rows = self.db.query(SyllabusChunkModel).filter(
-            SyllabusChunkModel.workspace_id == workspace_id
-        ).order_by(SyllabusChunkModel.chunk_index).all()
+    def get_chunks_for_ask(self, workspace_id: int) -> List[Dict[str, Any]]:
+        """
+        Returns the consolidated workspace content in the list format 
+        that the frontend AI Ask feature still expects.
+        """
+        row = self.db.query(WorkspaceModel).filter(
+            WorkspaceModel.workspace_id == workspace_id
+        ).first()
+        
+        if not row or not row.content:
+            return []
+            
         return [
             {
-                "chunk_id":  r.chunk_index,
-                "page":      r.chunk_index,
-                "content":   r.content,
-                # embedding is None for legacy chunks — retriever handles fallback
-                "embedding": r.embedding,
+                "chunk_id":  1,
+                "page":      1,
+                "content":   row.content,
+                "embedding": row.embedding, 
             }
-            for r in rows
         ]
 
-    def generate_and_save_embeddings(self, workspace_id: str) -> int:
+    def generate_and_save_embeddings(self, workspace_id: int) -> int:
         """
-        Generate OpenAI embeddings for all chunks of a workspace that do not
-        yet have one, then persist them to the DB.
-        Called once per workspace during the background conversion job.
-        Uses batched API calls (up to 100 texts per request).
-        Returns the number of chunks that were embedded.
+        Generates a single OpenAI embedding for the consolidated Workspace content.
         """
         _EMBED_MODEL = "text-embedding-3-small"
-        _BATCH_SIZE  = 100
 
-        rows = self.db.query(SyllabusChunkModel).filter(
-            SyllabusChunkModel.workspace_id == workspace_id,
-            SyllabusChunkModel.embedding.is_(None),
-        ).order_by(SyllabusChunkModel.chunk_index).all()
+        workspace = self.db.query(WorkspaceModel).filter(
+            WorkspaceModel.workspace_id == workspace_id
+        ).first()
 
-        if not rows:
-            logger.info("No chunks need embeddings for workspace=%s", workspace_id)
+        if not workspace or not workspace.content or workspace.embedding:
+            logger.info("No embedding needed for workspace=%s", workspace_id)
             return 0
 
         client = OpenAI()
-        total_embedded = 0
-
-        for i in range(0, len(rows), _BATCH_SIZE):
-            batch = rows[i: i + _BATCH_SIZE]
-            texts = [r.content for r in batch]
-            try:
-                resp = client.embeddings.create(model=_EMBED_MODEL, input=texts)
-                embeddings = [item.embedding for item in resp.data]
-            except Exception as exc:
-                logger.error(
-                    "Embedding batch %d failed for workspace=%s: %s",
-                    i // _BATCH_SIZE, workspace_id, exc,
-                )
-                continue
-
-            for row, emb in zip(batch, embeddings):
-                row.embedding = emb
-                total_embedded += 1
-
-        self.db.commit()
-        logger.info(
-            "Generated %d embeddings for workspace=%s", total_embedded, workspace_id
-        )
-        return total_embedded
+        
+        try:
+            # We only have to make ONE api call now instead of batching 100!
+            resp = client.embeddings.create(model=_EMBED_MODEL, input=[workspace.content])
+            emb = resp.data[0].embedding
+            workspace.embedding = emb
+            self.db.commit()
+            
+            logger.info("Generated embedding for workspace=%s", workspace_id)
+            return 1
+            
+        except Exception as exc:
+            logger.error("Embedding failed for workspace=%s: %s", workspace_id, exc)
+            return 0
 
     # ── Private ───────────────────────────────────────────────────────────────
 
     def _to_domain(self, row: WorkspaceModel) -> Workspace:
-        fields = {name: getattr(row, name, "") or "" for name in _DB_FIELD_NAMES}
+        # Re-construct the fields dictionary for the legacy domain model
+        fields = {
+            "course_code":  row.course_code,
+            "semester":     row.semester,
+            "course_title": row.course_title
+        }
+        
         ws = Workspace(
-            workspace_id = row.workspace_id,
-            file_hash    = row.file_hash or "",
-            status       = WorkspaceStatus(row.status or "draft"),
+            workspace_id = str(row.workspace_id), # Cast back to string for Flutter
+            file_hash    = "",
+            status       = WorkspaceStatus("ready" if row.content else "draft"),
             fields       = fields,
         )
-        ws._created_at = str(row.created_at) if getattr(row, "created_at", None) else ""
-        ws._updated_at = str(row.updated_at) if getattr(row, "updated_at", None) else ""
+        ws._created_at = ""
+        ws._updated_at = ""
         return ws
