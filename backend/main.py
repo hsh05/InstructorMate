@@ -62,9 +62,6 @@ firebase_admin.initialize_app(cred, {
     'storageBucket': os.getenv("FIREBASE_BUCKET")
 })
 
-# Database Setup (Create Tables)
-models.Base.metadata.create_all(bind=engine)
-
 # Ensure local upload directory exists
 UPLOAD_DIR = "uploaded_materials"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -147,7 +144,7 @@ async def generate_questions_with_ai(extracted_text: str, config_data: list):
 def health():
     return {"status": "ok", "service": "InstructorMate API"}
 
-# --- Course & Material Routes ---
+# --- workspace & Material Routes ---
 
 @app.post("/workspaces/", response_model=schemas.WorkspaceResponse)
 def create_workspace(workspace: schemas.WorkspaceCreate, db: Session = Depends(get_db)):
@@ -174,7 +171,7 @@ async def upload_material(
 
     try:
         bucket = storage.bucket()
-        unique_filename = f"courses/{workspace_id}/{uuid.uuid4()}_{file.filename}"
+        unique_filename = f"workspaces/{workspace_id}/{uuid.uuid4()}_{file.filename}"
         blob = bucket.blob(unique_filename)
         
         contents = await file.read()
@@ -203,13 +200,13 @@ async def upload_material(
 
 # --- AI Quiz Generation Routes ---
 
-@app.post("/courses/{course_id}/generate-quiz/")
-async def generate_quiz(course_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
+@app.post("/workspaces/{workspace_id}/generate-quiz/")
+async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
     selected_ids = request.selected_material_ids
     configs = request.configs
     
     materials = db.query(Material).filter(
-        Material.course_id == course_id,
+        Material.workspace_id == workspace_id,
         Material.id.in_(selected_ids)
     ).all()
     
