@@ -1,44 +1,63 @@
-from pydantic import BaseModel
-from typing import List, Optional
+# backend/schemas.py
 
-# --- Material Schemas ---
+from pydantic import BaseModel
+from typing import List, Optional, Any
+
+# ==============================================================================
+# ── MATERIALS ─────────────────────────────────────────────────────────────────
+# ==============================================================================
+
 class MaterialBase(BaseModel):
     file_name: str
-    material_type: str
     file_path: str
+    material_type: Optional[str] = None
+
+class MaterialCreate(MaterialBase):
+    pass
 
 class MaterialResponse(MaterialBase):
     id: int
-    course_id: int
+    workspace_id: int
 
     class Config:
-        from_attributes = True  # Tells Pydantic to read data even if it's not a dictionary
+        from_attributes = True
+        orm_mode = True # Included for backwards compatibility with older Pydantic versions
 
-# --- Course Schemas ---
-class CourseBase(BaseModel):
-    title: str
-    description: Optional[str] = None
 
-class CourseCreate(CourseBase):
+# ==============================================================================
+# ── WORKSPACES (Replaces old 'Courses') ───────────────────────────────────────
+# ==============================================================================
+
+class WorkspaceBase(BaseModel):
+    course_code: str
+    semester: str
+    course_title: str
+
+class WorkspaceCreate(WorkspaceBase):
     pass
 
-class CourseResponse(CourseBase):
-    id: int
-    materials: List[MaterialResponse] = [] # Automatically nests the materials inside the course!
+class WorkspaceResponse(WorkspaceBase):
+    workspace_id: int
+    instructor_id: int
+    content: Optional[str] = None
+    # We deliberately do NOT include the embedding vector here so we don't 
+    # accidentally send a massive array of floats to the frontend on every request!
 
     class Config:
         from_attributes = True
+        orm_mode = True
 
-class QuestionConfig(BaseModel):
-    type: str     
-    count: int    
-    difficulty: str  # <--- ADD THIS
-    topic: str    
 
+# ==============================================================================
+# ── AI QUIZ GENERATION ────────────────────────────────────────────────────────
+# ==============================================================================
+
+class QuizConfig(BaseModel):
+    # This allows Flutter to send whatever config keys it wants (e.g. MCQ, Essay, count)
+    # without Pydantic crashing if a new key is added.
     class Config:
-        from_attributes = True
+        extra = 'allow'
 
 class QuizGenerateRequest(BaseModel):
-    configs: List[QuestionConfig]
-    # ADD THIS LINE: This allows the backend to validate the list of IDs from Flutter
     selected_material_ids: List[int]
+    configs: List[QuizConfig]

@@ -174,7 +174,7 @@ async def upload_material(
 
     try:
         bucket = storage.bucket()
-        unique_filename = f"courses/{course_id}/{uuid.uuid4()}_{file.filename}"
+        unique_filename = f"courses/{workspace_id}/{uuid.uuid4()}_{file.filename}"
         blob = bucket.blob(unique_filename)
         
         contents = await file.read()
