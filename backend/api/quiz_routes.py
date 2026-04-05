@@ -9,7 +9,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from fastapi import Depends
-from database import get_db
+from db.database import get_db # 👈 Ensuring this points to the db folder!
 from db import models
 import schemas
 import requests
@@ -140,19 +140,20 @@ async def generate_direct(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@router.get("/courses/", response_model=list[schemas.CourseResponse])
-def get_courses_with_materials(db: Session = Depends(get_db)):
-    courses = db.query(models.Course).all()
-    return courses
+@router.get("/workspaces/", response_model=list[schemas.WorkspaceResponse])
+def get_workspaces_with_materials(db: Session = Depends(get_db)):
+    # 👈 FIXED: Capitalized Workspace!
+    workspaces = db.query(models.Workspace).all()
+    return workspaces
 
-@router.post("/courses/{course_id}/generate-quiz/")
-async def generate_quiz(course_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
+@router.post("/workspaces/{workspace_id}/generate-quiz/")
+async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
     selected_ids = request.selected_material_ids
     configs = request.configs
     
     # 1. Find the selected files in NeonDB
     materials = db.query(models.Material).filter(
-        models.Material.course_id == course_id,
+        models.Material.workspace_id == workspace_id,
         models.Material.id.in_(selected_ids)
     ).all()
     
