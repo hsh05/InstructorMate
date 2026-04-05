@@ -53,15 +53,27 @@ class PgWorkspaceRepository:
     # ── Write ─────────────────────────────────────────────────────────────────
 
     def save(self, workspace: Workspace) -> None:
-        # 1. Try to see if this is an existing integer ID
+        from db.models import Instructor # Import the Instructor model
+        
+        # 1. Ensure we have a valid instructor to own this workspace
+        instructor = self.db.query(Instructor).first()
+        if not instructor:
+            instructor = Instructor(
+                email="admin@instructormate.com",
+                hashed_password="placeholder_password",
+                full_name="Admin Instructor"
+            )
+            self.db.add(instructor)
+            self.db.commit()
+            self.db.refresh(instructor)
+
+        # 2. Try to see if this is an existing integer ID
         try:
             ws_id = int(workspace.workspace_id)
             row = self.db.query(WorkspaceModel).filter(
                 WorkspaceModel.workspace_id == ws_id
             ).first()
         except ValueError:
-            # 2. If it crashes (ValueError), it's a legacy UUID string! 
-            # This means it's a brand new workspace.
             row = None 
 
         if row:
@@ -70,18 +82,15 @@ class PgWorkspaceRepository:
             row.course_title = workspace.fields.get('course_title', "")
             logger.info("Updated workspace id=%s", ws_id)
         else:
-            # 3. For new workspaces, we DO NOT pass the workspace_id. 
-            # We let the Postgres database auto-generate the integer!
             row = WorkspaceModel(
-                instructor_id = 1, # NOTE: Hardcoded to 1 for now until auth is fully linked!
+                instructor_id = instructor.instructor_id, # 👈 FIXED: Now uses a mathematically verified Instructor ID!
                 course_code   = workspace.fields.get('course_code', "N/A"),
                 semester      = workspace.fields.get('semester', "N/A"),
                 course_title  = workspace.fields.get('course_title', "Untitled"),
             )
             self.db.add(row)
-            self.db.flush() # This forces the DB to generate the new integer ID immediately
+            self.db.flush() 
             
-            # 4. Give the new integer ID back to the app so it doesn't try to use the UUID
             workspace.workspace_id = str(row.workspace_id) 
             logger.info("Created workspace id=%s", row.workspace_id)
 
