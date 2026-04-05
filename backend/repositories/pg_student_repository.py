@@ -5,8 +5,7 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
-# 👉 UPDATED IMPORTS: Using your new models
-from models import Student, Enrollment, Workspace
+from db.models import Student, Enrollment, Workspace
 from repositories.pg_workspace_repository import PgWorkspaceRepository
 
 logger = logging.getLogger(__name__)
