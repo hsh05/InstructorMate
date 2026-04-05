@@ -1,6 +1,5 @@
 # backend/domain/workspace.py
 
-
 from typing import Dict, List
 from .enums import WorkspaceStatus
 from .workspace_fields import REQUIRED_FIELD_NAMES
@@ -14,7 +13,7 @@ class Workspace:
         fields: Dict[str, str],
         status: WorkspaceStatus,
     ):
-        self._workspace_id = workspace_id
+        self._workspace_id = str(workspace_id)
         self._file_hash = file_hash
         self._fields = fields
         self._status = status
@@ -25,6 +24,11 @@ class Workspace:
     @property
     def workspace_id(self) -> str:
         return self._workspace_id
+
+    # 👇 FIXED: Added the setter so the DB can update the ID!
+    @workspace_id.setter
+    def workspace_id(self, value: str) -> None:
+        self._workspace_id = str(value)
 
     @property
     def file_hash(self) -> str:
