@@ -7,6 +7,7 @@ import '../config/app_colors.dart';
 import 'widgets/notification_bell.dart';
 import 'workspace_sections.dart';
 import 'workspace_ask.dart';
+import 'student_list_screen.dart';
 
 const _fieldLabels = {
   'course_name': 'Course Name',
@@ -48,7 +49,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _syncControllersFromWorkspace();
   }
 
@@ -188,6 +189,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                           Tab(
                               icon: Icon(Icons.auto_awesome_rounded, size: 16),
                               text: 'Ask AI'),
+                          Tab(
+                              icon: Icon(Icons.upload_file_rounded, size: 16),
+                              text: 'Roster'), 
                         ],
                       ),
                     ),
@@ -231,6 +235,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                     asking: _asking,
                                     onAsk: _onAsk,
                                   ),
+                                  const StudentListScreen(), 
                                 ],
                               ),
                   ),

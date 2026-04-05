@@ -139,7 +139,7 @@ class _SectionsTabState extends State<SectionsTab>
             icon: Icons.groups_2_rounded,
             title: 'No sections yet',
             subtitle:
-                'Tap \"+ Add Section\" to create your first class section.',
+                'Tap "+ Add Section" to create your first class section.',
           )
         else
           ...ws.sections.map((s) => Padding(
@@ -941,7 +941,6 @@ class SectionRosterCard extends StatefulWidget {
 class _SectionRosterCardState extends State<SectionRosterCard> {
   bool _expanded = false;
   bool _importing = false;
-  bool _clearing = false;
   bool _loadingRoster = false;
   List<Student> _students = [];
   String _search = '';
@@ -975,211 +974,9 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
     }
   }
 
-  Future<bool?> _confirmDeleteStudent(Student s) {
-    return showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Text('Remove Student',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-        content: Text(
-          'Remove "${s.name.isNotEmpty ? s.name : s.email}" from this section?',
-          style: const TextStyle(fontSize: 13, color: AppColors.inkMid),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.inkLight)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.red,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove',
-                style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _deleteStudent(Student s) {
-    setState(() => _students.removeWhere((st) => st.studentId == s.studentId));
-    widget.vm.recordImport(widget.section.id, _students.length);
-    widget.vm.api
-        .deleteStudent(widget.ws.id, widget.section.id, s.studentId)
-        .then((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            '✓ ${s.name.isNotEmpty ? s.name : "Student"} removed successfully',
-          ),
-          backgroundColor: AppColors.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
-        ));
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() => _students.add(s));
-        widget.vm.recordImport(widget.section.id, _students.length);
-        widget.onError('Failed to remove student: $e');
-      }
-    });
-  }
-
-  Future<void> _confirmClearAll() async {
-    final count = _students.length;
-    final sectionName =
-        widget.section.name.isNotEmpty ? widget.section.name : 'this section';
-
-    final confirmed = await showDialog<bool>(
-          context: context,
-          barrierColor: Colors.black.withOpacity(0.32),
-          builder: (_) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
-              ),
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Clear all students from $sectionName?',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    '$count student${count == 1 ? "" : "s"} will be '
-                    'permanently removed. This cannot be undone.',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.inkMid,
-                      height: 1.55,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.inkMid,
-                          side: const BorderSide(color: AppColors.border),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          shape: const RoundedRectangleBorder(
-                              borderRadius: AppColors.r10),
-                        ),
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel',
-                            style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.red,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          shape: const RoundedRectangleBorder(
-                              borderRadius: AppColors.r10),
-                        ),
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Clear all',
-                            style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-          ),
-        ) ??
-        false;
-
-    if (!confirmed || !mounted) return;
-    setState(() => _clearing = true);
-    try {
-      await widget.vm.api.clearSectionStudents(widget.ws.id, widget.section.id);
-      if (!mounted) return;
-      final cleared = count;
-      setState(() {
-        _students = [];
-        _clearing = false;
-      });
-      widget.vm.recordImport(widget.section.id, 0);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            '✓ $cleared student${cleared == 1 ? "" : "s"} removed from $sectionName',
-          ),
-          backgroundColor: AppColors.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _clearing = false);
-        widget.onError('Failed to clear students: $e');
-      }
-    }
-  }
-
   void _toggle() {
     setState(() => _expanded = !_expanded);
     if (_expanded) _loadRoster();
-  }
-
-  Future<void> _showAddStudent(BuildContext ctx) async {
-    await showModalBottomSheet(
-      context: ctx,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => AddStudentSheet(
-        onAdd: (name, email, studentNo) async {
-          await widget.vm.api.addStudent(
-            workspaceId: widget.ws.id,
-            sectionId: widget.section.id,
-            name: name,
-            email: email,
-            studentNo: studentNo,
-          );
-          await _loadRoster();
-          widget.vm.recordImport(widget.section.id, _students.length);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(
-                '✓ ${name.isNotEmpty ? name : "Student"} added successfully',
-              ),
-              backgroundColor: AppColors.accent,
-              behavior: SnackBarBehavior.floating,
-              shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
-            ));
-          }
-        },
-      ),
-    );
   }
 
   Future<void> _import(BuildContext ctx) async {
@@ -1505,83 +1302,6 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Material(
-                          color: Colors.transparent,
-                          borderRadius: AppColors.r10,
-                          child: InkWell(
-                            onTap: () => _showAddStudent(context),
-                            borderRadius: AppColors.r10,
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                borderRadius: AppColors.r10,
-                                border: Border.all(
-                                  color: AppColors.primary.withOpacity(0.4),
-                                ),
-                                color: AppColors.primarySoft,
-                              ),
-                              child: const Icon(
-                                Icons.person_add_rounded,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (_students.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Material(
-                            color: Colors.transparent,
-                            borderRadius: AppColors.r10,
-                            child: InkWell(
-                              onTap: _clearing ? null : _confirmClearAll,
-                              borderRadius: AppColors.r10,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 10),
-                                decoration: BoxDecoration(
-                                  borderRadius: AppColors.r10,
-                                  border: Border.all(
-                                    color: _clearing
-                                        ? AppColors.border
-                                        : AppColors.red.withOpacity(0.4),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    _clearing
-                                        ? const SizedBox(
-                                            width: 13,
-                                            height: 13,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: AppColors.red),
-                                          )
-                                        : const Icon(
-                                            Icons.delete_outline_rounded,
-                                            size: 14,
-                                            color: AppColors.red,
-                                          ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      _clearing ? 'Clearing…' : 'Clear all',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: _clearing
-                                            ? AppColors.red.withOpacity(0.4)
-                                            : AppColors.red,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
                       ]),
                       if (_loadingRoster)
                         const Padding(
@@ -1658,72 +1378,48 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                           itemCount: filtered.length,
                           itemBuilder: (_, i) {
                             final s = filtered[i];
-                            return Dismissible(
-                              key: ValueKey(s.studentId),
-                              direction: DismissDirection.endToStart,
-                              background: Container(
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 16),
-                                color: AppColors.red.withOpacity(0.12),
-                                child: const Icon(Icons.delete_outline_rounded,
-                                    color: AppColors.red, size: 18),
-                              ),
-                              confirmDismiss: (_) => _confirmDeleteStudent(s),
-                              onDismissed: (_) => _deleteStudent(s),
-                              child: Container(
-                                color: i.isEven
-                                    ? Colors.transparent
-                                    : AppColors.surfaceAlt.withOpacity(0.45),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 9),
-                                child: Row(children: [
-                                  SizedBox(
-                                    width: 28,
-                                    child: Text('${i + 1}',
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.inkLight,
-                                            fontWeight: FontWeight.w600)),
-                                  ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(s.name.isEmpty ? '—' : s.name,
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.ink,
-                                            fontWeight: FontWeight.w600),
-                                        overflow: TextOverflow.ellipsis),
-                                  ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(s.email.isEmpty ? '—' : s.email,
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.inkMid),
-                                        overflow: TextOverflow.ellipsis),
-                                  ),
-                                  SizedBox(
-                                    width: 56,
-                                    child: Text(
-                                        s.studentNo.isEmpty ? '—' : s.studentNo,
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.inkLight),
-                                        overflow: TextOverflow.ellipsis),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () async {
-                                      final ok = await _confirmDeleteStudent(s);
-                                      if (ok == true) _deleteStudent(s);
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.only(left: 6),
-                                      child: Icon(Icons.delete_outline_rounded,
-                                          size: 15, color: AppColors.red),
-                                    ),
-                                  ),
-                                ]),
-                              ),
+                            return Container(
+                              color: i.isEven
+                                  ? Colors.transparent
+                                  : AppColors.surfaceAlt.withOpacity(0.45),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 9),
+                              child: Row(children: [
+                                SizedBox(
+                                  width: 28,
+                                  child: Text('${i + 1}',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkLight,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(s.name.isEmpty ? '—' : s.name,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.ink,
+                                          fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(s.email.isEmpty ? '—' : s.email,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkMid),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                                SizedBox(
+                                  width: 56,
+                                  child: Text(
+                                      s.studentNo.isEmpty ? '—' : s.studentNo,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkLight),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              ]),
                             );
                           },
                         ),
@@ -1924,252 +1620,6 @@ class ReplaceRosterDialog extends StatelessWidget {
             ]),
           ),
         ]),
-      ),
-    );
-  }
-}
-
-// ─── Add Student Sheet ────────────────────────────────────────────────────────
-class AddStudentSheet extends StatefulWidget {
-  const AddStudentSheet({super.key, required this.onAdd});
-  final Future<void> Function(String name, String email, String studentNo)
-      onAdd;
-
-  @override
-  State<AddStudentSheet> createState() => _AddStudentSheetState();
-}
-
-class _AddStudentSheetState extends State<AddStudentSheet> {
-  final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _studentNoCtrl = TextEditingController();
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _emailCtrl.dispose();
-    _studentNoCtrl.dispose();
-    super.dispose();
-  }
-
-  String? _validate(String name, String email, String studentNo) {
-    if (name.isEmpty) return 'Full name is required.';
-    if (RegExp(r'[0-9]').hasMatch(name)) return 'Name cannot contain numbers.';
-    if (studentNo.isEmpty) return 'Student number is required.';
-    if (RegExp(r'[a-zA-Z]').hasMatch(studentNo))
-      return 'Student number cannot contain letters.';
-    if (studentNo.length != 9)
-      return 'Student number must be exactly 9 digits.';
-    if (!studentNo.startsWith('20'))
-      return 'Student number must start with 20.';
-    if (!RegExp(r'^[0-9]+$').hasMatch(studentNo))
-      return 'Student number must contain digits only.';
-    if (email.isEmpty) return 'Email address is required.';
-    if (!email.endsWith('@aau.ac.ae'))
-      return 'Email must be a valid AAU address (e.g. 202210078@aau.ac.ae).';
-    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@aau\.ac\.ae$');
-    if (!emailRegex.hasMatch(email))
-      return 'Please enter a valid AAU email address.';
-    return null;
-  }
-
-  Future<void> _submit() async {
-    final name = _nameCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final studentNo = _studentNoCtrl.text.trim();
-    final validationError = _validate(name, email, studentNo);
-    if (validationError != null) {
-      setState(() => _error = validationError);
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      await widget.onAdd(name, email, studentNo);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted)
-        setState(() {
-          _saving = false;
-          _error = e.toString();
-        });
-    }
-  }
-
-  Widget _field({
-    required TextEditingController ctrl,
-    required String label,
-    required String hint,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: AppColors.inkLight,
-                letterSpacing: 1.2)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: ctrl,
-          keyboardType: keyboardType,
-          onChanged: (_) => setState(() => _error = null),
-          style: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.ink),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 13),
-            prefixIcon: Icon(icon, color: AppColors.primary, size: 18),
-            filled: true,
-            fillColor: AppColors.surfaceAlt,
-            border: OutlineInputBorder(
-                borderRadius: AppColors.r12,
-                borderSide: const BorderSide(color: AppColors.border)),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: AppColors.r12,
-                borderSide: const BorderSide(color: AppColors.border)),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: AppColors.r12,
-                borderSide:
-                    const BorderSide(color: AppColors.primary, width: 1.5)),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        left: 20,
-        right: 20,
-        top: 12,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Row(children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.primarySoft,
-                borderRadius: AppColors.r12,
-              ),
-              child: const Icon(Icons.person_add_rounded,
-                  color: AppColors.primary, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Add Student',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.ink)),
-                Text('Fill in the student details below',
-                    style: TextStyle(fontSize: 12, color: AppColors.inkLight)),
-              ],
-            ),
-          ]),
-          const SizedBox(height: 24),
-          _field(
-            ctrl: _nameCtrl,
-            label: 'FULL NAME',
-            hint: 'e.g. Omar Ahmed (letters only)',
-            icon: Icons.person_outline_rounded,
-          ),
-          const SizedBox(height: 16),
-          _field(
-            ctrl: _studentNoCtrl,
-            label: 'STUDENT NUMBER',
-            hint: 'e.g. 202210078 (9 digits, starts with 20)',
-            icon: Icons.badge_outlined,
-          ),
-          const SizedBox(height: 16),
-          _field(
-            ctrl: _emailCtrl,
-            label: 'EMAIL ADDRESS',
-            hint: 'e.g. 202210078@aau.ac.ae',
-            icon: Icons.email_outlined,
-            keyboardType: TextInputType.emailAddress,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.warnSoft,
-                borderRadius: AppColors.r10,
-                border: Border.all(color: AppColors.warn.withOpacity(0.4)),
-              ),
-              child: Row(children: [
-                const Icon(Icons.warning_amber_rounded,
-                    size: 15, color: AppColors.warn),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(_error!,
-                      style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.warn,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ]),
-            ),
-          ],
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape:
-                    const RoundedRectangleBorder(borderRadius: AppColors.r12),
-              ),
-              onPressed: _saving ? null : _submit,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check_rounded, size: 18),
-              label: Text(_saving ? 'Adding…' : 'Add Student',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-          ),
-        ],
       ),
     );
   }

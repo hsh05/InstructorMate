@@ -146,7 +146,7 @@ def fetch_all_students(db: Session = Depends(get_db)):
 
 @router.post("/workspaces/{workspace_id}/students/import")
 async def import_students( 
-    workspace_id: str,
+    workspace_id: int,
     file: UploadFile = File(...),
     section_id: Optional[str] = Form(None),
     service: StudentService = Depends(get_student_service),
@@ -188,7 +188,7 @@ async def import_students(
 
 @router.get("/workspaces/{workspace_id}/sections/{section_id}/students")
 def list_section_students(
-    workspace_id: str,
+    workspace_id: int,
     section_id: str,
     repo: PgStudentRepository = Depends(get_student_repo),
 ):
@@ -197,7 +197,7 @@ def list_section_students(
 
 @router.delete("/workspaces/{workspace_id}/sections/{section_id}/students")
 def clear_section_students(
-    workspace_id: str,
+    workspace_id: int,
     section_id: str,
     repo: PgStudentRepository = Depends(get_student_repo),
 ):
@@ -208,7 +208,7 @@ def clear_section_students(
 
 @router.delete("/workspaces/{workspace_id}/sections/{section_id}/students/{student_id}")
 def delete_student(
-    workspace_id: str,
+    workspace_id: int,
     section_id: str,
     student_id: str,
     repo: PgStudentRepository = Depends(get_student_repo),
@@ -227,7 +227,7 @@ class AddStudentRequest(BaseModel):
 
 @router.post("/workspaces/{workspace_id}/sections/{section_id}/students")
 def add_student(
-    workspace_id: str,
+    workspace_id: int,
     section_id:   str,
     req:          AddStudentRequest,
     repo:         PgStudentRepository = Depends(get_student_repo),
@@ -239,11 +239,9 @@ def add_student(
             detail="At least one of name, email, or student number is required.",
         )
 
-    # TODO FOR TEAMMATE: Update DomainStudent to match the new ERD! 
-    # `student_id` should equal `req.student_no`, and `workspace_id` should be removed.
     student = DomainStudent(
-        student_id   = req.student_no.strip() or str(uuid.uuid4()), # Patched to use their ID if provided
-        workspace_id = workspace_id, 
+        student_id   = req.student_no.strip(), 
+        workspace_id = workspace_id, # This is now an int
         name         = req.name.strip(),
         email        = req.email.strip(),
         student_no   = req.student_no.strip(),

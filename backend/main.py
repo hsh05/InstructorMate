@@ -149,29 +149,28 @@ def health():
 
 # --- Course & Material Routes ---
 
-@app.post("/courses/", response_model=schemas.CourseResponse)
-def create_course(course: schemas.CourseCreate, db: Session = Depends(get_db)):
-    db_course = models.Course(**course.dict())
-    db.add(db_course)
+@app.post("/workspaces/", response_model=schemas.WorkspaceResponse)
+def create_workspace(workspace: schemas.WorkspaceCreate, db: Session = Depends(get_db)):
+    db_workspace = models.Workspace(**workspace.dict())
+    db.add(db_workspace)
     db.commit()
-    db.refresh(db_course)
-    return db_course
+    db.refresh(db_workspace)
+    return db_workspace
 
-@app.get("/courses/", response_model=list[schemas.CourseResponse])
-def get_courses_with_materials(db: Session = Depends(get_db)):
-    courses = db.query(models.Course).all()
-    return courses
+@app.get("/workspaces/", response_model=list[schemas.WorkspaceResponse])
+def get_workspaces_with_materials(db: Session = Depends(get_db)):
+    return db.query(models.Workspace).all()
 
-@app.post("/courses/{course_id}/materials/", response_model=schemas.MaterialResponse)
+@app.post("/workspaces/{workspace_id}/materials/", response_model=schemas.MaterialResponse)
 async def upload_material(
-    course_id: int, 
+    workspace_id: int,
     material_type: str = Form(...), 
     file: UploadFile = File(...),   
     db: Session = Depends(get_db)
 ):
-    course = db.query(models.Course).filter(models.Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    workspace = db.query(models.Workspace).filter(models.Workspace.workspace_id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
 
     try:
         bucket = storage.bucket()
@@ -192,14 +191,13 @@ async def upload_material(
         raise HTTPException(status_code=500, detail=f"Failed to upload to Firebase: {str(e)}")
 
     db_material = models.Material(
-        course_id=course_id,
+        workspace_id=workspace_id,
         file_name=file.filename,
         file_path=file_url,
         material_type=material_type
     )
     db.add(db_material)
     db.commit()
-    db.refresh(db_material)
     
     return db_material
 
