@@ -298,6 +298,34 @@ class ApiService {
     return (map['answer'] ?? '').toString();
   }
 
+  // -----------------------------
+  // Import Student_List
+  // -----------------------------
+  Future<Map<String, dynamic>> uploadStudentList({required File file}) async {
+    try {
+      final req = http.MultipartRequest('POST', _u('/students/upload'));
+
+      final filePart = await http.MultipartFile.fromPath('file', file.path);
+
+      req.files.add(filePart);
+
+      final streamed = await req.send().timeout(AppConfig.uploadTimeout); // Added your standard timeout here!
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+
+      return {
+        "ok": false,
+        "status": response.statusCode,
+        "error": response.body,
+      };
+    } catch (e) {
+      return {"ok": false, "error": e.toString()};
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   MediaType _contentTypeFor(String filename) {
     final f = filename.toLowerCase();
