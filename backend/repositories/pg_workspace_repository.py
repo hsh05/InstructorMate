@@ -53,29 +53,37 @@ class PgWorkspaceRepository:
     # ── Write ─────────────────────────────────────────────────────────────────
 
     def save(self, workspace: Workspace) -> None:
-        # Note: workspace_id must be an integer!
-        row = self.db.query(WorkspaceModel).filter(
-            WorkspaceModel.workspace_id == int(workspace.workspace_id)
-        ).first()
+        # 1. Try to see if this is an existing integer ID
+        try:
+            ws_id = int(workspace.workspace_id)
+            row = self.db.query(WorkspaceModel).filter(
+                WorkspaceModel.workspace_id == ws_id
+            ).first()
+        except ValueError:
+            # 2. If it crashes (ValueError), it's a legacy UUID string! 
+            # This means it's a brand new workspace.
+            row = None 
 
         if row:
-            # We removed file_hash and status from the Workspace ERD earlier, 
-            # so we only update the fields that still exist!
             row.course_code  = workspace.fields.get('course_code', "")
             row.semester     = workspace.fields.get('semester', "")
             row.course_title = workspace.fields.get('course_title', "")
-            # row.updated_at = func.now() # We removed updated_at as well
-            logger.info("Updated workspace id=%s", workspace.workspace_id)
+            logger.info("Updated workspace id=%s", ws_id)
         else:
+            # 3. For new workspaces, we DO NOT pass the workspace_id. 
+            # We let the Postgres database auto-generate the integer!
             row = WorkspaceModel(
-                workspace_id  = int(workspace.workspace_id),
                 instructor_id = 1, # NOTE: Hardcoded to 1 for now until auth is fully linked!
                 course_code   = workspace.fields.get('course_code', "N/A"),
                 semester      = workspace.fields.get('semester', "N/A"),
                 course_title  = workspace.fields.get('course_title', "Untitled"),
             )
             self.db.add(row)
-            logger.info("Created workspace id=%s", workspace.workspace_id)
+            self.db.flush() # This forces the DB to generate the new integer ID immediately
+            
+            # 4. Give the new integer ID back to the app so it doesn't try to use the UUID
+            workspace.workspace_id = str(row.workspace_id) 
+            logger.info("Created workspace id=%s", row.workspace_id)
 
         self.db.commit()
 
@@ -177,9 +185,9 @@ class PgWorkspaceRepository:
     def _to_domain(self, row: WorkspaceModel) -> Workspace:
         # Re-construct the fields dictionary for the legacy domain model
         fields = {
-            "course_code":  row.course_code,
+            "workspace_code":  row.workspace_code,
             "semester":     row.semester,
-            "course_title": row.course_title
+            "workspace_title": row.workspace_title
         }
         
         ws = Workspace(
