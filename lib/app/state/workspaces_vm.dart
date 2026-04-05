@@ -9,20 +9,18 @@ import '../../services/api_service.dart';
 import '../../services/mobile_toast_service.dart';
 import '../../services/notification_scheduler.dart';
 import '../../services/web_notification_service.dart';
-import '../workspace_models.dart';
+import '../../models/workspace_model.dart';
 import '../../utils/schedule_utils.dart';
 import '../../screens/workspace_ask.dart';
 
 class WorkspacesViewModel extends ChangeNotifier {
-  // stores add state and async and notifices ui when state changes
   WorkspacesViewModel({required this.api});
 
   final ApiService api;
 
-  bool loading = false; // for shimmer effects and loading spinners
+  bool loading = false; 
   bool importing = false;
 
-  /// True while background detail fetch is running after instant navigation.
   bool loadingDetail = false;
 
   String? error;
@@ -38,7 +36,8 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   final Map<String, int> sectionStudentCounts = {};
 
-  final Map<String, List<ChatMsg>> chatHistory = {};
+  // 👉 FIXED: Chat history map now uses an integer key for the Workspace ID!
+  final Map<int, List<ChatMsg>> chatHistory = {};
 
   void recordImport(String sectionId, int count) {
     sectionStudentCounts[sectionId] = count;
@@ -154,8 +153,9 @@ class WorkspacesViewModel extends ChangeNotifier {
       safety++;
     }
     var fireAt = classTime.subtract(Duration(minutes: reminderMinutes));
-    if (now.difference(fireAt).inSeconds >= 60)
+    if (now.difference(fireAt).inSeconds >= 60) {
       fireAt = fireAt.add(const Duration(days: 7));
+    }
     return fireAt;
   }
 
@@ -199,10 +199,9 @@ class WorkspacesViewModel extends ChangeNotifier {
   }
 
   // ── Open workspace — INSTANT navigation ───────────────────────────────────
-  // Returns immediately after building a shell from cached summary data.
-  // The caller navigates right away. Detail is filled in the background.
 
-  Future<void> openWorkspace(String id) async {
+  // 👉 FIXED: Parameter is now an int to match the Workspace model
+  Future<void> openWorkspace(int id) async {
     error = null;
 
     final summary = workspaces.firstWhere(
@@ -217,7 +216,6 @@ class WorkspacesViewModel extends ChangeNotifier {
       ),
     );
 
-    // Set shell immediately — header renders at once with title/status/counts
     _current = Workspace(
       id: summary.id,
       createdAt: summary.createdAt,
@@ -225,26 +223,22 @@ class WorkspacesViewModel extends ChangeNotifier {
       pdfHash: summary.pdfHash,
       status: summary.status,
       fields: {
-        'course_name': summary.title,
-        'course_title': summary.title,
-        // Pre-populate other fields as empty — controllers will be
-        // corrected by _syncControllersFromWorkspace() once loadingDetail
-        // becomes false and the full workspace data arrives.
-        'course_code': summary.title,
-
-        /// ''
+        'workspace_name': summary.title,
+        'workspace_title': summary.title,
+        'workspace_code': summary.title,
         'semester': '',
       },
       sections: const [],
       studentsCount: summary.studentsCount,
+      materials: const [], // 👉 FIXED: Added the required materials list
     );
     sectionStudentCounts.clear();
     loadingDetail = true;
-    notifyListeners(); // caller navigates immediately after this
+    notifyListeners(); 
 
-    // Background: fetch full workspace (sections, all fields, etc.)
     try {
-      final full = await api.getWorkspace(id);
+      // Cast the int to a String for the ApiService call
+      final full = await api.getWorkspace(id.toString());
       _current = full;
       sectionStudentCounts.clear();
       for (final s in full.sections) {
@@ -277,8 +271,6 @@ class WorkspacesViewModel extends ChangeNotifier {
           await api.importWorkspace(bytes: bytes, filename: filename);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      // wasUpdated: false — this is a new upload, not a user edit,
-      // so we don't want to stamp "updated just now" on the home card.
       _syncCurrentToList(wasUpdated: false);
     } catch (e) {
       error = e.toString();
@@ -301,7 +293,6 @@ class WorkspacesViewModel extends ChangeNotifier {
           await api.importWorkspace(bytes: picked.bytes, filename: picked.name);
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
-      // wasUpdated: false — new upload, not a user edit.
       _syncCurrentToList(wasUpdated: false);
     } catch (e) {
       error = e.toString();
@@ -320,7 +311,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      _current = await api.updateWorkspaceFields(ws.id, Map.from(fields));
+      _current = await api.updateWorkspaceFields(ws.id.toString(), Map.from(fields));
       _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
@@ -339,7 +330,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      _current = await api.createSection(ws.id, draft);
+      _current = await api.createSection(ws.id.toString(), draft);
       _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
@@ -357,7 +348,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      _current = await api.updateSection(ws.id, sectionId, draft);
+      _current = await api.updateSection(ws.id.toString(), sectionId, draft);
       _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
@@ -375,7 +366,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      _current = await api.deleteSection(ws.id, sectionId);
+      _current = await api.deleteSection(ws.id.toString(), sectionId);
       sectionStudentCounts.remove(sectionId);
       _syncCurrentToList(wasUpdated: true);
     } catch (e) {
@@ -399,7 +390,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       final picked = await _pickFileBytes(extensions: ['csv', 'xlsx']);
       if (picked == null) return;
       final result = await api.importStudents(
-        workspaceId: ws.id,
+        workspaceId: ws.id.toString(),
         bytes: picked.bytes,
         filename: picked.name,
         sectionId: sectionId,
@@ -408,7 +399,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         result.sectionId.isNotEmpty ? result.sectionId : sectionId,
         result.imported,
       );
-      _current = await api.getWorkspace(ws.id);
+      _current = await api.getWorkspace(ws.id.toString());
       _syncCurrentToList(wasUpdated: true);
     } catch (e) {
       error = e.toString();
@@ -420,15 +411,15 @@ class WorkspacesViewModel extends ChangeNotifier {
 
   // ── Delete workspace ──────────────────────────────────────────────────────
 
-  Future<bool> deleteWorkspace(String workspaceId) async {
+  // 👉 FIXED: Parameter is now an int
+  Future<bool> deleteWorkspace(int workspaceId) async {
     loading = true;
     error = null;
     notifyListeners();
     try {
-      await api.deleteWorkspace(workspaceId);
+      await api.deleteWorkspace(workspaceId.toString());
       workspaces.removeWhere((w) => w.id == workspaceId);
       if (_current?.id == workspaceId) _current = null;
-      // Clean up chat history for deleted workspace
       chatHistory.remove(workspaceId);
       return true;
     } catch (e) {
@@ -449,7 +440,7 @@ class WorkspacesViewModel extends ChangeNotifier {
     final ws = _current;
     if (ws == null) return null;
     try {
-      return await api.ask(ws.id, question, history: history);
+      return await api.ask(ws.id.toString(), question, history: history);
     } catch (e) {
       error = e.toString();
       notifyListeners();
@@ -472,14 +463,11 @@ class WorkspacesViewModel extends ChangeNotifier {
     final newSummary = WorkspaceSummary(
       id: ws.id,
       createdAt: idx != -1 ? workspaces[idx].createdAt : ws.createdAt,
-      // If this is a real mutation (save fields, add section, import students etc.)
-      // stamp now immediately so the home card updates without waiting for a
-      // backend round-trip. Otherwise preserve the existing value.
       updatedAtRaw: wasUpdated
           ? DateTime.now().toIso8601String()
           : (idx != -1
-              ? workspaces[idx].updatedAtRaw // preserve existing card value
-              : null), // brand new — show nothing
+              ? workspaces[idx].updatedAtRaw 
+              : null), 
       originalFilename:
           idx != -1 ? workspaces[idx].originalFilename : ws.originalFilename,
       pdfHash: idx != -1 ? workspaces[idx].pdfHash : ws.pdfHash,
@@ -504,7 +492,7 @@ class WorkspacesViewModel extends ChangeNotifier {
       try {
         full.add(_current?.id == summary.id
             ? _current!
-            : await api.getWorkspace(summary.id));
+            : await api.getWorkspace(summary.id.toString()));
       } catch (_) {}
     }
     if (full.isEmpty) return;
@@ -521,13 +509,13 @@ class WorkspacesViewModel extends ChangeNotifier {
     final ws = _current;
     if (ws == null) return;
     try {
-      final fresh = await api.getWorkspace(ws.id);
+      final fresh = await api.getWorkspace(ws.id.toString());
       _current = fresh;
       if (kIsWeb) {
         final all = <Workspace>[];
         for (final s in workspaces) {
           try {
-            all.add(s.id == fresh.id ? fresh : await api.getWorkspace(s.id));
+            all.add(s.id == fresh.id ? fresh : await api.getWorkspace(s.id.toString()));
           } catch (_) {}
         }
         WebNotificationService.instance.updateWorkspaces(all);
@@ -535,7 +523,7 @@ class WorkspacesViewModel extends ChangeNotifier {
         final all = <Workspace>[];
         for (final s in workspaces) {
           try {
-            all.add(s.id == fresh.id ? fresh : await api.getWorkspace(s.id));
+            all.add(s.id == fresh.id ? fresh : await api.getWorkspace(s.id.toString()));
           } catch (_) {}
         }
         _allWorkspaces = List.of(all);

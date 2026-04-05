@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/config_model.dart';
-import '../models/course_model.dart';
+import '../models/workspace_model.dart';
 import '../models/question_model.dart';
 import '../services/api_service.dart';
 import 'review_screen.dart';
@@ -21,8 +21,8 @@ class _GenerateScreenState extends State<GenerateScreen> {
   final List<File> _selectedFiles = [];
   final ApiService _apiService = ApiService();
 
-  List<Course> _courses = [];
-  Course? _selectedCourse;
+  List<Workspace> _workspaces = [];
+  Workspace? _selectedWorkspace; // Fixed casing
 
   final Set<int> _selectedMaterialIds = {};
 
@@ -38,48 +38,48 @@ class _GenerateScreenState extends State<GenerateScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCourses();
+    _loadWorkspaces(); // Fixed casing
   }
 
-  Future<void> _loadCourses() async {
+  Future<void> _loadWorkspaces() async { // Fixed casing
     setState(() {
       _isLoading = true;
-      _statusMessage = "Loading course data...";
+      _statusMessage = "Loading workspace data...";
     });
     
     try {
       // 1. Fetch EVERYTHING from the database
-      var allCourses = await _apiService.fetchCourses();
+      var allWorkspaces = await _apiService.fetchWorkspaces(); // Fixed casing
       
       setState(() {
         // 2. Get the exact name of the currently open Workspace
         final workspaceName = widget.vm.current?.title.trim().toLowerCase() ?? '';
 
         if (workspaceName.isNotEmpty) {
-          // 3. STRICT FILTER: Only keep the course that exactly matches the workspace name
-          var matchedCourses = allCourses.where(
+          // 3. STRICT FILTER: Only keep the workspace that exactly matches the workspace name
+          var matchedWorkspaces = allWorkspaces.where(
             (c) => c.title.trim().toLowerCase() == workspaceName
           ).toList();
           
-          if (matchedCourses.isNotEmpty) {
-            _courses = matchedCourses; // The dropdown will now ONLY have this 1 course
-            _selectedCourse = _courses.first;
+          if (matchedWorkspaces.isNotEmpty) {
+            _workspaces = matchedWorkspaces; // The dropdown will now ONLY have this 1 workspace
+            _selectedWorkspace = _workspaces.first;
             
             // Auto-check the real materials!
             _selectedMaterialIds.clear();
-            _selectedMaterialIds.addAll(_selectedCourse!.materials.map((m) => m.id));
+            _selectedMaterialIds.addAll(_selectedWorkspace!.materials.map((m) => m.id));
             
-            _statusMessage = "Locked to Workspace: ${_selectedCourse!.title}";
+            _statusMessage = "Locked to Workspace: ${_selectedWorkspace!.title}";
           } else {
             // If the names don't match, it means they haven't uploaded to DB for this specific workspace yet
-            _courses = [];
-            _selectedCourse = null;
+            _workspaces = [];
+            _selectedWorkspace = null;
             _statusMessage = "No DB files for this workspace yet. Use Local Files.";
           }
         } else {
           // Fallback just in case they open the screen without a workspace
-          _courses = allCourses;
-          if (_courses.isNotEmpty) _selectedCourse = _courses.first;
+          _workspaces = allWorkspaces;
+          if (_workspaces.isNotEmpty) _selectedWorkspace = _workspaces.first;
           _statusMessage = "Ready";
         }
       });
@@ -91,7 +91,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
   }
 
   void _uploadToDatabase() async {
-    if (_selectedCourse == null || _selectedFiles.isEmpty) return;
+    if (_selectedWorkspace == null || _selectedFiles.isEmpty) return;
     setState(() {
       _isLoading = true;
       _statusMessage = "Uploading to Server...";
@@ -99,13 +99,13 @@ class _GenerateScreenState extends State<GenerateScreen> {
 
     try {
       for (var file in _selectedFiles) {
-        await _apiService.uploadMaterial(_selectedCourse!.id, file, 'slides');
+        await _apiService.uploadMaterial(_selectedWorkspace!.id, file, 'slides');
       }
       setState(() {
         _statusMessage = "Upload complete!";
         _selectedFiles.clear(); // Clears local files so they don't get double generated
       });
-      _loadCourses();
+      _loadWorkspaces();
     } catch (e) {
       setState(() => _statusMessage = "Upload Error: $e");
     } finally {
@@ -124,7 +124,6 @@ class _GenerateScreenState extends State<GenerateScreen> {
   Future<void> _pickFiles() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      // ADDED 'docx' here!
       allowedExtensions: ['pdf', 'pptx', 'docx', 'txt'],
       allowMultiple: true,
     );
@@ -164,10 +163,9 @@ class _GenerateScreenState extends State<GenerateScreen> {
       }
 
       // 2. Generate from Database Materials using the NEW API ROUTE
-      if (hasDbFiles && _selectedCourse != null) {
-        // 👉 NEW CODE: Using _apiService instead of the deleted _aiService
+      if (hasDbFiles && _selectedWorkspace != null) {
         var questions = await _apiService.generateQuiz(
-          _selectedCourse!.id,
+          _selectedWorkspace!.id,
           _selectedMaterialIds.toList(),
           activeConfigs,
         );
@@ -304,31 +302,31 @@ class _GenerateScreenState extends State<GenerateScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("InstructorMate"),
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _loadCourses)],
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _loadWorkspaces)],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_courses.isEmpty)
+            if (_workspaces.isEmpty)
               Text(_statusMessage ?? "No workspace detected.", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))
             else
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(8)),
                 child: DropdownButtonHideUnderline(
-                  child: DropdownButton<Course>(
-                    value: _selectedCourse,
+                  child: DropdownButton<Workspace>( // Fixed capitalization
+                    value: _selectedWorkspace,
                     isExpanded: true,
-                    hint: const Text("Select a Course"),
-                    items: _courses.map((course) => DropdownMenuItem(
-                      value: course,
-                      child: Text("${course.title} (${course.materials.length} files in DB)"),
+                    hint: const Text("Select a workspace"),
+                    items: _workspaces.map((workspace) => DropdownMenuItem(
+                      value: workspace,
+                      child: Text("${workspace.title} (${workspace.materials.length} files in DB)"),
                     )).toList(),
                     onChanged: (val) {
                       setState(() {
-                        _selectedCourse = val;
+                        _selectedWorkspace = val;
                         _selectedMaterialIds.clear(); 
                         _statusMessage = "Selected: ${val?.title}";
                       });
@@ -339,13 +337,13 @@ class _GenerateScreenState extends State<GenerateScreen> {
 
             const SizedBox(height: 15),
 
-            if (_selectedCourse != null && _selectedCourse!.materials.isNotEmpty)
+            if (_selectedWorkspace != null && _selectedWorkspace!.materials.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text("Select Materials for Quiz:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
                   const SizedBox(height: 5),
-                  ..._selectedCourse!.materials.map((material) {
+                  ..._selectedWorkspace!.materials.map((material) {
                     bool isChecked = _selectedMaterialIds.contains(material.id);
                     return Card(
                       color: isChecked ? Colors.indigo.shade50 : Colors.white,
@@ -402,7 +400,7 @@ class _GenerateScreenState extends State<GenerateScreen> {
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.cloud_upload),
-                  onPressed: (_isLoading || _selectedFiles.isEmpty || _selectedCourse == null) ? null : _uploadToDatabase,
+                  onPressed: (_isLoading || _selectedFiles.isEmpty || _selectedWorkspace == null) ? null : _uploadToDatabase,
                   label: const Text("Upload to DB"),
                 ),
               ],

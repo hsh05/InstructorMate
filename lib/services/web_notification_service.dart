@@ -3,7 +3,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback;
 
-import '../app/workspace_models.dart';
+import '../models/workspace_model.dart';
 import '../utils/schedule_utils.dart';
 
 import 'web_audio_stub.dart' if (dart.library.js_interop) 'web_audio_impl.dart';
@@ -11,7 +11,7 @@ import 'web_audio_stub.dart' if (dart.library.js_interop) 'web_audio_impl.dart';
 // ─── Model ────────────────────────────────────────────────────────────────────
 class PendingNotification {
   final String sectionName;
-  final String courseName;
+  final String workspaceName;
   final String startTime;
   final String location;
   final int minutesUntil;
@@ -19,14 +19,14 @@ class PendingNotification {
 
   const PendingNotification({
     required this.sectionName,
-    required this.courseName,
+    required this.workspaceName,
     required this.startTime,
     required this.location,
     required this.minutesUntil,
     required this.fireAt,
   });
 
-  String get title => '⏰ $courseName starts in ${minutesUntil}min';
+  String get title => '⏰ $workspaceName starts in ${minutesUntil}min';
 
   String get body {
     final loc = location.isNotEmpty ? ' @ $location' : '';
@@ -128,7 +128,7 @@ class WebNotificationService {
             _fire(
               PendingNotification(
                 sectionName: section.name.isNotEmpty ? section.name : 'Class',
-                courseName: ws.title,
+                workspaceName: ws.title,
                 startTime: sch.startTime,
                 location: section.location,
                 minutesUntil: remind,
@@ -149,7 +149,7 @@ class WebNotificationService {
   }) {
     final notif = PendingNotification(
       sectionName: body.split(' — ').first.split(' @ ').first.trim(),
-      courseName: title
+      workspaceName: title
           .replaceAll('⏰ ', '')
           .replaceAll(RegExp(r' starts in \d+min'), '')
           .trim(),

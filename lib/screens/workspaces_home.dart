@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
-import '../app/workspace_models.dart';
+import '../models/workspace_model.dart';
 import '../config/app_colors.dart';
 import 'widgets/notification_bell.dart';
 
@@ -159,7 +159,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 }
                 return _WorkspaceCard(
                   workspace: ws,
-                  onTap: () => _openWorkspace(context, ws.id),
+                  onTap: () => _openWorkspace(context, ws.id.toString()),
                   onDelete: () => _confirmDelete(context, ws),
                 );
               },
@@ -185,7 +185,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   // ── Instant open — no await ───────────────────────────────────────────────
   void _openWorkspace(BuildContext context, String id) {
-    widget.vm.openWorkspace(id);
+    widget.vm.openWorkspace(int.parse(id));
     Navigator.of(context).pushNamed('/workspace');
   }
 
@@ -634,14 +634,14 @@ class _PollingWorkspaceCardState extends State<_PollingWorkspaceCard> {
 
   Future<void> _poll() async {
     try {
-      final fresh = await widget.vm.api.getWorkspace(widget.workspace.id);
+      final fresh = await widget.vm.api.getWorkspace(widget.workspace.id.toString());
       if (!mounted) return;
       if (!fresh.isProcessing) {
         _timer?.cancel();
         widget.vm.updateWorkspaceSummary(fresh.toSummary());
-        // Pass the resolved title so the snackbar can show the course name
+        // Pass the resolved title so the snackbar can show the workspace name
         widget.onReady(
-          fresh.title.isNotEmpty ? fresh.title : 'Course',
+          fresh.title.isNotEmpty ? fresh.title : 'workspace',
         );
       }
     } catch (_) {}
@@ -862,7 +862,7 @@ class _WorkspaceCard extends StatelessWidget {
                     Text(
                       workspace.title.isNotEmpty
                           ? workspace.title
-                          : 'Untitled Course',
+                          : 'Untitled workspace',
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14.5,

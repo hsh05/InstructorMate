@@ -8,10 +8,9 @@ import 'package:http_parser/http_parser.dart';
 
 // --- Teammate's Models & Config ---
 import '../config/app_config.dart';
-import '../app/workspace_models.dart';
+import '../models/workspace_model.dart';
 
 // --- Your Models ---
-import '../models/course_model.dart';
 import '../models/question_model.dart';
 import '../models/config_model.dart';
 
@@ -38,7 +37,7 @@ class ImportWorkspaceResult {
 
 class ApiService {
   // Your static URL approach
-  static final String _baseUrl = "https://instructormate.onrender.com";
+  static const String _baseUrl = "https://instructormate.onrender.com";
 
   // Helper to cleanly build URLs
   Uri _u(String path) {
@@ -50,18 +49,20 @@ class ApiService {
   // ── YOUR ORIGINAL METHODS ────────────────────────────────────────────────
   // =========================================================================
 
-  Future<List<Course>> fetchCourses() async {
-    var response = await http.get(_u('/courses/')).timeout(AppConfig.shortTimeout);
+  // 👉 FIXED: Camel case for the method name
+  Future<List<Workspace>> fetchWorkspaces() async {
+    var response = await http.get(_u('/workspaces/')).timeout(AppConfig.shortTimeout);
     if (response.statusCode == 200) {
       List<dynamic> jsonList = jsonDecode(response.body);
-      return jsonList.map((j) => Course.fromJson(j)).toList();
+      // 👉 FIXED: Capitalized Workspace class
+      return jsonList.map((j) => Workspace.fromJson(j)).toList();
     } else {
-      throw Exception("Failed to load courses");
+      throw Exception("Failed to load workspaces");
     }
   }
 
-  Future<void> uploadMaterial(int courseId, File file, String type) async {
-    var req = http.MultipartRequest('POST', _u('/courses/$courseId/materials/'));
+  Future<void> uploadMaterial(int workspaceId, File file, String type) async {
+    var req = http.MultipartRequest('POST', _u('/workspaces/$workspaceId/materials/'));
     req.fields['material_type'] = type;
     req.files.add(await http.MultipartFile.fromPath('file', file.path));
     
@@ -98,7 +99,7 @@ class ApiService {
     }
   }
 
-  Future<List<QuizQuestion>> generateQuiz(int courseId, List<int> selectedMaterialIds, List<QuestionTypeConfig> configs) async {
+  Future<List<QuizQuestion>> generateQuiz(int workspaceId, List<int> selectedMaterialIds, List<QuestionTypeConfig> configs) async {
     // 1. Package the configurations into JSON
     List<Map<String, dynamic>> configList = configs.map((c) => {
       'type': c.name,
@@ -116,7 +117,7 @@ class ApiService {
     // 3. Send the POST request to the cloud route
     // Notice we use your _u() helper to prevent the double-slash bug!
     final response = await http.post(
-      _u('/courses/$courseId/generate-quiz/'),
+      _u('/workspaces/$workspaceId/generate-quiz/'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(requestBody),
     ).timeout(AppConfig.uploadTimeout); // Using a longer timeout since AI generation takes time
@@ -309,7 +310,7 @@ class ApiService {
 
       req.files.add(filePart);
 
-      final streamed = await req.send().timeout(AppConfig.uploadTimeout); // Added your standard timeout here!
+      final streamed = await req.send().timeout(AppConfig.uploadTimeout); 
       final response = await http.Response.fromStream(streamed);
 
       if (response.statusCode == 200) {

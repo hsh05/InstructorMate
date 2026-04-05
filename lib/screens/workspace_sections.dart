@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../app/state/workspaces_vm.dart';
-import '../app/workspace_models.dart';
+import '../models/workspace_model.dart';
 import '../config/app_colors.dart';
 
 // ─── TAB 2 — Sections ─────────────────────────────────────────────────────────
@@ -962,7 +962,7 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
     setState(() => _loadingRoster = true);
     try {
       final list = await widget.vm.api
-          .listSectionStudents(widget.ws.id, widget.section.id);
+          .listSectionStudents(widget.ws.id.toString(), widget.section.id);
       if (mounted)
         setState(() {
           _students = list;
@@ -1019,14 +1019,14 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
     setState(() => _importing = true);
     try {
       final result = await widget.vm.api.importStudents(
-        workspaceId: widget.ws.id,
+        workspaceId: widget.ws.id.toString(),
         sectionId: widget.section.id,
         bytes: bytes,
         filename: f.name,
       );
       widget.vm.recordImport(widget.section.id, result.imported);
       await _loadRoster();
-      widget.vm.api.getWorkspace(widget.ws.id).then((fresh) {
+      widget.vm.api.getWorkspace(widget.ws.id.toString()).then((fresh) {
         widget.vm.current = fresh;
       }).catchError((_) {});
       if (mounted) {

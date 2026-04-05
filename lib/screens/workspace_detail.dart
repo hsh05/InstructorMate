@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
-import '../app/workspace_models.dart';
+import '../models/workspace_model.dart';
 import '../config/app_colors.dart';
 import 'widgets/notification_bell.dart';
 import 'workspace_sections.dart';
@@ -10,13 +10,13 @@ import 'workspace_ask.dart';
 import 'student_list_screen.dart';
 
 const _fieldLabels = {
-  'course_name': 'Course Name',
-  'course_code': 'Course Code',
+  'workspace_name': 'workspace Name',
+  'workspace_code': 'workspace Code',
   'semester': 'Semester',
 };
 const _fieldIcons = {
-  'course_name': Icons.book_rounded,
-  'course_code': Icons.tag_rounded,
+  'workspace_name': Icons.book_rounded,
+  'workspace_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
 };
 
@@ -39,12 +39,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askScroll = ScrollController();
   bool _asking = false;
 
-  static const _editableKeys = ['course_name', 'course_code', 'semester'];
+  static const _editableKeys = ['workspace_name', 'workspace_code', 'semester'];
 
   /// Chat history lives in the VM keyed by workspace id so it survives
   /// navigation. Falls back to an empty list (auto-created on first write).
   List<ChatMsg> get _chat =>
-      widget.vm.chatHistory[widget.vm.current?.id ?? ''] ??= [];
+      widget.vm.chatHistory[widget.vm.current?.id ?? 0] ??= [];
 
   @override
   void initState() {
@@ -66,8 +66,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     if (ws == null) return;
     for (final key in _editableKeys) {
       String value = ws.fields[key] ?? '';
-      if (key == 'course_name' && value.isEmpty) {
-        value = ws.fields['course_title'] ?? '';
+      if (key == 'workspace_name' && value.isEmpty) {
+        value = ws.fields['workspace_title'] ?? '';
       }
       final existing = _fieldCtrl[key];
       if (existing == null) {
@@ -251,7 +251,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   Widget _buildHeader(Workspace ws, bool ready) {
     final totalStudents = widget.vm.totalStudentsCount;
     final sectionCount = ws.sections.length;
-    final code = ws.fields['course_code'] ?? '';
+    final code = ws.fields['workspace_code'] ?? '';
     final semester = ws.fields['semester'] ?? '';
 
     return SliverAppBar(
@@ -522,7 +522,7 @@ class _InfoTabState extends State<_InfoTab>
       padding: const EdgeInsets.all(16),
       children: [
         const _SectionHeader(
-            title: 'Course Details', icon: Icons.info_outline_rounded),
+            title: 'workspace Details', icon: Icons.info_outline_rounded),
         const SizedBox(height: 4),
         const Text('Tap any field to edit. All fields are required.',
             style: TextStyle(fontSize: 12, color: AppColors.inkMid)),
@@ -810,9 +810,9 @@ class _InfoFieldRow extends StatelessWidget {
 
 String _hintFor(String key) {
   switch (key) {
-    case 'course_name':
+    case 'workspace_name':
       return 'e.g. Introduction to Computer Science';
-    case 'course_code':
+    case 'workspace_code':
       return 'e.g. CS101';
     case 'semester':
       return 'e.g. Fall 2025';

@@ -1,9 +1,13 @@
-// lib/app/workspace_models.dart
+// lib/models/workspace_model.dart
 
 import '../utils/schedule_utils.dart';
 
+// =============================================================================
+// ── WORKSPACE SUMMARY (Used for list views) ──────────────────────────────────
+// =============================================================================
+
 class WorkspaceSummary {
-  final String id;
+  final int id; // 👉 Bridged to NeonDB: Now an int
   final String createdAt;
   final String? updatedAtRaw;
   final String originalFilename;
@@ -25,13 +29,8 @@ class WorkspaceSummary {
     this.studentsCount = 0,
   });
 
-  /// True when the workspace is still being processed by the backend LLM
-  /// and no name has been extracted yet — show a loading card, not "Untitled".
   bool get isProcessing => status == 'draft' && title.isEmpty;
 
-  /// Returns the real backend updated_at timestamp, or null if none.
-  /// Does NOT fall back to created_at — that caused opening a workspace
-  /// to appear as a content update.
   DateTime? get updatedAt {
     if (updatedAtRaw?.isNotEmpty != true) return null;
     try {
@@ -45,53 +44,40 @@ class WorkspaceSummary {
     final fields = (j['fields'] as Map?) ?? {};
     final status = (j['status'] ?? 'draft').toString();
 
-    // Resolve title from fields map
-    String title = '';
-    for (final key in ['course_name', 'course_title']) {
-      final v = (fields[key] ?? '').toString().trim();
-      if (v.isNotEmpty) {
-        title = v;
-        break;
+    // 👉 Bridged Title Logic: Checks both old fields and new DB columns
+    String title = (j['course_title'] ?? '').toString();
+    if (title.isEmpty) {
+      for (final key in ['workspace_name', 'workspace_title']) {
+        final v = (fields[key] ?? '').toString().trim();
+        if (v.isNotEmpty) {
+          title = v;
+          break;
+        }
       }
     }
 
-    // Only fall back to 'Untitled Course' when status is ready (extraction done).
-    // While draft with no name, keep title empty so isProcessing returns true
-    // and the card shows a loading shimmer instead of "Untitled Course".
     if (title.isEmpty && status == 'ready') {
-      title = 'Untitled Course';
+      title = 'Untitled workspace';
     }
 
-    // sections_count: backend may expose this at the summary level
     final sectionsRaw = j['sections'] as List?;
     final sectionsCount = sectionsRaw != null
         ? sectionsRaw.length
-        : (int.tryParse(
-                (j['sections_count'] ?? j['section_count'] ?? 0).toString()) ??
-            0);
+        : (int.tryParse((j['sections_count'] ?? j['section_count'] ?? 0).toString()) ?? 0);
 
-    // students_count: total across all sections
-    int studentsCount = int.tryParse(
-            (j['students_count'] ?? j['student_count'] ?? 0).toString()) ??
-        0;
-    // If sections list is embedded, sum from there as well
+    int studentsCount = int.tryParse((j['students_count'] ?? j['student_count'] ?? 0).toString()) ?? 0;
     if (sectionsRaw != null && studentsCount == 0) {
       for (final s in sectionsRaw) {
         final sc = s as Map?;
         if (sc == null) continue;
-        studentsCount +=
-            int.tryParse((sc['students_count'] ?? 0).toString()) ?? 0;
+        studentsCount += int.tryParse((sc['students_count'] ?? 0).toString()) ?? 0;
       }
     }
 
-    // Only use updated_at if it's genuinely at least 5 seconds after created_at.
-    // String comparison misses millisecond differences — using DateTime diff
-    // prevents brand-new workspaces from showing a false "just now" timestamp.
     final createdAt = (j['created_at'] ?? '').toString();
     final rawUpdated = j['updated_at']?.toString();
     final parsedCreated = DateTime.tryParse(createdAt);
-    final parsedUpdated =
-        rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
+    final parsedUpdated = rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
     final updatedAtRaw = (parsedUpdated != null &&
             parsedCreated != null &&
             parsedUpdated.difference(parsedCreated).inSeconds >= 5)
@@ -99,7 +85,8 @@ class WorkspaceSummary {
         : null;
 
     return WorkspaceSummary(
-      id: (j['id'] ?? '').toString(),
+      // 👉 Safe int parsing regardless of endpoint
+      id: int.tryParse((j['id'] ?? j['workspace_id'] ?? '0').toString()) ?? 0,
       createdAt: createdAt,
       updatedAtRaw: updatedAtRaw,
       originalFilename: (j['original_filename'] ?? '').toString(),
@@ -112,8 +99,12 @@ class WorkspaceSummary {
   }
 }
 
+// =============================================================================
+// ── FULL WORKSPACE (Used for details & AI Generation) ────────────────────────
+// =============================================================================
+
 class Workspace {
-  final String id;
+  final int id; // 👉 Bridged to NeonDB: Now an int
   final String createdAt;
   final String? updatedAtRaw;
   final String originalFilename;
@@ -122,6 +113,7 @@ class Workspace {
   final Map<String, String> fields;
   final List<Section> sections;
   final int studentsCount;
+  final List<WorkspaceMaterial> materials; // 👉 Merged from your models!
 
   const Workspace({
     required this.id,
@@ -133,20 +125,24 @@ class Workspace {
     required this.fields,
     required this.sections,
     required this.studentsCount,
+    required this.materials,
   });
 
   factory Workspace.fromJson(Map<String, dynamic> j) {
     final fieldsRaw = (j['fields'] as Map?) ?? {};
-    final sectionsRaw = (j['sections'] as List?) ?? [];
+    
+    // Safety mapping for our new optimized DB schema
+    if (j.containsKey('course_code')) fieldsRaw['course_code'] = j['course_code'];
+    if (j.containsKey('course_title')) fieldsRaw['course_title'] = j['course_title'];
+    if (j.containsKey('semester')) fieldsRaw['semester'] = j['semester'];
 
-    // Only use updated_at if it's genuinely at least 5 seconds after created_at.
-    // String comparison misses millisecond differences — using DateTime diff
-    // prevents brand-new workspaces from showing a false "just now" timestamp.
+    final sectionsRaw = (j['sections'] as List?) ?? [];
+    final matsRaw = (j['materials'] as List?) ?? [];
+
     final createdAt = (j['created_at'] ?? '').toString();
     final rawUpdated = j['updated_at']?.toString();
     final parsedCreated = DateTime.tryParse(createdAt);
-    final parsedUpdated =
-        rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
+    final parsedUpdated = rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
     final updatedAtRaw = (parsedUpdated != null &&
             parsedCreated != null &&
             parsedUpdated.difference(parsedCreated).inSeconds >= 5)
@@ -154,25 +150,21 @@ class Workspace {
         : null;
 
     return Workspace(
-      id: (j['id'] ?? '').toString(),
+      // 👉 Safe int parsing
+      id: int.tryParse((j['id'] ?? j['workspace_id'] ?? '0').toString()) ?? 0,
       createdAt: createdAt,
       updatedAtRaw: updatedAtRaw,
       originalFilename: (j['original_filename'] ?? '').toString(),
       pdfHash: (j['file_hash'] ?? '').toString(),
       status: (j['status'] ?? 'draft').toString(),
-      fields: fieldsRaw.map(
-        (k, v) => MapEntry(k.toString(), (v ?? '').toString()),
-      ),
-      sections: sectionsRaw
-          .map((e) => Section.fromJson(e as Map<String, dynamic>))
-          .toList(),
+      fields: fieldsRaw.map((k, v) => MapEntry(k.toString(), (v ?? '').toString())),
+      sections: sectionsRaw.map((e) => Section.fromJson(e as Map<String, dynamic>)).toList(),
       studentsCount: int.tryParse((j['students_count'] ?? 0).toString()) ?? 0,
+      materials: matsRaw.map((e) => WorkspaceMaterial.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
   bool get isReady => status == 'ready';
-
-  /// True when backend is still extracting — no name yet and still draft.
   bool get isProcessing => status == 'draft' && title.isEmpty;
 
   DateTime? get updatedAt {
@@ -185,21 +177,17 @@ class Workspace {
   }
 
   String get title {
-    for (final key in [
-      'course_name',
-      'course_title',
-      'course',
-      'Course Name',
-      'Course Title',
-    ]) {
+    // Check new DB schema first
+    if (fields.containsKey('course_title') && fields['course_title']!.isNotEmpty) return fields['course_title']!;
+
+    // Fallback to legacy schema
+    for (final key in ['workspace_name', 'workspace_title', 'workspace', 'workspace Name', 'workspace Title']) {
       final v = (fields[key] ?? '').trim();
       if (v.isNotEmpty) return v;
     }
-    // Only show "Untitled Course" when ready — during draft/processing show nothing
-    return isReady ? 'Untitled Course' : '';
+    return isReady ? 'Untitled workspace' : '';
   }
 
-  /// Converts this full Workspace into a WorkspaceSummary with real counts.
   WorkspaceSummary toSummary() {
     int totalStudents = studentsCount;
     if (totalStudents == 0) {
@@ -219,7 +207,50 @@ class Workspace {
       studentsCount: totalStudents,
     );
   }
+
+  // 👉 Equality operators required by DropdownButton in GenerateScreen
+  @override
+  bool operator ==(Object other) => identical(this, other) || other is Workspace && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
+
+// =============================================================================
+// ── MATERIALS (Used by AI Generation) ────────────────────────────────────────
+// =============================================================================
+
+class WorkspaceMaterial {
+  final int id;
+  final int workspaceId;
+  final String fileName;
+  final String materialType;
+  final String filePath;
+
+  WorkspaceMaterial({
+    required this.id, 
+    required this.workspaceId, 
+    required this.fileName, 
+    required this.materialType, 
+    required this.filePath
+  });
+
+  factory WorkspaceMaterial.fromJson(Map<String, dynamic> json) {
+    return WorkspaceMaterial(
+      // Safely parse ints just in case the backend sends them as strings
+      id: int.tryParse(json['id'].toString()) ?? 0,
+      workspaceId: int.tryParse((json['workspace_id'] ?? '0').toString()) ?? 0,
+      fileName: json['file_name'] ?? '',
+      materialType: json['material_type'] ?? '',
+      filePath: json['file_path'] ?? '',
+    );
+  }
+}
+
+
+// =============================================================================
+// ── SECTIONS & STUDENTS ──────────────────────────────────────────────────────
+// =============================================================================
 
 class Section {
   final String id;
@@ -278,15 +309,9 @@ class SectionSchedule {
     return SectionSchedule(
       days: daysRaw.map((e) => e.toString()).toList(),
       startTime: rawStart,
-      endTime: (rawEnd == rawTz ||
-              rawEnd.toUpperCase() == 'UTC' &&
-                  rawStart.isNotEmpty &&
-                  rawEnd == rawTz)
-          ? ''
-          : rawEnd,
+      endTime: (rawEnd == rawTz || rawEnd.toUpperCase() == 'UTC' && rawStart.isNotEmpty && rawEnd == rawTz) ? '' : rawEnd,
       timezone: rawTz,
-      reminderMinutes:
-          int.tryParse((j['reminder_minutes'] ?? 10).toString()) ?? 10,
+      reminderMinutes: int.tryParse((j['reminder_minutes'] ?? 10).toString()) ?? 10,
     );
   }
 
@@ -298,11 +323,9 @@ class SectionSchedule {
     return '$s – $e';
   }
 
-  String get formattedStartTime =>
-      startTime.isNotEmpty ? ScheduleUtils.formatTime(startTime) : '';
+  String get formattedStartTime => startTime.isNotEmpty ? ScheduleUtils.formatTime(startTime) : '';
 }
 
-/// Draft used when creating or editing a section.
 class SectionDraft {
   String name = '';
   String instructorName = '';
@@ -327,7 +350,6 @@ class SectionDraft {
       };
 }
 
-/// FIX: Moved from api_client.dart — one canonical Student model.
 class Student {
   final String studentId;
   final String name;

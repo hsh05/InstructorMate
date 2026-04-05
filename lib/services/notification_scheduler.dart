@@ -3,7 +3,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../app/workspace_models.dart';
+import '../models/workspace_model.dart';
 import '../utils/schedule_utils.dart';
 import 'notification_service.dart';
 
@@ -23,8 +23,8 @@ class NotificationScheduler {
       for (final section in ws.sections) {
         await _scheduleSection(
           section: section,
-          courseName: ws.title,
-          workspaceId: ws.id,
+          workspaceName: ws.title,
+          workspaceId: ws.id.toString(),
         );
       }
     }
@@ -46,7 +46,7 @@ class NotificationScheduler {
 
   static Future<void> _scheduleSection({
     required Section section,
-    required String courseName,
+    required String workspaceName,
     required String workspaceId,
   }) async {
     final sch = section.schedule;
@@ -66,8 +66,8 @@ class NotificationScheduler {
     // The emoji + countdown is the most urgent info — must always be visible.
     final title = '⏰ Class starting in ${reminderMinutes}min';
 
-    // Body line 1: full course name (visible when notification is expanded)
-    final courseDisplay = courseName.isNotEmpty ? courseName : 'Your class';
+    // Body line 1: full workspace name (visible when notification is expanded)
+    final workspaceDisplay = workspaceName.isNotEmpty ? workspaceName : 'Your class';
 
     // Body line 2: section · location · day time
     // Only include parts that actually have data
@@ -90,7 +90,7 @@ class NotificationScheduler {
       final detailsLine = parts.join('  ·  ');
 
       // Full body shown when notification is expanded via BigTextStyle
-      final body = '$courseDisplay\n$detailsLine';
+      final body = '$workspaceDisplay\n$detailsLine';
 
       final firstOccurrence = _nextOccurrence(
         weekday: weekday,
