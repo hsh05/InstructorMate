@@ -1,13 +1,16 @@
 # backend/api/student_routes.py
 
+import io
 import logging
 import uuid
+import hashlib
 from typing import Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-import hashlib
+from sqlalchemy import text
 
 from db.database import get_db
 from repositories.pg_workspace_repository import PgWorkspaceRepository
@@ -35,13 +38,11 @@ _ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 def get_workspace_repo(db: Session = Depends(get_db)) -> PgWorkspaceRepository:
     return PgWorkspaceRepository(db)
 
-
 def get_student_repo(
     db: Session = Depends(get_db),
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
 ) -> PgStudentRepository:
     return PgStudentRepository(db, workspace_repo)
-
 
 def get_student_service(
     student_repo: PgStudentRepository = Depends(get_student_repo),
@@ -55,10 +56,96 @@ def get_section_repo(
     return PgSectionRepository(db, workspace_repo)
 
 
-# ── Routes (unchanged) ────────────────────────────────────────────────────────
+# ==============================================================================
+# ── GLOBAL STUDENT ROUTES (Added from main.py merge) ──────────────────────────
+# ==============================================================================
+
+@router.post("/students/upload")
+async def upload_global_students(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """
+    Upload a global master list of students to the university database.
+    Replaces the old dbconn.py logic.
+    """
+    try:
+        contents = await file.read()
+
+        if file.filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif file.filename.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(contents))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type")
+
+        df.columns = [c.strip().lower() for c in df.columns]
+        required_columns = ["student_id", "student_name", "campus_code"]
+
+        for col in required_columns:
+            if col not in df.columns:
+                raise HTTPException(status_code=400, detail=f"Missing required column: {col}")
+
+        inserted = 0
+
+        for _, row in df.iterrows():
+            student_id = str(row["student_id"]).strip()
+            student_name = str(row["student_name"]).strip()
+            # Note: We aren't currently storing campus_code in the ERD, but we can safely ignore it or add it later!
+
+            if not student_id or not student_name:
+                continue
+
+            db.execute(
+                text("""
+                INSERT INTO students (student_id, name)
+                VALUES (:id, :name)
+                ON CONFLICT (student_id) DO NOTHING
+                """),
+                {"id": student_id, "name": student_name}
+            )
+            inserted += 1
+            
+        db.commit()
+
+        return {
+            "ok": True,
+            "inserted": inserted,
+            "columns_detected": {
+                "student_id": "student_id",
+                "student_name": "student_name",
+                "campus_code": "campus_code",
+            },
+        }
+
+    except Exception as e:
+        db.rollback() 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/students/")
+def fetch_all_students(db: Session = Depends(get_db)):
+    """
+    Returns a list of all students in the global database.
+    """
+    try:
+        result = db.execute(
+            text("""
+            SELECT student_id, name, encoding_json
+            FROM students
+            ORDER BY student_id
+            """)
+        )
+        return [
+            {"student_id": row.student_id, "name": row.name, "encoding_json": row.encoding_json}
+            for row in result
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==============================================================================
+# ── SECTION-SPECIFIC ROUTES (Unchanged teammates logic) ───────────────────────
+# ==============================================================================
 
 @router.post("/workspaces/{workspace_id}/students/import")
-async def import_students( #This function may need to wait for something. When it waits, don’t freeze the server. Because reading files is I/O (Input/Output).
+async def import_students( 
     workspace_id: str,
     file: UploadFile = File(...),
     section_id: Optional[str] = Form(None),
@@ -73,8 +160,7 @@ async def import_students( #This function may need to wait for something. When i
             detail=f"Unsupported file type '{ext}'. Allowed: {sorted(_ALLOWED_EXTENSIONS)}",
         )
 
-    content = await file.read() #Start reading the file. While waiting for it to finish, let the server do other work.
-      # Compute SHA-256 hash of uploaded file
+    content = await file.read() 
     file_hash = hashlib.sha256(content).hexdigest()
     try:
         students = service.import_students(
@@ -86,7 +172,6 @@ async def import_students( #This function may need to wait for something. When i
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     
-      # Store hash so Flutter can detect same-file re-uploads
     if section_id:
         section_repo.update_import_hash(section_id, file_hash)
 
@@ -98,9 +183,8 @@ async def import_students( #This function may need to wait for something. When i
         "workspaceId": workspace_id,
         "section_id":  section_id or "",
         "imported":    len(students),
-        "file_hash":   file_hash,   # ← return it so Flutter can cache it
+        "file_hash":   file_hash, 
     }
-
 
 @router.get("/workspaces/{workspace_id}/sections/{section_id}/students")
 def list_section_students(
@@ -111,20 +195,16 @@ def list_section_students(
     students = repo.list_by_section(workspace_id, section_id)
     return {"students": students, "count": len(students)}
 
-
 @router.delete("/workspaces/{workspace_id}/sections/{section_id}/students")
 def clear_section_students(
     workspace_id: str,
     section_id: str,
     repo: PgStudentRepository = Depends(get_student_repo),
 ):
-    """Remove all students from a section (clears StudentSection links
-    and orphaned Student rows with no other section links)."""
     count = repo.clear_section(workspace_id, section_id)
     logger.info("Cleared %d students from section=%s workspace=%s",
                 count, section_id, workspace_id)
     return {"deleted": count, "section_id": section_id}
-
 
 @router.delete("/workspaces/{workspace_id}/sections/{section_id}/students/{student_id}")
 def delete_student(
@@ -145,7 +225,6 @@ class AddStudentRequest(BaseModel):
     email:      str = ""
     student_no: str = ""
 
-
 @router.post("/workspaces/{workspace_id}/sections/{section_id}/students")
 def add_student(
     workspace_id: str,
@@ -153,11 +232,6 @@ def add_student(
     req:          AddStudentRequest,
     repo:         PgStudentRepository = Depends(get_student_repo),
 ):
-    """
-    Add a single student to a section manually.
-    Uses the same upsert logic as bulk import — safe to call multiple times
-    with the same email/student_no without creating duplicates.
-    """
     from domain.student import Student as DomainStudent
     if not req.name.strip() and not req.email.strip() and not req.student_no.strip():
         raise HTTPException(
@@ -165,15 +239,17 @@ def add_student(
             detail="At least one of name, email, or student number is required.",
         )
 
+    # TODO FOR TEAMMATE: Update DomainStudent to match the new ERD! 
+    # `student_id` should equal `req.student_no`, and `workspace_id` should be removed.
     student = DomainStudent(
-        student_id   = str(uuid.uuid4()),
-        workspace_id = workspace_id,
+        student_id   = req.student_no.strip() or str(uuid.uuid4()), # Patched to use their ID if provided
+        workspace_id = workspace_id, 
         name         = req.name.strip(),
         email        = req.email.strip(),
         student_no   = req.student_no.strip(),
     )
-    # section_id passed separately — not part of Student identity
     repo.save(student, section_id=section_id)
+    
     logger.info(
         "Added student name=%s to workspace=%s section=%s",
         req.name, workspace_id, section_id,
