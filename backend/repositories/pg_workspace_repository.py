@@ -82,14 +82,18 @@ class PgWorkspaceRepository:
             row.course_title = workspace.fields.get('course_title', "")
             logger.info("Updated workspace id=%s", ws_id)
         else:
-            # 3. For new workspaces, we provide default values for NOT NULL columns
+            # Get values, but if they are empty strings, force them to "TBD"
+            c_code  = workspace.fields.get('course_code') or "TBD"
+            semester = workspace.fields.get('semester') or "TBD"
+            c_title = workspace.fields.get('course_title') or "Untitled Workspace"
+
             row = WorkspaceModel(
                 instructor_id = instructor.instructor_id,
-                course_code   = workspace.fields.get('course_code', ""),
-                semester      = workspace.fields.get('semester', ""),
-                course_title  = workspace.fields.get('course_title', "Untitled"),
+                course_code   = c_code,
+                semester      = semester, 
+                course_title  = c_title,
                 chunk_index   = 0,
-                content       = "Processing"
+                content       = "Processing..."
             )
             self.db.add(row)
             self.db.flush() 
