@@ -89,7 +89,7 @@ class PgWorkspaceRepository:
                 semester      = workspace.fields.get('semester', ""),
                 course_title  = workspace.fields.get('course_title', "Untitled"),
                 chunk_index   = 0,
-                content       = ""
+                content       = "Processing"
             )
             self.db.add(row)
             self.db.flush() 
