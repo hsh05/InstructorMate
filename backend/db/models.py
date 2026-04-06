@@ -45,17 +45,17 @@ class RefreshToken(Base):
 
 
 # ==============================================================================
-# ── WORKSPACES & COURSES ──────────────────────────────────────────────────────
+# ── WORKSPACES ──────────────────────────────────────────────────────
 # ==============================================================================
 
 class Workspace(Base):
-    __tablename__ = "workspaces"
+    __tablename__ = "workspace"
 
     workspace_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     instructor_id = Column(Integer, ForeignKey("instructors.instructor_id", ondelete="CASCADE"), nullable=False)
-    course_code = Column(String(7), nullable=False)
+    workspace_code = Column(String(7), nullable=False)
     semester = Column(String(10), nullable=False)
-    course_title = Column(String(100), nullable=False)
+    workspace_title = Column(String(100), nullable=False)
     
     chunk_index = Column(Integer, nullable=True)
     embedding = Column(JSONB, nullable=True)
