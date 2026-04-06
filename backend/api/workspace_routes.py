@@ -21,34 +21,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _ALLOWED_SYLLABUS_EXTENSIONS = {".pdf", ".docx"}
-
-
-# ── Pydantic models ───────────────────────────────────────────────────────────
-
-# Maximum number of prior conversation turns sent to the LLM.
 _MAX_HISTORY_TURNS = 6
 
 
 class ChatTurn(BaseModel):
-    role: str      # "user" or "assistant"
+    role: str      
     content: str
-
 
 class AskRequest(BaseModel):
     question: str
-    # Last N turns of conversation history, oldest first.
     history: list[ChatTurn] = []
-
 
 class UpdateFieldsRequest(BaseModel):
     fields: dict
 
 
-# ── Dependency factories ──────────────────────────────────────────────────────
-
 def get_workspace_repo(db: Session = Depends(get_db)) -> PgWorkspaceRepository:
     return PgWorkspaceRepository(db)
-
 
 def get_section_repo(
     db: Session = Depends(get_db),
@@ -56,13 +45,11 @@ def get_section_repo(
 ) -> PgSectionRepository:
     return PgSectionRepository(db, workspace_repo)
 
-
 def get_student_repo(
     db: Session = Depends(get_db),
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
 ) -> PgStudentRepository:
     return PgStudentRepository(db, workspace_repo)
-
 
 def get_workspace_service(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
@@ -73,8 +60,6 @@ def get_workspace_service(
     )
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
-
 def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     d = ws.to_dict()
     sections = section_repo.list_by_workspace(workspace_id)
@@ -84,9 +69,7 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     d["students_count"] = sum(s["students_count"] for s in sections)
     return d
 
-
 def _mirror_workspace_name_fields(fields: dict) -> dict:
-    """Keep workspace_name and workspace_title in sync."""
     fields = dict(fields)
     if fields.get("workspace_name"):
         fields["workspace_title"] = fields["workspace_name"]
@@ -94,8 +77,6 @@ def _mirror_workspace_name_fields(fields: dict) -> dict:
         fields["workspace_name"] = fields["workspace_title"]
     return fields
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/workspaces")
 def list_workspaces(
@@ -132,55 +113,22 @@ async def import_workspace(
     result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
     
-    # 👉 1. FIREBASE UPLOAD: Push the file to the Cloud!
-    firebase_url = ws.workspace_id # Fallback just in case Firebase fails
+    # FIREBASE UPLOAD ONLY (Bridge removed)
     if not result["already_uploaded"]:
         try:
             bucket = storage.bucket()
-            # Create a dedicated folder named after the workspace ID
             blob_path = f"workspaces/{ws.workspace_id}/{filename}"
             blob = bucket.blob(blob_path)
             
-            # Upload the raw bytes to Google's servers
             blob.upload_from_string(content, content_type=file.content_type)
             
-            # Generate the permanent download token
             download_token = str(uuid.uuid4())
             blob.metadata = {"firebaseStorageDownloadTokens": download_token}
             blob.patch()
             
-            # Construct the official Firebase URL
-            encoded_path = urllib.parse.quote(blob_path, safe='')
-            firebase_url = f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{encoded_path}?alt=media&token={download_token}"
-            
             logger.info(f"☁️ Firebase Success: Uploaded to {blob_path}")
         except Exception as e:
             logger.error(f"Firebase upload failed: {e}")
-
-    # 👉 2. THE COMPLETE BRIDGE: Link the existing workspace to a Material
-    if not result["already_uploaded"]:
-        try:
-            from db.models import Workspace, Material 
-            
-            # We don't create a 'new_workspace' here anymore. 
-            # We use the 'ws.workspace_id' which was just created by workspace_service.
-            # This ensures the AI updates and the Flutter list are the SAME ROW.
-
-            # Create the Material with the REAL FIREBASE URL
-            new_material = Material(
-                workspace_id=int(ws.workspace_id), # Ensure it's an int for Neon
-                file_name=filename,
-                file_path=firebase_url, 
-                material_type="Syllabus"
-            )
-            db.add(new_material)
-            db.commit()
-            
-            logger.info(f"🔗 Bridge Success: Linked Workspace {ws.workspace_id} to Firebase Material")
-            
-        except Exception as e:
-            logger.error(f"Failed to create equivalent Material: {e}")
-            db.rollback() 
 
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
                 ws.workspace_id, result["already_uploaded"], ext)
@@ -188,6 +136,7 @@ async def import_workspace(
         "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo),
         "already_uploaded": result["already_uploaded"],
     }
+
 
 @router.get("/workspaces/{workspace_id}")
 def get_workspace(
@@ -202,6 +151,7 @@ def get_workspace(
     d = _ws_dict(workspace_id, ws, section_repo, student_repo)
     return {"workspace": d}
 
+
 @router.patch("/workspaces/{workspace_id}")
 def update_workspace(
     workspace_id: str,
@@ -214,28 +164,11 @@ def update_workspace(
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-        
-    # Grab the old name before we overwrite it
-    old_title = ws.fields.get("workspace_title") or ws.fields.get("workspace_name") or ""
 
     mirrored_fields = _mirror_workspace_name_fields(data.fields)
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     
-    # THE BRIDGE: Rename the workspace so Flutter can still match them!
-    new_title = mirrored_fields.get("workspace_title") or mirrored_fields.get("workspace_name")
-    if new_title and old_title and new_title != old_title:
-        try:
-            from db.models import workspace
-            # Find the old workspace by its previous name and update it
-            workspace_to_update = db.query(workspace).filter(workspace.title == old_title).first()
-            if workspace_to_update:
-                workspace_to_update.title = new_title
-                db.commit()
-                logger.info(f"🔗 Bridge Success: Renamed old workspace to '{new_title}'")
-        except Exception as e:
-            logger.error(f"Failed to rename equivalent workspace: {e}")
-
     logger.info("Updated workspace id=%s", workspace_id)
     return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
 
@@ -245,10 +178,8 @@ def delete_workspace(
     workspace_id: str,
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
-    db: Session = Depends(get_db), # 👉 1. ADD THE DATABASE CONNECTION
+    db: Session = Depends(get_db), 
 ):
-    # Cancel any in-flight background extraction first so the thread doesn't
-    # try to write to a row that no longer exists (prevents cascade errors).
     workspace_service.cancel_if_in_flight(workspace_id)
 
     try:
@@ -259,28 +190,6 @@ def delete_workspace(
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Workspace not found")
-
-    # 👉 2. THE DELETION BRIDGE: Clean up the old database!
-    try:
-        from db.models import workspace, Material
-        
-        # Find the material that holds this exact workspace_id 
-        linked_material = db.query(Material).filter(Material.file_path == workspace_id).first()
-        
-        if linked_material:
-            workspace_id_to_delete = linked_material.workspace_id
-            
-            # Step A: Delete the materials first (prevents Foreign Key crash)
-            db.query(Material).filter(Material.workspace_id == workspace_id_to_delete).delete()
-            
-            # Step B: Delete the empty workspace folder
-            db.query(workspace).filter(workspace.id == workspace_id_to_delete).delete()
-            
-            db.commit()
-            logger.info(f"🔗 Bridge Success: Deleted old workspace (ID: {workspace_id_to_delete}) and its Materials")
-    except Exception as e:
-        logger.error(f"Failed to delete equivalent workspace/Material: {e}")
-        db.rollback() # Safety net
 
     logger.info("Deleted workspace id=%s", workspace_id)
     return {"deleted": True}
@@ -299,13 +208,9 @@ async def ask_workspace_question(
     chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
 
     if chunks_from_db:
-        # Preferred path: chunks in DB — pure memory, no disk I/O.
         store = SyllabusListStore(chunks_from_db)
-        # Use semantic retrieval. EmbeddingRetriever automatically falls back
-        # to LightweightRetriever for legacy chunks that have no embedding yet.
         retriever = EmbeddingRetriever(top_k=8)
     else:
-        # Fallback: legacy workspace whose chunks only exist on disk.
         chunks_csv = workspace_repo.get_chunks_csv_path(workspace_id)
         if not chunks_csv.exists():
             raise HTTPException(
@@ -315,17 +220,13 @@ async def ask_workspace_question(
         store = SyllabusCsvStore(str(chunks_csv))
         retriever = LightweightRetriever(top_k=8)
 
-    # Trim history to last _MAX_HISTORY_TURNS pairs to keep token usage bounded.
     raw_history = req.history[-(_MAX_HISTORY_TURNS * 2):]
     history = [{"role": t.role, "content": t.content} for t in raw_history] or None
-    logger.info(">>> HISTORY LENGTH: %d", len(history) if history else 0)
-    logger.info(">>> RAW QUESTION: %s", req.question)
-
+    
     pipeline = AskPipeline(
         store=store,
         retriever=retriever,
         llm=SyllabusChatGPT(),
     )
     answer = pipeline.run(req.question, history=history)
-    logger.info(">>> ANSWER: %s", answer[:100])
     return {"answer": answer}

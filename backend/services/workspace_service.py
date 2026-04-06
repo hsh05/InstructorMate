@@ -17,9 +17,7 @@ from syllabus_converter import SyllabusConverterService
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="converter")
-# FIX #4: track in-flight workspace IDs so we never double-submit
 _in_flight: set[str] = set()
-# Workspace IDs that have been cancelled — background thread checks this and exits early
 _cancelled: set[str] = set()
 
 
@@ -59,7 +57,6 @@ class WorkspaceService:
 
         workspace_id = workspace.workspace_id
 
-        # FIX #4: guard against double-submission
         if workspace_id not in _in_flight:
             _in_flight.add(workspace_id)
             _executor.submit(self._run_converter_bg, workspace_id, content, filename)
@@ -67,8 +64,6 @@ class WorkspaceService:
         return {"already_uploaded": False, "workspace": workspace}
 
     def cancel_if_in_flight(self, workspace_id: str) -> None:
-        """Mark a workspace as cancelled so the background thread exits early.
-        Safe to call even if no extraction is running for this workspace."""
         if workspace_id in _in_flight:
             _cancelled.add(workspace_id)
             logger.info("Marked workspace=%s for cancellation", workspace_id)
@@ -82,8 +77,6 @@ class WorkspaceService:
         return ws
 
     def _run_converter_bg(self, workspace_id: str, content: bytes, filename: str = "syllabus.pdf") -> None:
-        """Runs in a background thread with its own DB session."""
-        # Check if this workspace was cancelled (e.g. deleted) before we even start
         if workspace_id in _cancelled:
             _cancelled.discard(workspace_id)
             logger.info("Background converter: workspace %s was cancelled before start", workspace_id)
@@ -100,7 +93,6 @@ class WorkspaceService:
             self._run_converter(workspace_id, content, filename, ws, repo)
         except Exception as e:
             logger.error("Background converter failed for workspace=%s: %s", workspace_id, e, exc_info=True)
-            # FIX #1: persist error status so Flutter stops polling
             try:
                 from db.database import SessionLocal as SL
                 db2 = SL()
@@ -129,7 +121,6 @@ class WorkspaceService:
         ws_dir = repo.workspace_dir(workspace_id)
         ws_dir.mkdir(parents=True, exist_ok=True)
 
-        # FIX #5: preserve original extension so the converter picks the right extractor
         ext = Path(filename).suffix.lower() or ".pdf"
         tmp_file = ws_dir / f"syllabus{ext}"
         tmp_file.write_bytes(content)
@@ -149,7 +140,6 @@ class WorkspaceService:
                 chunks_dst = repo.get_chunks_csv_path(workspace_id)
                 if chunks_src != chunks_dst:
                     shutil.copy2(str(chunks_src), str(chunks_dst))
-                # Generate and persist embeddings for all newly saved chunks
                 repo.generate_and_save_embeddings(workspace_id)
 
             # ── Auto-fill workspace fields ───────────────────────────────────
@@ -162,7 +152,6 @@ class WorkspaceService:
                         k: v for k, v in row.items()
                         if k in workspace.fields and not workspace.fields.get(k) and v
                     }
-                    # Mirror workspace_title <-> workspace_name
                     if updates.get("workspace_title") and not updates.get("workspace_name") \
                             and not workspace.fields.get("workspace_name"):
                         updates["workspace_name"] = updates["workspace_title"]
@@ -172,25 +161,9 @@ class WorkspaceService:
 
                     if updates:
                         workspace.update_fields(updates)
-                        repo.save(workspace)
+                        repo.save(workspace) # THIS SAVES TO THE DATABASE NOW
                         logger.info("Auto-filled fields %s for workspace=%s",
                                     list(updates.keys()), workspace_id)
-
-                        # 👉 THE BACKGROUND BRIDGE: Rename the workspace once the AI finds the real name!
-                        new_title = updates.get("workspace_title") or updates.get("workspace_name")
-                        if new_title and new_title != filename:
-                            try:
-                                # Pull in your old workspace model
-                                from db.models import workspace
-                                # The background thread uses repo.db to talk to NeonDB
-                                workspace_to_update = repo.db.query(workspace).filter(workspace.title == filename).first()
-                                
-                                if workspace_to_update:
-                                    workspace_to_update.title = new_title
-                                    repo.db.commit()
-                                    logger.info(f"🔗 Background Bridge: Auto-Renamed workspace from '{filename}' to '{new_title}'")
-                            except Exception as e:
-                                logger.error(f"Background Bridge failed to rename workspace: {e}")
 
             # Mark ready
             workspace.status = WorkspaceStatus.READY
