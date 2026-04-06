@@ -62,64 +62,69 @@ def get_section_repo(
 
 @router.post("/students/upload")
 async def upload_global_students(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """
-    Upload a global master list of students to the university database.
-    Replaces the old dbconn.py logic.
-    """
     try:
         contents = await file.read()
 
+        # 1. Read the file
         if file.filename.endswith(".csv"):
             df = pd.read_csv(io.BytesIO(contents))
-        elif file.filename.endswith(".xlsx"):
+        elif file.filename.endswith((".xlsx", ".xls")):
             df = pd.read_excel(io.BytesIO(contents))
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type")
 
-        df.columns = [c.strip().lower() for c in df.columns]
-        required_columns = ["student_id", "student_name", "campus_code"]
+        # 2. Clean up headers (lowercase and strip spaces)
+        df.columns = [str(c).strip().lower() for c in df.columns]
 
-        for col in required_columns:
-            if col not in df.columns:
-                raise HTTPException(status_code=400, detail=f"Missing required column: {col}")
+        # 3. Verify the required columns exist in the file
+        if "student_id" not in df.columns or "student_name" not in df.columns:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Missing required columns. Found: {list(df.columns)}. Need 'STUDENT_ID' and 'STUDENT_NAME'."
+            )
 
         inserted = 0
 
+        # 4. Safely iterate and insert rows
         for _, row in df.iterrows():
-            id_col = "student_id" if "student_id" in row else "id"
-            name_col = "student_name" if "student_name" in row else "name"
+            s_id = str(row["student_id"]).strip()
+            s_name = str(row["student_name"]).strip()
             
-            s_id = str(row.get(id_col, "")).strip()
-            s_name = str(row.get(name_col, "Unknown Student")).strip()
+            # Extract campus code, but provide a fallback so NeonDB doesn't crash on empty cells
+            c_code = "MAIN" # Default fallback
+            if "campus_code" in df.columns and pd.notna(row["campus_code"]):
+                val = str(row["campus_code"]).strip()
+                if val and val.lower() != "nan":
+                    c_code = val
 
-            if not s_id or s_id == "nan":
+            # Skip empty rows
+            if not s_id or s_id.lower() == "nan":
                 continue
 
+            # 5. Execute the Safe SQL Insert
             db.execute(
                 text("""
-                INSERT INTO students (student_id, student_name)
-                VALUES (:id, :name)
+                INSERT INTO students (student_id, student_name, campus_code)
+                VALUES (:id, :name, :campus)
                 ON CONFLICT (student_id) 
-                DO UPDATE SET student_name = EXCLUDED.student_name
+                DO UPDATE SET 
+                    student_name = EXCLUDED.student_name, 
+                    campus_code = COALESCE(EXCLUDED.campus_code, students.campus_code)
                 """),
-                {"id": s_id, "name": s_name}
+                {"id": s_id, "name": s_name, "campus": c_code}
             )
             inserted += 1
             
         db.commit()
-
         return {
-            "ok": True,
-            "inserted": inserted,
-            "columns_detected": {
-                "student_id": "student_id",
-                "student_name": "student_name",
-                "campus_code": "campus_code",
-            },
+            "ok": True, 
+            "inserted": inserted, 
+            "message": f"Successfully imported {inserted} students."
         }
 
     except Exception as e:
-        db.rollback() 
+        db.rollback()
+        logger.error(f"Student Upload Crash: {str(e)}") 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/students/")
