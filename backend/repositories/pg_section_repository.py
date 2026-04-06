@@ -113,8 +113,8 @@ class PgSectionRepository:
 
         return {
             "section_id":   row.section_id,
-            "workspace_id": str(row.workspace_id), # Cast back to string for the API JSON output
-            "name":         "Section " + str(row.section_id), # Since name isn't in ERD, dynamically format it
+            "workspace_id": str(row.workspace_id), 
+            "name":         str(row.section_id),
             "location":     row.location or "",
             "last_import_hash": "", # Fallback since column isn't in ERD yet
             "schedule": {

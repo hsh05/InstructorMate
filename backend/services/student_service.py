@@ -8,8 +8,9 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 class StudentService:
-    def __init__(self, repo):
+    def __init__(self, repo, workspace_repo):
         self.repo = repo
+        self.workspace_repo = workspace_repo
 
     def import_students(
         self,
@@ -93,3 +94,30 @@ class StudentService:
         
         # We return the list to the router, which just needs to know the length (len(students))
         return students_imported
+
+    def create_section(self, workspace_id: str, data: dict): 
+        if not self.workspace_repo.get_by_id(workspace_id):
+            raise FileNotFoundError(f"Workspace '{workspace_id}' not found")
+
+        schedule_data = data.get("schedule", {})
+        
+        # Grab the name typed in Flutter and use it as the ID
+        section_name = data.get("name", "").strip()
+        if not section_name:
+            raise ValueError("Section name cannot be empty.")
+
+        section_data = {  
+            "section_id": section_name, # 👈 FIXED: No more UUIDs!
+            "name": section_name,
+            "location": data.get("location", ""),
+            "schedule": {
+                "days": schedule_data.get("days", []),
+                "start_time": schedule_data.get("start_time", ""),
+                "end_time": schedule_data.get("end_time", ""),
+                "reminder_minutes": schedule_data.get("reminder_minutes", 10),
+            },
+        }
+
+        self.repo.save(workspace_id, section_data)
+        logger.info("Section created id=%s workspace=%s", section_data["section_id"], workspace_id)
+        return section_data
