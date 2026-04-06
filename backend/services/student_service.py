@@ -1,91 +1,95 @@
 # backend/services/student_service.py
 
-import csv
 import io
-import uuid
 import logging
-
-import openpyxl
-
-from domain.student import Student
+import pandas as pd
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-
 class StudentService:
-
     def __init__(self, repo):
         self.repo = repo
 
     def import_students(
         self,
-        workspace_id: str,
+        workspace_id: int,
         file_bytes: bytes,
         filename: str = "",
         section_id: str = "",
     ):
-        if not self.repo.ws_repo.get_by_id(workspace_id):
-            raise FileNotFoundError(f"Workspace '{workspace_id}' not found")
+        # 1. Parse file using the bulletproof pandas logic
+        if filename.lower().endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(file_bytes))
+        elif filename.lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(file_bytes))
+        else:
+            raise ValueError("Unsupported file type. Please upload a CSV or Excel file.")
 
-        rows = self._parse_file(file_bytes, filename)
+        df.columns = [str(c).strip().lower() for c in df.columns]
 
-        # If replacing an existing roster, clear the section links first.
-        # Student rows themselves stay (they belong to the workspace);
-        # only the StudentSection links are removed so the count resets.
+        if "student_id" not in df.columns or "student_name" not in df.columns:
+            raise ValueError(f"Missing required columns. Found: {list(df.columns)}. Need 'STUDENT_ID' and 'STUDENT_NAME'.")
+
+        # Grab the database session from the repository
+        db = getattr(self.repo, 'db', None)
+        if not db:
+            raise RuntimeError("Database connection not found.")
+
+        # 2. If replacing an existing roster, clear the old section links first
         if section_id:
-            self.repo.delete_by_section(section_id)
-
-        students = []
-        for row in rows:
-            student = Student(
-                student_id   = str(uuid.uuid4()),
-                workspace_id = workspace_id,
-                name         = (row.get("name") or "").strip(),
-                email        = (row.get("email") or "").strip(),
-                student_no   = (row.get("student_no") or "").strip(),
+            db.execute(
+                text("DELETE FROM enrollment WHERE workspace_id = :w_id AND section_id = :s_id"),
+                {"w_id": workspace_id, "s_id": section_id}
             )
-            if not student.name and not student.email:
-                continue  # skip completely blank rows
-            # section_id passed separately — not part of Student identity
-            self.repo.save(student, section_id=section_id)
-            students.append(student)
+            db.commit()
 
-        logger.info("Imported %d students workspace=%s section=%s",
-                    len(students), workspace_id, section_id)
-        return students
+        students_imported = []
 
-    # ── Parsers ───────────────────────────────────────────────────────────────
+        # 3. Process every row safely
+        for _, row in df.iterrows():
+            s_id = str(row["student_id"]).strip()
+            s_name = str(row["student_name"]).strip()
 
-    def _parse_file(self, file_bytes: bytes, filename: str) -> list:
-        fname = filename.lower()
-        if fname.endswith(".xlsx") or fname.endswith(".xls"):
-            return self._parse_xlsx(file_bytes)
-        return self._parse_csv(file_bytes)
+            c_code = "MAIN"
+            if "campus_code" in df.columns and pd.notna(row["campus_code"]):
+                val = str(row["campus_code"]).strip()
+                if val and val.lower() != "nan":
+                    c_code = val
 
-    def _parse_csv(self, file_bytes: bytes) -> list:
-        text = file_bytes.decode("utf-8", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        return [{k.strip().lower(): v for k, v in row.items()} for row in reader]
-
-    def _parse_xlsx(self, file_bytes: bytes) -> list:
-        wb = openpyxl.load_workbook(
-            io.BytesIO(file_bytes), read_only=True, data_only=True
-        )
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
-            return []
-        headers = [
-            str(h).strip().lower() if h is not None else ""
-            for h in rows[0]
-        ]
-        result = []
-        for row in rows[1:]:
-            if all(cell is None or str(cell).strip() == "" for cell in row):
+            if not s_id or s_id.lower() == "nan":
                 continue
-            result.append({
-                headers[i]: (str(cell).strip() if cell is not None else "")
-                for i, cell in enumerate(row)
-                if i < len(headers)
-            })
-        return result
+
+            # A. Upsert the student into the main university directory
+            db.execute(
+                text("""
+                INSERT INTO students (student_id, student_name, campus_code)
+                VALUES (:id, :name, :campus)
+                ON CONFLICT (student_id)
+                DO UPDATE SET
+                    student_name = EXCLUDED.student_name,
+                    campus_code = COALESCE(EXCLUDED.campus_code, students.campus_code)
+                """),
+                {"id": s_id, "name": s_name, "campus": c_code}
+            )
+
+            # B. Enroll the student in this specific class section!
+            if section_id:
+                db.execute(
+                    text("""
+                    INSERT INTO enrollment (student_id, section_id, workspace_id)
+                    VALUES (:id, :sec_id, :w_id)
+                    ON CONFLICT DO NOTHING
+                    """),
+                    {"id": s_id, "sec_id": section_id, "w_id": workspace_id}
+                )
+            
+            students_imported.append(s_id)
+
+        # Finalize the database transaction
+        db.commit()
+
+        logger.info("Imported %d students workspace=%s section=%s", len(students_imported), workspace_id, section_id)
+        
+        # We return the list to the router, which just needs to know the length (len(students))
+        return students_imported
