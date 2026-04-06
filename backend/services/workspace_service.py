@@ -78,20 +78,22 @@ class WorkspaceService:
     def _run_converter_bg(self, workspace_id: str, content: bytes, filename: str = "syllabus.pdf") -> None:
         if workspace_id in _cancelled:
             _cancelled.discard(workspace_id)
-            logger.info("Background converter: workspace %s was cancelled before start", workspace_id)
             return
+            
+        # 👉 ADDED: A clear log so you know the AI is actually running!
+        logger.info("🚀 Background AI Extraction STARTED for workspace=%s. This takes ~30 seconds...", workspace_id)
+        
         from db.database import SessionLocal
         db = SessionLocal()
         try:
             repo = PgWorkspaceRepository(db)
             ws   = repo.get_by_id(workspace_id)
             if ws is None or workspace_id in _cancelled:
-                logger.warning("Background converter: workspace %s not found or cancelled, skipping", workspace_id)
                 _cancelled.discard(workspace_id)
                 return
             self._run_converter(workspace_id, content, filename, ws, repo)
         except Exception as e:
-            logger.error("Background converter failed for workspace=%s: %s", workspace_id, e, exc_info=True)
+            logger.error("❌ Background converter failed for workspace=%s: %s", workspace_id, e, exc_info=True)
             try:
                 from db.database import SessionLocal as SL
                 db2 = SL()
@@ -141,33 +143,40 @@ class WorkspaceService:
                     shutil.copy2(str(chunks_src), str(chunks_dst))
                 repo.generate_and_save_embeddings(workspace_id)
 
-            # ── Auto-fill workspace fields ───────────────────────────────────
+            # ── Auto-fill workspace fields (SMART MAPPER) ────────────────────
             single_row_src = Path(result.single_row_csv)
             if single_row_src.exists():
                 with open(single_row_src, newline="", encoding="utf-8") as f:
                     row = next(csv.DictReader(f), None)
                 if row:
-                    updates = {
-                        k: v for k, v in row.items()
-                        if k in workspace.fields and not workspace.fields.get(k) and v
-                    }
-                    if updates.get("workspace_title") and not updates.get("workspace_name") \
-                            and not workspace.fields.get("workspace_name"):
-                        updates["workspace_name"] = updates["workspace_title"]
-                    elif updates.get("workspace_name") and not updates.get("workspace_title") \
-                            and not workspace.fields.get("workspace_title"):
-                        updates["workspace_title"] = updates["workspace_name"]
-
+                    updates = {}
+                    for k, v in row.items():
+                        if not k or not v: continue
+                        
+                        # Strip spaces and casing to catch AI inconsistencies
+                        clean_k = k.lower().replace(" ", "").replace("_", "")
+                        clean_v = str(v).strip()
+                        
+                        # Smart routing to your exact DB columns
+                        if "title" in clean_k or "name" in clean_k:
+                            updates["course_title"] = clean_v
+                        elif "code" in clean_k or "id" in clean_k:
+                            updates["course_code"] = clean_v
+                        elif "semester" in clean_k or "term" in clean_k:
+                            updates["semester"] = clean_v
+                            
                     if updates:
-                        workspace.update_fields(updates)
-                        repo.save(workspace) # THIS SAVES TO THE DATABASE NOW
-                        logger.info("Auto-filled fields %s for workspace=%s",
-                                    list(updates.keys()), workspace_id)
+                        # Forcibly inject the cleaned data into the workspace fields
+                        for key, val in updates.items():
+                            workspace.fields[key] = val
+                            
+                        repo.save(workspace) # Commits the AI data to the DB!
+                        logger.info("✅ Auto-filled fields %s for workspace=%s", list(updates.keys()), workspace_id)
 
             # Mark ready
             workspace.status = WorkspaceStatus.READY
             repo.save(workspace)
-            logger.info("Extraction complete for workspace=%s", workspace_id)
+            logger.info("🎯 Extraction COMPLETE for workspace=%s", workspace_id)
 
         except Exception as e:
             logger.error("Converter failed for workspace=%s: %s", workspace_id, e)

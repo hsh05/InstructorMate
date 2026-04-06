@@ -180,8 +180,10 @@ def delete_workspace(
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
     db: Session = Depends(get_db), 
 ):
+    # 1. Cancel any background AI tasks running for this workspace
     workspace_service.cancel_if_in_flight(workspace_id)
 
+    # 2. Delete from NeonDB
     try:
         deleted = workspace_repo.delete(workspace_id)
     except Exception as exc:
@@ -190,6 +192,22 @@ def delete_workspace(
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # 3. 👉 NEW: Delete all associated files in Firebase
+    try:
+        bucket = storage.bucket()
+        # Find all files that sit inside this workspace's "folder"
+        blobs = bucket.list_blobs(prefix=f"workspaces/{workspace_id}/")
+        
+        deleted_count = 0
+        for blob in blobs:
+            blob.delete()
+            deleted_count += 1
+            
+        if deleted_count > 0:
+            logger.info(f"🗑️ Firebase Success: Purged {deleted_count} files from workspaces/{workspace_id}/")
+    except Exception as e:
+        logger.error(f"Firebase deletion failed for workspace {workspace_id}: {e}")
 
     logger.info("Deleted workspace id=%s", workspace_id)
     return {"deleted": True}
