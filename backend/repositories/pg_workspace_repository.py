@@ -82,10 +82,9 @@ class PgWorkspaceRepository:
             row.course_title = workspace.fields.get('course_title', "")
             logger.info("Updated workspace id=%s", ws_id)
         else:
-            # Get values, but if they are empty strings, force them to "TBD"
-            c_code  = workspace.fields.get('course_code') or "TBD"
+            c_code  = workspace.fields.get('course_code') or workspace.fields.get('workspace_code') or "TBD"
             semester = workspace.fields.get('semester') or "TBD"
-            c_title = workspace.fields.get('course_title') or "Untitled Workspace"
+            c_title = workspace.fields.get('course_title') or workspace.fields.get('workspace_title') or "Untitled Workspace"
 
             row = WorkspaceModel(
                 instructor_id = instructor.instructor_id,
@@ -199,11 +198,12 @@ class PgWorkspaceRepository:
     # ── Private ───────────────────────────────────────────────────────────────
 
     def _to_domain(self, row: WorkspaceModel) -> Workspace:
-        # Re-construct the fields dictionary for the legacy domain model
         fields = {
-            "course_code":  row.course_code,
-            "semester":     row.semester,
-            "course_title": row.course_title
+            "course_code":     row.course_code,
+            "workspace_code":  row.course_code,  # Bridge for Flutter
+            "semester":        row.semester,
+            "course_title":    row.course_title,
+            "workspace_title": row.course_title  # Bridge for Flutter
         }
         
         ws = Workspace(

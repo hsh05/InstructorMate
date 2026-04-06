@@ -86,20 +86,23 @@ async def upload_global_students(file: UploadFile = File(...), db: Session = Dep
         inserted = 0
 
         for _, row in df.iterrows():
-            student_id = str(row["student_id"]).strip()
-            student_name = str(row["student_name"]).strip()
+            id_col = "student_id" if "student_id" in row else "id"
+            name_col = "student_name" if "student_name" in row else "name"
+            
+            s_id = str(row.get(id_col, "")).strip()
+            s_name = str(row.get(name_col, "Unknown Student")).strip()
 
-            if not student_id or not student_name:
+            if not s_id or s_id == "nan":
                 continue
 
-            # 👉 FIXED: Changed 'name' to 'student_name' to match your models.py
             db.execute(
                 text("""
                 INSERT INTO students (student_id, student_name)
                 VALUES (:id, :name)
-                ON CONFLICT (student_id) DO UPDATE SET student_name = EXCLUDED.student_name
+                ON CONFLICT (student_id) 
+                DO UPDATE SET student_name = EXCLUDED.student_name
                 """),
-                {"id": student_id, "name": student_name}
+                {"id": s_id, "name": s_name}
             )
             inserted += 1
             

@@ -67,21 +67,6 @@ class Workspace(Base):
 
     instructor = relationship("Instructor", back_populates="workspaces")
     sections = relationship("Section", back_populates="workspace", cascade="all, delete-orphan")
-    materials = relationship("Material", back_populates="workspace", cascade="all, delete-orphan")
-
-
-class Material(Base):
-    __tablename__ = "materials"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    # 👈 FIXED: Point to 'workspace.workspace_id'
-    workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), nullable=False)
-    file_name = Column(Text, nullable=False)
-    file_path = Column(Text, nullable=False)
-    material_type = Column(Text, nullable=True)
-
-    workspace = relationship("Workspace", back_populates="materials")
-
 
 # ==============================================================================
 # ── SECTIONS & SCHEDULING ─────────────────────────────────────────────────────
