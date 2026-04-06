@@ -679,6 +679,104 @@ class _InfoFieldRow extends StatelessWidget {
     final hasError = error != null;
 
     if (isEditing) {
+      Widget inputWidget;
+
+      // 👉 THE FIX: If the field is Semester, show the strict Dropdown!
+      if (fieldKey == 'semester') {
+        const semesterOptions = ['Spring', 'Fall', 'Summer 1', 'Summer 2', 'TBD'];
+        // Fallback to TBD if the current value isn't in our strict list
+        String currentDropVal = semesterOptions.contains(liveValue) ? liveValue : 'TBD';
+        
+        // Quietly sync the controller to match the dropdown visual
+        if (liveValue != currentDropVal) {
+          ctrl(fieldKey, value).text = currentDropVal;
+        }
+
+        inputWidget = DropdownButtonFormField<String>(
+          value: currentDropVal,
+          items: semesterOptions.map((String option) {
+            return DropdownMenuItem<String>(
+              value: option,
+              child: Text(option),
+            );
+          }).toList(),
+          onChanged: (String? newValue) {
+            if (newValue != null) {
+              ctrl(fieldKey, value).text = newValue; // Updates your saving logic!
+            }
+          },
+          icon: const SizedBox.shrink(), // Hides default arrow to favor your checkmark
+          dropdownColor: AppColors.surface, // Matches your theme
+          style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w500),
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon,
+                color: hasError ? AppColors.warn : AppColors.primary,
+                size: 17),
+            suffixIcon: IconButton(
+              icon: Icon(Icons.check_circle_rounded,
+                  color: hasError ? AppColors.warn : AppColors.accent),
+              onPressed: onDone,
+            ),
+            filled: true,
+            fillColor: hasError ? AppColors.warnSoft : AppColors.primarySoft,
+            border: OutlineInputBorder(
+                borderRadius: AppColors.r12, borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: AppColors.r12,
+              borderSide: BorderSide(
+                  color: hasError ? AppColors.warn : AppColors.primary,
+                  width: 2),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            errorText: error,
+            errorStyle: const TextStyle(fontSize: 11),
+          ),
+        );
+      } else {
+        // Render the standard text field for everything else
+        inputWidget = TextField(
+          controller: ctrl(fieldKey, value),
+          autofocus: true,
+          keyboardType: keyboardType,
+          style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w500),
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon,
+                color: hasError ? AppColors.warn : AppColors.primary,
+                size: 17),
+            suffixIcon: IconButton(
+              icon: Icon(Icons.check_circle_rounded,
+                  color: hasError ? AppColors.warn : AppColors.accent),
+              onPressed: onDone,
+            ),
+            hintText: _hintFor(fieldKey),
+            hintStyle:
+                const TextStyle(color: AppColors.inkLight, fontSize: 13),
+            filled: true,
+            fillColor: hasError ? AppColors.warnSoft : AppColors.primarySoft,
+            border: OutlineInputBorder(
+                borderRadius: AppColors.r12, borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: AppColors.r12,
+              borderSide: BorderSide(
+                  color: hasError ? AppColors.warn : AppColors.primary,
+                  width: 2),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            errorText: error,
+            errorStyle: const TextStyle(fontSize: 11),
+          ),
+          onSubmitted: (_) => onDone(),
+        );
+      }
+
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(
@@ -690,49 +788,13 @@ class _InfoFieldRow extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            TextField(
-              controller: ctrl(fieldKey, value),
-              autofocus: true,
-              keyboardType: keyboardType,
-              style: const TextStyle(
-                  color: AppColors.ink,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500),
-              decoration: InputDecoration(
-                prefixIcon: Icon(icon,
-                    color: hasError ? AppColors.warn : AppColors.primary,
-                    size: 17),
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.check_circle_rounded,
-                      color: hasError ? AppColors.warn : AppColors.accent),
-                  onPressed: onDone,
-                ),
-                hintText: _hintFor(fieldKey),
-                hintStyle:
-                    const TextStyle(color: AppColors.inkLight, fontSize: 13),
-                filled: true,
-                fillColor:
-                    hasError ? AppColors.warnSoft : AppColors.primarySoft,
-                border: OutlineInputBorder(
-                    borderRadius: AppColors.r12, borderSide: BorderSide.none),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: AppColors.r12,
-                  borderSide: BorderSide(
-                      color: hasError ? AppColors.warn : AppColors.primary,
-                      width: 2),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                errorText: error,
-                errorStyle: const TextStyle(fontSize: 11),
-              ),
-              onSubmitted: (_) => onDone(),
-            ),
+            inputWidget, // Uses the Dropdown OR TextField dynamically
           ],
         ),
       );
     }
 
+    // View Mode (When not editing)
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -815,7 +877,7 @@ String _hintFor(String key) {
     case 'workspace_code':
       return 'e.g. CS101';
     case 'semester':
-      return 'e.g. Fall 2025';
+      return 'e.g. Fall';
     default:
       return '';
   }

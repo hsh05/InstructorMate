@@ -228,7 +228,6 @@ class SyllabusFieldExtractor:
             "Definitions:\n"
             "- 'course_title': The actual name of the class (e.g. 'Intro to Physics', 'Calculus I'). DO NOT put the instructor's name here.\n"
             "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101', 'CS102').\n"
-            "- 'semester': The term the class takes place in (e.g. 'Fall 2026', 'Spring 2024').\n"
             "\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n"
             "\n"
@@ -345,7 +344,7 @@ class SyllabusConverterService:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # 👉 THE FIX: Bypass the confusing CSV template. Force the exact 3 DB columns!
-        columns = ["course_title", "course_code", "semester"]
+        columns = ["course_title", "course_code"]
 
         doc_bytes  = doc_path.read_bytes()
         doc_hash   = hashlib.sha256(doc_bytes).hexdigest()[:10]
