@@ -218,15 +218,17 @@ class SyllabusFieldExtractor:
 
         cols_json = json.dumps(columns, ensure_ascii=True)
         prompt = (
-            "You extract structured fields from syllabus text.\n"
+            "You extract structured fields from university syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
             "Output must be a single JSON object mapping column names to values.\n"
             "Rules:\n"
             "- Use ONLY the provided syllabus text.\n"
             "- If a value is not found, use an empty string.\n"
-            "- Keep lists as semicolon-separated strings.\n"
-            "- For multiline fields, use '\\n' inside the string.\n"
             "- Keys MUST match the given columns EXACTLY.\n"
+            "Definitions:\n"
+            "- 'course_title': The actual name of the class (e.g. 'Intro to Physics', 'Calculus I'). DO NOT put the instructor's name here.\n"
+            "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101', 'CS102').\n"
+            "- 'semester': The term the class takes place in (e.g. 'Fall 2026', 'Spring 2024').\n"
             "\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n"
             "\n"
@@ -287,7 +289,7 @@ class SyllabusFieldExtractor:
 
 
 # ── CSV writer ─────────────────────────────────────────────────────────────────
-
+# (Keep your CsvFileWriter exactly as is)
 class CsvFileWriter:
     def write_single_row(self, csv_path: Path, row: Dict[str, str]) -> None:
         csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -310,36 +312,28 @@ class CsvFileWriter:
 
 _SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
 
-
 class SyllabusConverterService:
     def __init__(self, model: str = "gpt-4o") -> None:
         self.pdf_extractor  = PdfTextExtractor()
         self.docx_extractor = DocxTextExtractor()
-        self.schema_loader  = CsvSchemaLoader()
         self.field_extractor = SyllabusFieldExtractor(model=model)
         self.writer = CsvFileWriter()
 
-    # FIX: raises ValueError with a clear message for unsupported types
     def _get_extractor(self, suffix: str):
         s = suffix.lower()
         if s == ".pdf":
             return self.pdf_extractor
         if s == ".docx":
             if not _DOCX_AVAILABLE:
-                raise ValueError(
-                    "python-docx is not installed on the server. "
-                    "Run: pip install python-docx --break-system-packages"
-                )
+                raise ValueError("python-docx is not installed.")
             return self.docx_extractor
-        raise ValueError(
-            f"Unsupported file type '{s}'. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
-        )
+        raise ValueError(f"Unsupported file type '{s}'")
 
     def convert(
         self,
-        pdf_path: str,          # kept named pdf_path for backwards compat
+        pdf_path: str,
         output_dir: str,
-        template_csv_path: str,
+        template_csv_path: str, # We keep the argument so we don't break function calls, but we ignore it!
         output_base_name: Optional[str] = None,
     ) -> ConversionResult:
         doc_path = Path(pdf_path)
@@ -347,11 +341,11 @@ class SyllabusConverterService:
             raise FileNotFoundError(f"File not found: {doc_path.resolve()}")
 
         extractor = self._get_extractor(doc_path.suffix)
-
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        columns = self.schema_loader.load_columns(template_csv_path)
+        # 👉 THE FIX: Bypass the confusing CSV template. Force the exact 3 DB columns!
+        columns = ["course_title", "course_code", "semester"]
 
         doc_bytes  = doc_path.read_bytes()
         doc_hash   = hashlib.sha256(doc_bytes).hexdigest()[:10]
@@ -368,28 +362,16 @@ class SyllabusConverterService:
         single_row_path = out_dir / f"{prefix}.single_row.csv"
         chunks_path     = out_dir / f"{prefix}.chunks.csv"
 
-        # Cache hit
         if single_row_path.exists() and chunks_path.exists():
-            return ConversionResult(
-                single_row_csv=str(single_row_path),
-                chunks_csv=str(chunks_path),
-            )
+            return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))
 
-        t0 = time.time()
         chunks = extractor.extract_chunks(doc_path)
-        print(f"extract_chunks ({doc_path.suffix}) sec:", round(time.time() - t0, 2))
-
-        t1 = time.time()
         single_row = self.field_extractor.extract_single_row(chunks, columns)
-        print("llm sec:", round(time.time() - t1, 2))
 
         self.writer.write_single_row(single_row_path, single_row)
         self.writer.write_chunks(chunks_path, chunks)
 
-        return ConversionResult(
-            single_row_csv=str(single_row_path),
-            chunks_csv=str(chunks_path),
-        )
+        return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))
 
 
 # ── Public helper ──────────────────────────────────────────────────────────────

@@ -143,35 +143,24 @@ class WorkspaceService:
                     shutil.copy2(str(chunks_src), str(chunks_dst))
                 repo.generate_and_save_embeddings(workspace_id)
 
-            # ── Auto-fill workspace fields (SMART MAPPER) ────────────────────
+            # ── Auto-fill workspace fields (Direct Map) ────────────────────
             single_row_src = Path(result.single_row_csv)
             if single_row_src.exists():
                 with open(single_row_src, newline="", encoding="utf-8") as f:
                     row = next(csv.DictReader(f), None)
                 if row:
-                    updates = {}
-                    for k, v in row.items():
-                        if not k or not v: continue
-                        
-                        # Strip spaces and casing to catch AI inconsistencies
-                        clean_k = k.lower().replace(" ", "").replace("_", "")
-                        clean_v = str(v).strip()
-                        
-                        # Smart routing to your exact DB columns
-                        if "title" in clean_k or "name" in clean_k:
-                            updates["course_title"] = clean_v
-                        elif "code" in clean_k or "id" in clean_k:
-                            updates["course_code"] = clean_v
-                        elif "semester" in clean_k or "term" in clean_k:
-                            updates["semester"] = clean_v
-                            
+                    # 👉 THE FIX: No guessing. Just grab the exact 3 fields the AI returned!
+                    updates = {
+                        k: v.strip() for k, v in row.items() if v and v.strip()
+                    }
+                    
                     if updates:
-                        # Forcibly inject the cleaned data into the workspace fields
+                        # Direct injection into the workspace fields
                         for key, val in updates.items():
                             workspace.fields[key] = val
                             
-                        repo.save(workspace) # Commits the AI data to the DB!
-                        logger.info("✅ Auto-filled fields %s for workspace=%s", list(updates.keys()), workspace_id)
+                        repo.save(workspace) # Commits to the Postgres DB!
+                        logger.info("✅ Extracted & Saved to DB: %s for workspace=%s", list(updates.keys()), workspace_id)
 
             # Mark ready
             workspace.status = WorkspaceStatus.READY
