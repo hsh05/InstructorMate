@@ -92,7 +92,7 @@ async def upload_global_students(file: UploadFile = File(...), db: Session = Dep
             s_name = str(row["student_name"]).strip()
             
             # Extract campus code, but provide a fallback so NeonDB doesn't crash on empty cells
-            c_code = "MAIN" # Default fallback
+            c_code = "NA" # Default fallback
             if "campus_code" in df.columns and pd.notna(row["campus_code"]):
                 val = str(row["campus_code"]).strip()
                 if val and val.lower() != "nan":
