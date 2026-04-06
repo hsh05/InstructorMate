@@ -46,8 +46,9 @@ def get_student_repo(
 
 def get_student_service(
     student_repo: PgStudentRepository = Depends(get_student_repo),
+    workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
 ) -> StudentService:
-    return StudentService(student_repo)
+    return StudentService(student_repo, workspace_repo)
 
 def get_section_repo(
     db: Session = Depends(get_db),
