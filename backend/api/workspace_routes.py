@@ -85,13 +85,13 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
     return d
 
 
-def _mirror_course_name_fields(fields: dict) -> dict:
-    """Keep course_name and course_title in sync."""
+def _mirror_workspace_name_fields(fields: dict) -> dict:
+    """Keep workspace_name and workspace_title in sync."""
     fields = dict(fields)
-    if fields.get("course_name"):
-        fields["course_title"] = fields["course_name"]
-    elif fields.get("course_title"):
-        fields["course_name"] = fields["course_title"]
+    if fields.get("workspace_name"):
+        fields["workspace_title"] = fields["workspace_name"]
+    elif fields.get("workspace_title"):
+        fields["workspace_name"] = fields["workspace_title"]
     return fields
 
 
@@ -157,34 +157,29 @@ async def import_workspace(
         except Exception as e:
             logger.error(f"Firebase upload failed: {e}")
 
-    # 👉 2. THE COMPLETE BRIDGE: Create Course AND Material
+    # 👉 2. THE COMPLETE BRIDGE: Link the existing workspace to a Material
     if not result["already_uploaded"]:
         try:
-            from db.models import Course, Material 
+            from db.models import Workspace, Material 
             
-            # A. Create the Course
-            new_course = Course(
-                title=filename,
-                description="Auto-generated from Workspace upload" 
-            )
-            db.add(new_course)
-            db.commit()
-            db.refresh(new_course) 
-            
-            # B. Create the Material with the REAL FIREBASE URL
+            # We don't create a 'new_workspace' here anymore. 
+            # We use the 'ws.workspace_id' which was just created by workspace_service.
+            # This ensures the AI updates and the Flutter list are the SAME ROW.
+
+            # Create the Material with the REAL FIREBASE URL
             new_material = Material(
-                course_id=new_course.id,  
+                workspace_id=int(ws.workspace_id), # Ensure it's an int for Neon
                 file_name=filename,
-                file_path=firebase_url, # 👈 Saving the Cloud Link here!
+                file_path=firebase_url, 
                 material_type="Syllabus"
             )
             db.add(new_material)
             db.commit()
             
-            logger.info(f"🔗 Bridge Success: Created Course '{filename}' with Firebase Material")
+            logger.info(f"🔗 Bridge Success: Linked Workspace {ws.workspace_id} to Firebase Material")
             
         except Exception as e:
-            logger.error(f"Failed to create equivalent Course/Material: {e}")
+            logger.error(f"Failed to create equivalent Material: {e}")
             db.rollback() 
 
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
@@ -221,25 +216,25 @@ def update_workspace(
         raise HTTPException(status_code=404, detail="Workspace not found")
         
     # Grab the old name before we overwrite it
-    old_title = ws.fields.get("course_title") or ws.fields.get("course_name") or ""
+    old_title = ws.fields.get("workspace_title") or ws.fields.get("workspace_name") or ""
 
-    mirrored_fields = _mirror_course_name_fields(data.fields)
+    mirrored_fields = _mirror_workspace_name_fields(data.fields)
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     
-    # THE BRIDGE: Rename the Course so Flutter can still match them!
-    new_title = mirrored_fields.get("course_title") or mirrored_fields.get("course_name")
+    # THE BRIDGE: Rename the workspace so Flutter can still match them!
+    new_title = mirrored_fields.get("workspace_title") or mirrored_fields.get("workspace_name")
     if new_title and old_title and new_title != old_title:
         try:
-            from db.models import Course
-            # Find the old course by its previous name and update it
-            course_to_update = db.query(Course).filter(Course.title == old_title).first()
-            if course_to_update:
-                course_to_update.title = new_title
+            from db.models import workspace
+            # Find the old workspace by its previous name and update it
+            workspace_to_update = db.query(workspace).filter(workspace.title == old_title).first()
+            if workspace_to_update:
+                workspace_to_update.title = new_title
                 db.commit()
-                logger.info(f"🔗 Bridge Success: Renamed old Course to '{new_title}'")
+                logger.info(f"🔗 Bridge Success: Renamed old workspace to '{new_title}'")
         except Exception as e:
-            logger.error(f"Failed to rename equivalent Course: {e}")
+            logger.error(f"Failed to rename equivalent workspace: {e}")
 
     logger.info("Updated workspace id=%s", workspace_id)
     return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
@@ -267,24 +262,24 @@ def delete_workspace(
 
     # 👉 2. THE DELETION BRIDGE: Clean up the old database!
     try:
-        from db.models import Course, Material
+        from db.models import workspace, Material
         
         # Find the material that holds this exact workspace_id 
         linked_material = db.query(Material).filter(Material.file_path == workspace_id).first()
         
         if linked_material:
-            course_id_to_delete = linked_material.course_id
+            workspace_id_to_delete = linked_material.workspace_id
             
             # Step A: Delete the materials first (prevents Foreign Key crash)
-            db.query(Material).filter(Material.course_id == course_id_to_delete).delete()
+            db.query(Material).filter(Material.workspace_id == workspace_id_to_delete).delete()
             
-            # Step B: Delete the empty Course folder
-            db.query(Course).filter(Course.id == course_id_to_delete).delete()
+            # Step B: Delete the empty workspace folder
+            db.query(workspace).filter(workspace.id == workspace_id_to_delete).delete()
             
             db.commit()
-            logger.info(f"🔗 Bridge Success: Deleted old Course (ID: {course_id_to_delete}) and its Materials")
+            logger.info(f"🔗 Bridge Success: Deleted old workspace (ID: {workspace_id_to_delete}) and its Materials")
     except Exception as e:
-        logger.error(f"Failed to delete equivalent Course/Material: {e}")
+        logger.error(f"Failed to delete equivalent workspace/Material: {e}")
         db.rollback() # Safety net
 
     logger.info("Deleted workspace id=%s", workspace_id)

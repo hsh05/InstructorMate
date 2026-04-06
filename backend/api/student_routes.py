@@ -88,16 +88,16 @@ async def upload_global_students(file: UploadFile = File(...), db: Session = Dep
         for _, row in df.iterrows():
             student_id = str(row["student_id"]).strip()
             student_name = str(row["student_name"]).strip()
-            # Note: We aren't currently storing campus_code in the ERD, but we can safely ignore it or add it later!
 
             if not student_id or not student_name:
                 continue
 
+            # 👉 FIXED: Changed 'name' to 'student_name' to match your models.py
             db.execute(
                 text("""
-                INSERT INTO students (student_id, name)
+                INSERT INTO students (student_id, student_name)
                 VALUES (:id, :name)
-                ON CONFLICT (student_id) DO NOTHING
+                ON CONFLICT (student_id) DO UPDATE SET student_name = EXCLUDED.student_name
                 """),
                 {"id": student_id, "name": student_name}
             )
