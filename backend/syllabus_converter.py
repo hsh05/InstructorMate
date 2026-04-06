@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
-from pypdf import PdfReader
+import pdfplumber
 
 
 try:
@@ -102,19 +102,26 @@ class PdfTextExtractor:
     def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found: {pdf_path.resolve()}")
-        reader = PdfReader(str(pdf_path))
+            
         chunks: List[PdfChunk] = []
         chunk_id = 1
-        for page_index, page in enumerate(reader.pages, start=1):
-            text = (page.extract_text() or "").strip()
-            if not text:
-                continue
-            chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))
-            chunk_id += 1
+        
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            for page_index, page in enumerate(pdf.pages, start=1):
+                # 👉 THE FIX: layout=True forces the extractor to read left-to-right!
+                # This perfectly preserves table rows and spacing.
+                text = (page.extract_text(layout=True) or "").strip()
+                
+                if not text:
+                    continue
+                    
+                chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))
+                chunk_id += 1
+                
         if not chunks:
             raise RuntimeError("No text extracted. PDF may be scanned; OCR would be needed.")
+            
         return chunks
-
 
 # ── DOCX extractor ─────────────────────────────────────────────────────────────
 
