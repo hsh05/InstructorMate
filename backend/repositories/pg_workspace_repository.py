@@ -63,7 +63,6 @@ class PgWorkspaceRepository:
         semester = workspace.fields.get('semester') or "TBD"
         c_title = workspace.fields.get('course_title') or workspace.fields.get('workspace_title') or "Untitled Workspace"
 
-        # If we have an ID, it's an update. If empty, it's a new row.
         if workspace.workspace_id:
             w_id = int(workspace.workspace_id)
             row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == w_id).first()
@@ -71,7 +70,12 @@ class PgWorkspaceRepository:
                 row.course_code = c_code
                 row.semester = semester
                 row.course_title = c_title
-                row.content = workspace.content or "Processing..."
+                
+                # 👉 THE FIX: Only update content if the Python object explicitly has it, 
+                # otherwise leave the existing database content alone!
+                if hasattr(workspace, 'content') and workspace.content:
+                    row.content = workspace.content
+                    
                 self.db.commit()
                 logger.info("Updated workspace id=%s with extracted data", row.workspace_id)
                 return
@@ -83,12 +87,12 @@ class PgWorkspaceRepository:
             semester      = semester, 
             course_title  = c_title,
             chunk_index   = 0,
-            content       = "Processing..."
+            # Safely grab content if it exists, otherwise default to Processing
+            content       = getattr(workspace, 'content', None) or "Processing..."
         )
         self.db.add(row)
-        self.db.flush() # This forces NeonDB to generate the integer ID immediately
+        self.db.flush() 
         
-        # Give the Python object the real Database ID so Firebase and the AI can use it
         workspace.workspace_id = str(row.workspace_id) 
         logger.info("Created workspace id=%s", row.workspace_id)
 
