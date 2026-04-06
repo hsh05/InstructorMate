@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from db import models
 import schemas
 from db.database import engine, get_db
-from db.models import Material, Workspace
+from db.models import Workspace
 
 # --- External Services ---
 from openai import OpenAI
@@ -200,52 +200,52 @@ async def upload_material(
 
 # --- AI Quiz Generation Routes ---
 
-@app.post("/workspaces/{workspace_id}/generate-quiz/")
-async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
-    selected_ids = request.selected_material_ids
-    configs = request.configs
+## @app.post("/workspaces/{workspace_id}/generate-quiz/")
+## async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
+##     selected_ids = request.selected_material_ids
+##     configs = request.configs
     
-    materials = db.query(Material).filter(
-        Material.workspace_id == workspace_id,
-        Material.id.in_(selected_ids)
-    ).all()
+##     materials = db.query(Material).filter(
+##         Material.workspace_id == workspace_id,
+##         Material.id.in_(selected_ids)
+##     ).all()
     
-    if not materials:
-        raise HTTPException(status_code=404, detail="No materials selected or found.")
+##     if not materials:
+##         raise HTTPException(status_code=404, detail="No materials selected or found.")
 
-    combined_text = ""
-    for m in materials:
-        try:
-            response = requests.get(m.file_path)
-            response.raise_for_status() 
-            file_bytes = io.BytesIO(response.content)
-            filename = m.file_name.lower()
+##     combined_text = ""
+##     for m in materials:
+##         try:
+##             response = requests.get(m.file_path)
+##             response.raise_for_status() 
+##             file_bytes = io.BytesIO(response.content)
+##             filename = m.file_name.lower()
             
-            if filename.endswith(".pdf"):
-                reader = pypdf.PdfReader(file_bytes)
-                for page in reader.pages:
-                    combined_text += page.extract_text() or ""
-            elif filename.endswith(".docx"):
-                doc = docx.Document(file_bytes)
-                for para in doc.paragraphs:
-                    combined_text += para.text + "\n"
-            elif filename.endswith(".pptx"):
-                ppt = Presentation(file_bytes)
-                for slide in ppt.slides:
-                    for shape in slide.shapes:
-                        if hasattr(shape, "text"):
-                            combined_text += shape.text + "\n"
-            elif filename.endswith(".txt"):
-                combined_text += file_bytes.read().decode("utf-8") + "\n"
+##             if filename.endswith(".pdf"):
+##                 reader = pypdf.PdfReader(file_bytes)
+##                 for page in reader.pages:
+##                     combined_text += page.extract_text() or ""
+##             elif filename.endswith(".docx"):
+##                 doc = docx.Document(file_bytes)
+##                 for para in doc.paragraphs:
+##                     combined_text += para.text + "\n"
+##             elif filename.endswith(".pptx"):
+##                 ppt = Presentation(file_bytes)
+##                 for slide in ppt.slides:
+##                     for shape in slide.shapes:
+##                         if hasattr(shape, "text"):
+##                             combined_text += shape.text + "\n"
+##             elif filename.endswith(".txt"):
+##                 combined_text += file_bytes.read().decode("utf-8") + "\n"
                 
-        except Exception as e:
-            logger.error(f"Error reading cloud file {m.file_name}: {e}")
+##         except Exception as e:
+##             logger.error(f"Error reading cloud file {m.file_name}: {e}")
 
-    if not combined_text.strip():
-        raise HTTPException(status_code=400, detail="The selected files contain no readable text.")
+##     if not combined_text.strip():
+##         raise HTTPException(status_code=400, detail="The selected files contain no readable text.")
 
-    configs_as_dicts = [c.dict() for c in configs]
-    questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
+##     configs_as_dicts = [c.dict() for c in configs]
+## ##     questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
     return {"questions": questions}
 
 @app.post("/generate-direct")

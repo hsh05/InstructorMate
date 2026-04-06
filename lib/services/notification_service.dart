@@ -116,7 +116,7 @@ class NotificationService {
     if (!_notifGranted) return;
 
     // BigTextStyleInformation makes the notification expandable.
-    // The body is structured as "Course Name\nSection · Location · Day Time"
+    // The body is structured as "workspace Name\nSection · Location · Day Time"
     // so when expanded, each part gets its own line for easy reading.
     final bigTextStyle = BigTextStyleInformation(
       body,

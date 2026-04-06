@@ -25,13 +25,13 @@ class MaterialResponse(MaterialBase):
 
 
 # ==============================================================================
-# ── WORKSPACES (Replaces old 'Courses') ───────────────────────────────────────
+# ── WORKSPACES (Replaces old 'workspaces') ───────────────────────────────────────
 # ==============================================================================
 
 class WorkspaceBase(BaseModel):
-    course_code: str
+    workspace_code: str
     semester: str
-    course_title: str
+    workspace_title: str
 
 class WorkspaceCreate(WorkspaceBase):
     pass

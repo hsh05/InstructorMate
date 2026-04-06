@@ -45,7 +45,7 @@ class WorkspaceSummary {
     final status = (j['status'] ?? 'draft').toString();
 
     // 👉 Bridged Title Logic: Checks both old fields and new DB columns
-    String title = (j['course_title'] ?? '').toString();
+    String title = (j['workspace_title'] ?? '').toString();
     if (title.isEmpty) {
       for (final key in ['workspace_name', 'workspace_title']) {
         final v = (fields[key] ?? '').toString().trim();
@@ -132,8 +132,8 @@ class Workspace {
     final fieldsRaw = (j['fields'] as Map?) ?? {};
     
     // Safety mapping for our new optimized DB schema
-    if (j.containsKey('course_code')) fieldsRaw['course_code'] = j['course_code'];
-    if (j.containsKey('course_title')) fieldsRaw['course_title'] = j['course_title'];
+    if (j.containsKey('workspace_code')) fieldsRaw['workspace_code'] = j['workspace_code'];
+    if (j.containsKey('workspace_title')) fieldsRaw['workspace_title'] = j['workspace_title'];
     if (j.containsKey('semester')) fieldsRaw['semester'] = j['semester'];
 
     final sectionsRaw = (j['sections'] as List?) ?? [];
@@ -178,7 +178,7 @@ class Workspace {
 
   String get title {
     // Check new DB schema first
-    if (fields.containsKey('course_title') && fields['course_title']!.isNotEmpty) return fields['course_title']!;
+    if (fields.containsKey('workspace_title') && fields['workspace_title']!.isNotEmpty) return fields['workspace_title']!;
 
     // Fallback to legacy schema
     for (final key in ['workspace_name', 'workspace_title', 'workspace', 'workspace Name', 'workspace Title']) {

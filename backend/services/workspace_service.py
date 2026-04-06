@@ -162,13 +162,13 @@ class WorkspaceService:
                         k: v for k, v in row.items()
                         if k in workspace.fields and not workspace.fields.get(k) and v
                     }
-                    # Mirror course_title <-> course_name
-                    if updates.get("course_title") and not updates.get("course_name") \
-                            and not workspace.fields.get("course_name"):
-                        updates["course_name"] = updates["course_title"]
-                    elif updates.get("course_name") and not updates.get("course_title") \
-                            and not workspace.fields.get("course_title"):
-                        updates["course_title"] = updates["course_name"]
+                    # Mirror workspace_title <-> workspace_name
+                    if updates.get("workspace_title") and not updates.get("workspace_name") \
+                            and not workspace.fields.get("workspace_name"):
+                        updates["workspace_name"] = updates["workspace_title"]
+                    elif updates.get("workspace_name") and not updates.get("workspace_title") \
+                            and not workspace.fields.get("workspace_title"):
+                        updates["workspace_title"] = updates["workspace_name"]
 
                     if updates:
                         workspace.update_fields(updates)
@@ -176,21 +176,21 @@ class WorkspaceService:
                         logger.info("Auto-filled fields %s for workspace=%s",
                                     list(updates.keys()), workspace_id)
 
-                        # 👉 THE BACKGROUND BRIDGE: Rename the Course once the AI finds the real name!
-                        new_title = updates.get("course_title") or updates.get("course_name")
+                        # 👉 THE BACKGROUND BRIDGE: Rename the workspace once the AI finds the real name!
+                        new_title = updates.get("workspace_title") or updates.get("workspace_name")
                         if new_title and new_title != filename:
                             try:
-                                # Pull in your old Course model
-                                from db.models import Course
+                                # Pull in your old workspace model
+                                from db.models import workspace
                                 # The background thread uses repo.db to talk to NeonDB
-                                course_to_update = repo.db.query(Course).filter(Course.title == filename).first()
+                                workspace_to_update = repo.db.query(workspace).filter(workspace.title == filename).first()
                                 
-                                if course_to_update:
-                                    course_to_update.title = new_title
+                                if workspace_to_update:
+                                    workspace_to_update.title = new_title
                                     repo.db.commit()
-                                    logger.info(f"🔗 Background Bridge: Auto-Renamed Course from '{filename}' to '{new_title}'")
+                                    logger.info(f"🔗 Background Bridge: Auto-Renamed workspace from '{filename}' to '{new_title}'")
                             except Exception as e:
-                                logger.error(f"Background Bridge failed to rename Course: {e}")
+                                logger.error(f"Background Bridge failed to rename workspace: {e}")
 
             # Mark ready
             workspace.status = WorkspaceStatus.READY

@@ -7,8 +7,8 @@ class OpenAIService {
   static final String _baseUrl = "https://instructormate.onrender.com/";
 
   // ADDED selectedMaterialIds parameter
-  Future<List<QuizQuestion>> generateQuiz(int courseId, List<QuestionTypeConfig> configs, List<int> selectedMaterialIds) async {
-    var uri = Uri.parse('$_baseUrl/courses/$courseId/generate-quiz/');
+  Future<List<QuizQuestion>> generateQuiz(int workspaceId, List<QuestionTypeConfig> configs, List<int> selectedMaterialIds) async {
+    var uri = Uri.parse('$_baseUrl/workspaces/$workspaceId/generate-quiz/');
     var response = await http.post(
       uri,
       headers: {"Content-Type": "application/json"},

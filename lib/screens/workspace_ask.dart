@@ -134,7 +134,7 @@ class AskEmptyState extends StatelessWidget {
                     fontSize: 17,
                     fontWeight: FontWeight.w800)),
             const SizedBox(height: 5),
-            Text('Get instant answers from your course syllabus.',
+            Text('Get instant answers from your workspace syllabus.',
                 style: TextStyle(
                     color: Colors.white.withOpacity(0.8), fontSize: 12),
                 textAlign: TextAlign.center),
