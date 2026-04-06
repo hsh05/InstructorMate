@@ -55,42 +55,42 @@ class PgWorkspaceRepository:
     def save(self, workspace: Workspace) -> None:
         from db.models import Workspace as WorkspaceModel, Instructor as InstructorModel
         
-        # Grab default instructor
         instructor = self.db.query(InstructorModel).first()
         if not instructor:
             raise Exception("No instructor found! Please create an instructor first.")
 
-        # Extract values (checks for Flutter's keys or DB's keys, falls back to TBD)
         c_code  = workspace.fields.get('course_code') or workspace.fields.get('workspace_code') or "TBD"
         semester = workspace.fields.get('semester') or "TBD"
         c_title = workspace.fields.get('course_title') or workspace.fields.get('workspace_title') or "Untitled Workspace"
 
-        # Check if row exists
-        row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == int(workspace.workspace_id)).first()
+        # If we have an ID, it's an update. If empty, it's a new row.
+        if workspace.workspace_id:
+            w_id = int(workspace.workspace_id)
+            row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == w_id).first()
+            if row:
+                row.course_code = c_code
+                row.semester = semester
+                row.course_title = c_title
+                row.content = workspace.content or "Processing..."
+                self.db.commit()
+                logger.info("Updated workspace id=%s with extracted data", row.workspace_id)
+                return
 
-        if row:
-            # 👉 NEW: This guarantees the AI's extraction overwrites the database row!
-            row.course_code = c_code
-            row.semester = semester
-            row.course_title = c_title
-            row.content = workspace.content or "Processing..."
-            self.db.commit()
-            logger.info("Updated workspace id=%s with extracted data", row.workspace_id)
-        else:
-            # Create fresh draft
-            row = WorkspaceModel(
-                instructor_id = instructor.instructor_id,
-                course_code   = c_code,
-                semester      = semester, 
-                course_title  = c_title,
-                chunk_index   = 0,
-                content       = "Processing..."
-            )
-            self.db.add(row)
-            self.db.flush() 
-            
-            workspace.workspace_id = str(row.workspace_id) 
-            logger.info("Created workspace id=%s", row.workspace_id)
+        # If we reach here, it's a brand new workspace!
+        row = WorkspaceModel(
+            instructor_id = instructor.instructor_id,
+            course_code   = c_code,
+            semester      = semester, 
+            course_title  = c_title,
+            chunk_index   = 0,
+            content       = "Processing..."
+        )
+        self.db.add(row)
+        self.db.flush() # This forces NeonDB to generate the integer ID immediately
+        
+        # Give the Python object the real Database ID so Firebase and the AI can use it
+        workspace.workspace_id = str(row.workspace_id) 
+        logger.info("Created workspace id=%s", row.workspace_id)
 
         self.db.commit()
 

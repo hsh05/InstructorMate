@@ -3,7 +3,6 @@
 import csv
 import logging
 import shutil
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -46,7 +45,7 @@ class WorkspaceService:
             return {"already_uploaded": True, "workspace": existing}
 
         workspace = Workspace(
-            workspace_id = str(uuid.uuid4()),
+            workspace_id = "",
             file_hash     = file_hash,
             fields       = {name: "" for name in WORKSPACE_FIELD_NAMES},
             status       = WorkspaceStatus.DRAFT,
