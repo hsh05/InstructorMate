@@ -117,7 +117,7 @@ class EmbeddingRetriever:
     - Handles implicit references in follow-up questions
     """
 
-    def __init__(self, top_k: int = 8) -> None:
+    def __init__(self, top_k: int = 15) -> None:
         self.top_k = top_k
         self._client = OpenAI()
         self._fallback = LightweightRetriever(top_k=top_k)
@@ -250,8 +250,8 @@ class SyllabusChatGPT:
                          Caller is responsible for trimming to last N turns.
         """
         # ── Build syllabus context ────────────────────────────────────────────
-        per_chunk_cap = 2000
-        total_cap = 16000
+        per_chunk_cap = 6000
+        total_cap = 30000
 
         parts: List[str] = []
         total = 0
@@ -266,6 +266,14 @@ class SyllabusChatGPT:
             total = next_len
 
         context_text = "\n\n---\n\n".join(parts)
+
+        # X-RAY: This will print the exact text the AI sees to your Render logs!
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("\n\n" + "="*20 + " AI VISION X-RAY " + "="*20)
+        logger.info(f"QUESTION: {question}")
+        logger.info(f"CONTEXT PROVIDED:\n{context_text}")
+        logger.info("="*57 + "\n\n")
 
         # ── System prompt ─────────────────────────────────────────────────────
         system_prompt = (
