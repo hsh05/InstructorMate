@@ -238,32 +238,16 @@ class SyllabusChatGPT:
         context_chunks: List[CsvChunk],
         history: Optional[List[Dict]] = None,
     ) -> str:
-        """
-        Answer a question grounded in syllabus chunks.
-
-        Parameters
-        ----------
-        question       : The current user question.
-        context_chunks : Top-ranked chunks from the retriever.
-        history        : Optional prior conversation turns, each a dict with
-                         keys "role" ("user"|"assistant") and "content" (str).
-                         Caller is responsible for trimming to last N turns.
-        """
-        # ── Build syllabus context ────────────────────────────────────────────
-        per_chunk_cap = 6000
-        total_cap = 30000
-
+        # ── Build syllabus context (NO LIMITS) ────────────────────────────────
+        # 👉 THE GUARANTEED FIX: We removed the 6,000 character guillotine!
+        # We now pass the entire syllabus content directly to the AI.
+        
         parts: List[str] = []
-        total = 0
         for c in context_chunks:
-            piece = (c.text or "")[:per_chunk_cap]
-            if not piece.strip():
-                continue
-            next_len = total + len(piece) + (5 if parts else 0)
-            if next_len > total_cap:
-                break
-            parts.append(piece)
-            total = next_len
+            # Grab the whole text, no slicing!
+            piece = (c.text or "").strip() 
+            if piece:
+                parts.append(piece)
 
         context_text = "\n\n---\n\n".join(parts)
 
@@ -272,7 +256,7 @@ class SyllabusChatGPT:
         logger = logging.getLogger(__name__)
         logger.info("\n\n" + "="*20 + " AI VISION X-RAY " + "="*20)
         logger.info(f"QUESTION: {question}")
-        logger.info(f"CONTEXT PROVIDED:\n{context_text}")
+        logger.info(f"CONTEXT LENGTH: {len(context_text)} characters") # Log the size!
         logger.info("="*57 + "\n\n")
 
         # ── System prompt ─────────────────────────────────────────────────────
