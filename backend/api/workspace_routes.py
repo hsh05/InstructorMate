@@ -227,7 +227,7 @@ async def ask_workspace_question(
 
     if chunks_from_db:
         store = SyllabusListStore(chunks_from_db)
-        retriever = EmbeddingRetriever(top_k=8)
+        retriever = EmbeddingRetriever(top_k=15)
     else:
         chunks_csv = workspace_repo.get_chunks_csv_path(workspace_id)
         if not chunks_csv.exists():
@@ -236,7 +236,7 @@ async def ask_workspace_question(
                 detail="Syllabus chunks not found. Re-upload the file to regenerate them.",
             )
         store = SyllabusCsvStore(str(chunks_csv))
-        retriever = LightweightRetriever(top_k=8)
+        retriever = LightweightRetriever(top_k=15)
 
     raw_history = req.history[-(_MAX_HISTORY_TURNS * 2):]
     history = [{"role": t.role, "content": t.content} for t in raw_history] or None

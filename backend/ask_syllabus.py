@@ -250,8 +250,8 @@ class SyllabusChatGPT:
                          Caller is responsible for trimming to last N turns.
         """
         # ── Build syllabus context ────────────────────────────────────────────
-        per_chunk_cap = 1500
-        total_cap = 9000
+        per_chunk_cap = 2000
+        total_cap = 20000
 
         parts: List[str] = []
         total = 0

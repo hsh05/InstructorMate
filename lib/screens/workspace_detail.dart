@@ -7,7 +7,6 @@ import '../config/app_colors.dart';
 import 'widgets/notification_bell.dart';
 import 'workspace_sections.dart';
 import 'workspace_ask.dart';
-import 'student_list_screen.dart';
 
 const _fieldLabels = {
   'workspace_name': 'workspace Name',
@@ -191,7 +190,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                               text: 'Ask AI'),
                           Tab(
                               icon: Icon(Icons.upload_file_rounded, size: 16),
-                              text: 'Roster'), 
+                              text: 'Attendance'), 
                         ],
                       ),
                     ),
@@ -235,7 +234,23 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                     asking: _asking,
                                     onAsk: _onAsk,
                                   ),
-                                  const StudentListScreen(), 
+                                  Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.construction_rounded, size: 48, color: AppColors.inkLight.withOpacity(0.5)),
+                                        const SizedBox(height: 16),
+                                        const Text(
+                                          'Attendance Module Coming Soon',
+                                          style: TextStyle(
+                                            color: AppColors.inkLight,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                   ),
