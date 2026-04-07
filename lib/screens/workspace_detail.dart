@@ -1,5 +1,6 @@
 // lib/screens/workspace_detail.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
 import '../models/workspace_model.dart';
@@ -32,6 +33,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
 
+  Timer? _pollingTimer;
+
   final Map<String, TextEditingController> _fieldCtrl = {};
 
   final _askCtrl = TextEditingController();
@@ -50,6 +53,51 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     super.initState();
     _tabs = TabController(length: 5, vsync: this);
     _syncControllersFromWorkspace();
+
+    widget.vm.addListener(_onVmUpdate);
+
+    _startSmartPolling();
+  }
+
+  void _onVmUpdate() {
+    final ws = widget.vm.current;
+    if (ws != null && _needsPolling(ws)) {
+      // If it's a draft and we aren't already polling, start the engine!
+      if (_pollingTimer == null || !_pollingTimer!.isActive) {
+        debugPrint("🔄 Detected Draft Workspace. Starting Polling Timer...");
+        _startSmartPolling();
+      }
+    }
+  }
+
+  void _startSmartPolling() {
+    _pollingTimer?.cancel(); 
+
+    final ws = widget.vm.current;
+    if (ws != null && _needsPolling(ws)) {
+      _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+        debugPrint("⏳ Polling backend for AI updates..."); // Watch this in your console!
+        
+        await widget.vm.refreshCurrentQuietly(); 
+        
+        final updatedWs = widget.vm.current;
+        if (updatedWs != null && !_needsPolling(updatedWs)) {
+          debugPrint("✅ AI Finished! Killing Timer.");
+          timer.cancel(); 
+          if (mounted) {
+            setState(() {
+              _syncControllersFromWorkspace();
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✨ AI Extraction Complete!'), 
+                backgroundColor: AppColors.accent
+              ),
+            );
+          }
+        }
+      });
+    }
   }
 
   @override
@@ -57,6 +105,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     super.didUpdateWidget(old);
     if (old.vm.current != widget.vm.current) {
       _syncControllersFromWorkspace();
+      _startSmartPolling();
     }
   }
 
@@ -79,6 +128,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   @override
   void dispose() {
+    widget.vm.removeListener(_onVmUpdate);
+
+    _pollingTimer?.cancel();
     _tabs.dispose();
     _askCtrl.dispose();
     _askScroll.dispose();
@@ -96,7 +148,18 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     return existing;
   }
 
-  bool _isReady(Workspace ws) => ws.isReady;
+  bool _needsPolling(Workspace ws) {
+    if (!ws.isReady) return true;
+    
+    final title = ws.fields['workspace_title'] ?? '';
+    final code = ws.fields['workspace_code'] ?? '';
+    
+    // If the AI hasn't replaced our default placeholders yet, keep polling!
+    if (title == 'Untitled Workspace' || title.isEmpty) return true;
+    if (code == 'TBD' || code.isEmpty) return true;
+    
+    return false;
+  }
 
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
@@ -118,7 +181,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
           _syncControllersFromWorkspace();
         }
 
-        final ready = _isReady(ws);
+        final ready = !_needsPolling(ws);
         final missing =
             widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
 
@@ -201,12 +264,34 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                   Expanded(
                     child: widget.vm.loadingDetail
                         ? const _DetailSkeleton()
-                        : widget.vm.loading
-                            ? const Center(
-                                child: CircularProgressIndicator(
-                                    color: AppColors.primary),
+                        : (!ready) // 👉 THE FIX: Intercept the UI if AI is processing!
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const CircularProgressIndicator(color: AppColors.primary),
+                                    const SizedBox(height: 20),
+                                    Text(
+                                      '✨ AI is extracting syllabus data...',
+                                      style: TextStyle(
+                                        color: AppColors.primary.withOpacity(0.8),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'This usually takes about 5-10 seconds.',
+                                      style: TextStyle(color: AppColors.inkLight, fontSize: 13),
+                                    ),
+                                  ],
+                                ),
                               )
-                            : TabBarView(
+                            : widget.vm.loading
+                                ? const Center(
+                                    child: CircularProgressIndicator(color: AppColors.primary),
+                                  )
+                                : TabBarView(
                                 controller: _tabs,
                                 children: [
                                   _InfoTab(
@@ -295,10 +380,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: ws.title.isEmpty
+                        // 👉 THE FIX: Show shimmer effect instead of "Untitled Workspace"
+                        child: (!ready)
                             ? _ShimmerBar(
                                 width: 200,
-                                height: 20,
+                                height: 24,
                                 light: Colors.white.withOpacity(0.15),
                                 lighter: Colors.white.withOpacity(0.28),
                               )
@@ -354,35 +440,39 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     ],
                   ),
                   const SizedBox(height: 10),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        if (code.isNotEmpty) ...[
-                          _StatPill(icon: Icons.tag_rounded, label: code),
-                          const SizedBox(width: 8),
-                        ],
-                        if (semester.isNotEmpty) ...[
+
+                  if(!ready)
+                    const SizedBox(height: 24)
+                  else
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          if (code.isNotEmpty) ...[
+                            _StatPill(icon: Icons.tag_rounded, label: code),
+                            const SizedBox(width: 8),
+                          ],
+                          if (semester.isNotEmpty) ...[
+                            _StatPill(
+                                icon: Icons.calendar_today_rounded,
+                                label: semester),
+                            const SizedBox(width: 8),
+                          ],
                           _StatPill(
-                              icon: Icons.calendar_today_rounded,
-                              label: semester),
+                            icon: Icons.groups_2_rounded,
+                            label:
+                                '$sectionCount section${sectionCount == 1 ? "" : "s"}',
+                          ),
                           const SizedBox(width: 8),
+                          _StatPill(
+                            icon: Icons.people_alt_rounded,
+                            label:
+                                '$totalStudents student${totalStudents == 1 ? "" : "s"}',
+                            highlight: totalStudents > 0,
+                          ),
                         ],
-                        _StatPill(
-                          icon: Icons.groups_2_rounded,
-                          label:
-                              '$sectionCount section${sectionCount == 1 ? "" : "s"}',
-                        ),
-                        const SizedBox(width: 8),
-                        _StatPill(
-                          icon: Icons.people_alt_rounded,
-                          label:
-                              '$totalStudents student${totalStudents == 1 ? "" : "s"}',
-                          highlight: totalStudents > 0,
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

@@ -255,6 +255,27 @@ class WorkspacesViewModel extends ChangeNotifier {
     rescheduleNotificationsForCurrent().ignore();
   }
 
+  // ── Stealth Refresh (For background polling) ──────────────────────────────
+  Future<void> refreshCurrentQuietly() async {
+    final ws = _current;
+    if (ws == null) return;
+    
+    try {
+      // Fetch fresh data from the database
+      final fresh = await api.getWorkspace(ws.id.toString());
+      
+      // Update the current workspace silently
+      _current = fresh;
+      _syncCurrentToList(wasUpdated: false);
+      
+      // Tell the UI to rebuild with the new data
+      notifyListeners();
+    } catch (e) {
+      // If it fails (e.g., bad internet), fail silently so the user isn't annoyed
+      debugPrint('Silent refresh failed: $e'); 
+    }
+  }
+
   // ── Import syllabus ───────────────────────────────────────────────────────
 
   Future<void> importSyllabusBytes({
