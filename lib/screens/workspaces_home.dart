@@ -146,7 +146,11 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (_, i) {
                 final ws = widget.vm.workspaces[i];
-                if (ws.isProcessing) {
+                
+                // FIX: Force the shimmer card if the AI hasn't renamed it yet
+                final isStillProcessing = ws.isProcessing || ws.title.toLowerCase().contains('untitled');
+
+                if (isStillProcessing) {
                   return _PollingWorkspaceCard(
                     key: ValueKey(ws.id),
                     workspace: ws,
@@ -636,7 +640,11 @@ class _PollingWorkspaceCardState extends State<_PollingWorkspaceCard> {
     try {
       final fresh = await widget.vm.api.getWorkspace(widget.workspace.id.toString());
       if (!mounted) return;
-      if (!fresh.isProcessing) {
+      
+      // FIX: Do not stop the timer if it still says "Untitled Workspace"
+      final stillProcessing = fresh.isProcessing || fresh.title.toLowerCase().contains('untitled');
+
+      if (!stillProcessing) {
         _timer?.cancel();
         widget.vm.updateWorkspaceSummary(fresh.toSummary());
         // Pass the resolved title so the snackbar can show the workspace name

@@ -223,9 +223,8 @@ class WorkspacesViewModel extends ChangeNotifier {
       pdfHash: summary.pdfHash,
       status: summary.status,
       fields: {
-        'workspace_name': summary.title,
-        'workspace_title': summary.title,
-        'workspace_code': summary.title,
+        'course_title': summary.title,
+        'course_code': 'TBD',
         'semester': '',
       },
       sections: const [],

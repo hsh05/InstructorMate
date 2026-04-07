@@ -10,13 +10,13 @@ import 'workspace_sections.dart';
 import 'workspace_ask.dart';
 
 const _fieldLabels = {
-  'workspace_name': 'workspace Name',
-  'workspace_code': 'workspace Code',
+  'course_title': 'Course Title',
+  'course_code': 'Course Code',
   'semester': 'Semester',
 };
 const _fieldIcons = {
-  'workspace_name': Icons.book_rounded,
-  'workspace_code': Icons.tag_rounded,
+  'course_title': Icons.book_rounded,
+  'course_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
 };
 
@@ -41,7 +41,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askScroll = ScrollController();
   bool _asking = false;
 
-  static const _editableKeys = ['workspace_name', 'workspace_code', 'semester'];
+  static const _editableKeys = ['course_title', 'course_code', 'semester'];
 
   /// Chat history lives in the VM keyed by workspace id so it survives
   /// navigation. Falls back to an empty list (auto-created on first write).
@@ -151,12 +151,14 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   bool _needsPolling(Workspace ws) {
     if (!ws.isReady) return true;
     
-    final title = ws.fields['workspace_title'] ?? '';
-    final code = ws.fields['workspace_code'] ?? '';
-    
-    // If the AI hasn't replaced our default placeholders yet, keep polling!
-    if (title == 'Untitled Workspace' || title.isEmpty) return true;
-    if (code == 'TBD' || code.isEmpty) return true;
+    // Grab all the fields and force them to lowercase so we don't get tricked by capitalization
+    final topTitle = ws.title.toLowerCase();
+    final titleField = (ws.fields['course_title'] ?? '').toLowerCase();
+    final codeField = (ws.fields['course_code'] ?? '').toLowerCase();
+
+    // If ANY of these have our default placeholders, the AI is still processing!
+    if (topTitle.contains('untitled') || titleField.contains('untitled')) return true;
+    if (codeField == 'tbd' || codeField.isEmpty) return true;
     
     return false;
   }
