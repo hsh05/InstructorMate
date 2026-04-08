@@ -43,6 +43,7 @@ class WorkspaceResponse(WorkspaceBase):
     content: Optional[str] = None
     # We deliberately do NOT include the embedding vector here so we don't 
     # accidentally send a massive array of floats to the frontend on every request!
+    materials: List[MaterialResponse] = []
 
     class Config:
         from_attributes = True

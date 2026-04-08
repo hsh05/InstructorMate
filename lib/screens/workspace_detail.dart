@@ -1297,7 +1297,7 @@ class MaterialsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     // NOTE: Ensure your Workspace model has a 'materials' list. 
     // For now, we will assume it's a list of dynamic maps or a Material model.
-    final materials = ws.materials; 
+    final materials = vm.current?.materials ?? [];
 
     return Column(
       children: [
