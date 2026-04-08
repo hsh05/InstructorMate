@@ -51,7 +51,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
     _syncControllersFromWorkspace();
 
     widget.vm.addListener(_onVmUpdate);
@@ -241,21 +241,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                         unselectedLabelStyle: const TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 11),
                         tabs: const [
-                          Tab(
-                              icon: Icon(Icons.info_outline_rounded, size: 16),
-                              text: 'Info'),
-                          Tab(
-                              icon: Icon(Icons.groups_2_rounded, size: 16),
-                              text: 'Sections'),
-                          Tab(
-                              icon: Icon(Icons.people_alt_rounded, size: 16),
-                              text: 'Students'),
-                          Tab(
-                              icon: Icon(Icons.auto_awesome_rounded, size: 16),
-                              text: 'Ask AI'),
-                          Tab(
-                              icon: Icon(Icons.upload_file_rounded, size: 16),
-                              text: 'Attendance'), 
+                          Tab(icon: Icon(Icons.info_outline_rounded, size: 16), text: 'Info'),
+                          Tab(icon: Icon(Icons.groups_2_rounded, size: 16), text: 'Sections'),
+                          Tab(icon: Icon(Icons.people_alt_rounded, size: 16), text: 'Students'),
+                          Tab(icon: Icon(Icons.folder_zip_rounded, size: 16), text: 'Materials'),
+                          Tab(icon: Icon(Icons.auto_awesome_rounded, size: 16), text: 'Ask AI'),
+                          Tab(icon: Icon(Icons.fact_check_outlined, size: 16), text: 'Attendance'),
                         ],
                       ),
                     ),
@@ -313,6 +304,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                     ws: ws,
                                     vm: widget.vm,
                                     onError: _showError,
+                                  ),
+                                  MaterialsTab(
+                                    ws: ws,
+                                    vm: widget.vm,
                                   ),
                                   AskTab(
                                     chat: _chat,
@@ -1290,4 +1285,118 @@ class _ShimmerBarState extends State<_ShimmerBar>
           ),
         ),
       );
+}
+
+// ─── TAB 4 — Materials ────────────────────────────────────────────────────────
+class MaterialsTab extends StatelessWidget {
+  const MaterialsTab({super.key, required this.ws, required this.vm});
+  final Workspace ws;
+  final WorkspacesViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    // NOTE: Ensure your Workspace model has a 'materials' list. 
+    // For now, we will assume it's a list of dynamic maps or a Material model.
+    final materials = ws.materials; 
+
+    return Column(
+      children: [
+        // Upload Button Header
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: InkWell(
+            onTap: vm.uploadingMaterial ? null : () => vm.uploadMaterial(),
+            borderRadius: AppColors.r12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: AppColors.r12,
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.3),
+                  width: 1.5,
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (vm.uploadingMaterial)
+                    const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                    )
+                  else
+                    const Icon(Icons.cloud_upload_rounded, color: AppColors.primary, size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    vm.uploadingMaterial ? 'Uploading material...' : 'Upload Course Material',
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Materials List
+        Expanded(
+          child: materials.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No materials uploaded yet.\nAdd PDFs, slides, or reading materials.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.inkLight, fontSize: 14),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: materials.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    // 👉 THE FIX: It now automatically uses your existing WorkspaceMaterial!
+                    final material = materials[index]; 
+                    
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: AppColors.r12,
+                        boxShadow: AppColors.shadow,
+                      ),
+                      child: ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.insert_drive_file_rounded, color: AppColors.primary, size: 20),
+                        ),
+                        title: Text(
+                          material.fileName, // Your property is perfectly named
+                          style: const TextStyle(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: AppColors.warn, size: 20),
+                          onPressed: () {
+                            // 👉 THE FIX: Use material.id instead of material.materialId
+                            vm.deleteMaterial(material.id); 
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
 }

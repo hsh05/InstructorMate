@@ -322,6 +322,43 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
+  // ── Materials ─────────────────────────────────────────────────────────────
+  bool uploadingMaterial = false;
+
+  Future<void> uploadMaterial() async {
+    final ws = _current;
+    if (ws == null) return;
+    
+    final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt', 'csv', 'xlsx', 'pptx']);
+    if (picked == null) return;
+
+    uploadingMaterial = true;
+    error = null;
+    notifyListeners();
+
+    try {
+      // 👉 THE FIX: Actually call your ApiService!
+      await api.uploadMaterial(ws.id.toString(), picked.bytes, picked.name);
+      await refreshCurrentQuietly();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      uploadingMaterial = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteMaterial(int materialId) async {
+    try {
+      // 👉 THE FIX: Actually call your ApiService!
+      await api.deleteMaterial(materialId.toString());
+      await refreshCurrentQuietly();
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
   // ── Update fields ─────────────────────────────────────────────────────────
 
   Future<void> updateFields(Map<String, String> fields) async {

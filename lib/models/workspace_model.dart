@@ -104,7 +104,7 @@ class WorkspaceSummary {
 // =============================================================================
 
 class Workspace {
-  final int id; // 👉 Bridged to NeonDB: Now an int
+  final int id;
   final String createdAt;
   final String? updatedAtRaw;
   final String originalFilename;
@@ -113,7 +113,7 @@ class Workspace {
   final Map<String, String> fields;
   final List<Section> sections;
   final int studentsCount;
-  final List<WorkspaceMaterial> materials; // 👉 Merged from your models!
+  final List<WorkspaceMaterial> materials;
 
   const Workspace({
     required this.id,
@@ -237,8 +237,7 @@ class WorkspaceMaterial {
 
   factory WorkspaceMaterial.fromJson(Map<String, dynamic> json) {
     return WorkspaceMaterial(
-      // Safely parse ints just in case the backend sends them as strings
-      id: int.tryParse(json['id'].toString()) ?? 0,
+      id: int.tryParse((json['material_id'] ?? json['id'] ?? '0').toString()) ?? 0,
       workspaceId: int.tryParse((json['workspace_id'] ?? '0').toString()) ?? 0,
       fileName: json['file_name'] ?? '',
       materialType: json['material_type'] ?? '',

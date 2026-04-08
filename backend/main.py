@@ -158,10 +158,10 @@ def create_workspace(workspace: schemas.WorkspaceCreate, db: Session = Depends(g
 def get_workspaces_with_materials(db: Session = Depends(get_db)):
     return db.query(models.Workspace).all()
 
+# 👉 UPDATED POST ROUTE: Removed `material_type` from parameters to match Flutter
 @app.post("/workspaces/{workspace_id}/materials/", response_model=schemas.MaterialResponse)
 async def upload_material(
     workspace_id: int,
-    material_type: str = Form(...), 
     file: UploadFile = File(...),   
     db: Session = Depends(get_db)
 ):
@@ -187,66 +187,103 @@ async def upload_material(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Firebase: {str(e)}")
 
+    # Dynamically extract extension for the material_type column
+    ext = file.filename.split('.')[-1].lower() if '.' in file.filename else "unknown"
+
     db_material = models.Material(
         workspace_id=workspace_id,
         file_name=file.filename,
         file_path=file_url,
-        material_type=material_type
+        material_type=ext
     )
     db.add(db_material)
     db.commit()
     
     return db_material
 
+# 👉 NEW DELETE ROUTE: Deletes from Firebase and Database
+@app.delete("/materials/{material_id}")
+async def delete_workspace_material(material_id: int, db: Session = Depends(get_db)):
+    material = db.query(models.Material).filter(models.Material.material_id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    try:
+        # Extract the blob name from the Firebase Download URL
+        blob_name_encoded = material.file_path.split('/o/')[1].split('?')[0]
+        blob_name = urllib.parse.unquote(blob_name_encoded)
+        
+        # Delete from Firebase Bucket
+        bucket = storage.bucket()
+        blob = bucket.blob(blob_name)
+        if blob.exists():
+            blob.delete()
+    except Exception as e:
+        # If Firebase deletion fails, we still want to remove it from DB
+        logger.warning(f"Failed to delete file from Firebase (might already be missing): {e}")
+
+    # Delete from Neon DB
+    db.delete(material)
+    db.commit()
+
+    return {"message": "Material deleted successfully"}
+
+
 # --- AI Quiz Generation Routes ---
 
-## @app.post("/workspaces/{workspace_id}/generate-quiz/")
-## async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
-##     selected_ids = request.selected_material_ids
-##     configs = request.configs
+@app.post("/workspaces/{workspace_id}/generate-quiz/")
+async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest, db: Session = Depends(get_db)):
+    selected_ids = request.selected_material_ids
+    configs = request.configs
     
-##     materials = db.query(Material).filter(
-##         Material.workspace_id == workspace_id,
-##         Material.id.in_(selected_ids)
-##     ).all()
+    # 👉 THE FIX: Updated to use models.Material and material_id to match your new schema!
+    materials = db.query(models.Material).filter(
+        models.Material.workspace_id == workspace_id,
+        models.Material.material_id.in_(selected_ids)
+    ).all()
     
-##     if not materials:
-##         raise HTTPException(status_code=404, detail="No materials selected or found.")
+    if not materials:
+        raise HTTPException(status_code=404, detail="No materials selected or found.")
 
-##     combined_text = ""
-##     for m in materials:
-##         try:
-##             response = requests.get(m.file_path)
-##             response.raise_for_status() 
-##             file_bytes = io.BytesIO(response.content)
-##             filename = m.file_name.lower()
+    combined_text = ""
+    for m in materials:
+        try:
+            # Fetch the file directly from the Firebase URL stored in your database
+            response = requests.get(m.file_path)
+            response.raise_for_status() 
+            file_bytes = io.BytesIO(response.content)
+            filename = m.file_name.lower()
             
-##             if filename.endswith(".pdf"):
-##                 reader = pypdf.PdfReader(file_bytes)
-##                 for page in reader.pages:
-##                     combined_text += page.extract_text() or ""
-##             elif filename.endswith(".docx"):
-##                 doc = docx.Document(file_bytes)
-##                 for para in doc.paragraphs:
-##                     combined_text += para.text + "\n"
-##             elif filename.endswith(".pptx"):
-##                 ppt = Presentation(file_bytes)
-##                 for slide in ppt.slides:
-##                     for shape in slide.shapes:
-##                         if hasattr(shape, "text"):
-##                             combined_text += shape.text + "\n"
-##             elif filename.endswith(".txt"):
-##                 combined_text += file_bytes.read().decode("utf-8") + "\n"
+            # Parse the text based on file type
+            if filename.endswith(".pdf"):
+                reader = pypdf.PdfReader(file_bytes)
+                for page in reader.pages:
+                    combined_text += page.extract_text() or ""
+            elif filename.endswith(".docx"):
+                doc = docx.Document(file_bytes)
+                for para in doc.paragraphs:
+                    combined_text += para.text + "\n"
+            elif filename.endswith(".pptx"):
+                ppt = Presentation(file_bytes)
+                for slide in ppt.slides:
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text"):
+                            combined_text += shape.text + "\n"
+            elif filename.endswith(".txt"):
+                combined_text += file_bytes.read().decode("utf-8") + "\n"
                 
-##         except Exception as e:
-##             logger.error(f"Error reading cloud file {m.file_name}: {e}")
+        except Exception as e:
+            logger.error(f"Error reading cloud file {m.file_name}: {e}")
 
-##     if not combined_text.strip():
-##         raise HTTPException(status_code=400, detail="The selected files contain no readable text.")
+    if not combined_text.strip():
+        raise HTTPException(status_code=400, detail="The selected files contain no readable text.")
 
-##     configs_as_dicts = [c.dict() for c in configs]
-## ##     questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
+    configs_as_dicts = [c.dict() for c in configs]
+    
+    # Send the combined textbook/slides text to OpenAI!
+    questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
     return {"questions": questions}
+    
 
 @app.post("/generate-direct")
 async def generate_direct(

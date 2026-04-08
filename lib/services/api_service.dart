@@ -49,27 +49,13 @@ class ApiService {
   // ── YOUR ORIGINAL METHODS ────────────────────────────────────────────────
   // =========================================================================
 
-  // 👉 FIXED: Camel case for the method name
   Future<List<Workspace>> fetchWorkspaces() async {
     var response = await http.get(_u('/workspaces/')).timeout(AppConfig.shortTimeout);
     if (response.statusCode == 200) {
       List<dynamic> jsonList = jsonDecode(response.body);
-      // 👉 FIXED: Capitalized Workspace class
       return jsonList.map((j) => Workspace.fromJson(j)).toList();
     } else {
       throw Exception("Failed to load workspaces");
-    }
-  }
-
-  Future<void> uploadMaterial(int workspaceId, File file, String type) async {
-    var req = http.MultipartRequest('POST', _u('/workspaces/$workspaceId/materials/'));
-    req.fields['material_type'] = type;
-    req.files.add(await http.MultipartFile.fromPath('file', file.path));
-    
-    var streamed = await req.send().timeout(AppConfig.uploadTimeout);
-    var response = await http.Response.fromStream(streamed);
-    if (response.statusCode != 200) {
-      throw Exception("Upload failed: ${response.body}");
     }
   }
 
@@ -100,7 +86,6 @@ class ApiService {
   }
 
   Future<List<QuizQuestion>> generateQuiz(int workspaceId, List<int> selectedMaterialIds, List<QuestionTypeConfig> configs) async {
-    // 1. Package the configurations into JSON
     List<Map<String, dynamic>> configList = configs.map((c) => {
       'type': c.name,
       'count': c.count,
@@ -108,21 +93,17 @@ class ApiService {
       'topic': c.topicController.text,
     }).toList();
 
-    // 2. Build the request body matching the backend schema
     Map<String, dynamic> requestBody = {
       'selected_material_ids': selectedMaterialIds,
       'configs': configList,
     };
 
-    // 3. Send the POST request to the cloud route
-    // Notice we use your _u() helper to prevent the double-slash bug!
     final response = await http.post(
       _u('/workspaces/$workspaceId/generate-quiz/'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(requestBody),
-    ).timeout(AppConfig.uploadTimeout); // Using a longer timeout since AI generation takes time
+    ).timeout(AppConfig.uploadTimeout); 
 
-    // 4. Parse the results
     if (response.statusCode == 200) {
       final decodedData = jsonDecode(response.body);
       List<dynamic> questionsList = decodedData['questions'] ?? decodedData;
@@ -132,8 +113,56 @@ class ApiService {
     }
   }
 
+  // ── Generate AI Quiz from Materials ──────────────────────────────────────
+  Future<List<dynamic>> generateQuizFromMaterials({
+    required String workspaceId,
+    required List<int> selectedMaterialIds,
+    required List<Map<String, dynamic>> configs,
+  }) async {
+    final response = await http.post(
+      _u('/workspaces/$workspaceId/generate-quiz/'), // 👉 FIXED: using _u() helper
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'selected_material_ids': selectedMaterialIds,
+        'configs': configs,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['questions'] as List<dynamic>;
+    } else {
+      throw Exception('Failed to generate quiz: ${response.body}');
+    }
+  }
+
+  // ── Materials API ────────────────────────────────────────────────────────
+  Future<void> uploadMaterial(String workspaceId, Uint8List bytes, String filename) async {
+    final request = http.MultipartRequest('POST', _u('/workspaces/$workspaceId/materials/')); // 👉 FIXED: using _u() helper
+
+    request.files.add(http.MultipartFile.fromBytes(
+      'file', 
+      bytes,
+      filename: filename,
+    ));
+
+    final streamedResponse = await request.send().timeout(AppConfig.uploadTimeout);
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to upload material: ${response.body}');
+    }
+  }
+
+  Future<void> deleteMaterial(String materialId) async {
+    final response = await http.delete(_u('/materials/$materialId')); // 👉 FIXED: using _u() helper
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete material: ${response.body}');
+    }
+  }
+
   // =========================================================================
-  // ── TEAMMATE'S METHODS (Adapted for ApiService) ──────────────────────────
+  // ── TEAMMATE'S METHODS ───────────────────────────────────────────────────
   // =========================================================================
 
   Future<ImportWorkspaceResult> importWorkspace({

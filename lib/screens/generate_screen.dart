@@ -99,7 +99,11 @@ class _GenerateScreenState extends State<GenerateScreen> {
 
     try {
       for (var file in _selectedFiles) {
-        await _apiService.uploadMaterial(_selectedWorkspace!.id, file, 'slides');
+        await _apiService.uploadMaterial(
+          _selectedWorkspace!.id.toString(), // 👉 Converts the int ID to a String
+          await file.readAsBytes(),          // 👉 Reads the file into bytes
+          file.path.split('/').last,         // 👉 Grabs just the filename
+        );
       }
       setState(() {
         _statusMessage = "Upload complete!";
