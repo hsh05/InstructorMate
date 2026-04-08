@@ -6,7 +6,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from sqlalchemy import Column, Integer, String, ForeignKey, ForeignKeyConstraint
 import uuid
 from datetime import datetime, timezone
 from db.database import Base 
@@ -16,7 +15,7 @@ from db.database import Base
 # ==============================================================================
 
 class Instructor(Base):
-    __tablename__ = "instructor" # 👈 FIXED: Matches your NeonDB 'instructor'
+    __tablename__ = "instructor"
 
     instructor_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     email = Column(String(100), unique=True, index=True, nullable=False)
@@ -37,7 +36,6 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     token = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # 👈 FIXED: Point to 'instructor.instructor_id'
     instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -50,13 +48,11 @@ class RefreshToken(Base):
 # ==============================================================================
 
 class Workspace(Base):
-    __tablename__ = "workspace" # 👈 FIXED: Matches your NeonDB 'workspace'
+    __tablename__ = "workspace"
 
     workspace_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    # 👈 FIXED: Point to 'instructor.instructor_id'
     instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
     
-    # These match your PG_Repository fields
     course_code = Column(String(20), nullable=True) 
     semester = Column(String(50), nullable=True)
     course_title = Column(String(255), nullable=True)
@@ -67,6 +63,7 @@ class Workspace(Base):
 
     instructor = relationship("Instructor", back_populates="workspaces")
     sections = relationship("Section", back_populates="workspace", cascade="all, delete-orphan")
+    materials = relationship("Material", back_populates="workspace", cascade="all, delete-orphan")
 
 # ==============================================================================
 # ── SECTIONS & SCHEDULING ─────────────────────────────────────────────────────
@@ -75,7 +72,6 @@ class Workspace(Base):
 class Section(Base):
     __tablename__ = "sections"
 
-    # 👈 FIXED: Composite PK and correct FK reference to 'workspace'
     workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True)
     section_id = Column(String(10), primary_key=True)
     
@@ -96,22 +92,28 @@ class Section(Base):
 class Student(Base):
     __tablename__ = "students"
 
-    student_id = Column(String(20), primary_key=True)
+    # 👉 FIXED: Updated to perfectly match your new NeonDB schema
+    student_id = Column(String(9), primary_key=True)
     student_name = Column(String(100), nullable=False)
     facial_encoding = Column(JSONB, nullable=True)
-    campus_code = Column(String(10), nullable=True)
+    campus_code = Column(String(2), nullable=False)
+    college_code = Column(Integer, nullable=True)
+    college_desc = Column(String(100), nullable=True)
+    major_code = Column(String(10), nullable=True)
+    major_desc = Column(String(100), nullable=True)
+    campus_desc = Column(String(50), nullable=True)
 
     enrollments = relationship("Enrollment", back_populates="student", cascade="all, delete-orphan")
 
 
 class Enrollment(Base):
-    __tablename__ = "enrollment" # 👈 FIXED: Matches your NeonDB 'enrollment'
+    __tablename__ = "enrollment"
 
-    student_id = Column(String(20), ForeignKey("students.student_id", ondelete="CASCADE"), primary_key=True)
+    # 👉 FIXED: Changed from String(20) to String(9) to match Student table
+    student_id = Column(String(9), ForeignKey("students.student_id", ondelete="CASCADE"), primary_key=True)
     section_id = Column(String(10), primary_key=True)
     workspace_id = Column(Integer, primary_key=True)
 
-    # 👈 FIXED: Map to the composite key in sections
     __table_args__ = (
         ForeignKeyConstraint(
             ['section_id', 'workspace_id'],
@@ -132,7 +134,8 @@ class Enrollment(Base):
 class Attendance(Base):
     __tablename__ = "attendance"
 
-    student_id = Column(String(20), primary_key=True)
+    # 👉 FIXED: Changed from String(20) to String(9)
+    student_id = Column(String(9), primary_key=True)
     section_id = Column(String(10), primary_key=True)
     workspace_id = Column(Integer, primary_key=True)
     lecture_no = Column(Integer, primary_key=True)
@@ -140,7 +143,6 @@ class Attendance(Base):
     confidence = Column(String(20), nullable=True)
     status = Column(String(20), nullable=True)
 
-    # 👈 FIXED: Map to the composite key in enrollment
     __table_args__ = (
         ForeignKeyConstraint(
             ['student_id', 'section_id', 'workspace_id'],
@@ -150,3 +152,18 @@ class Attendance(Base):
     )
 
     enrollment = relationship("Enrollment", back_populates="attendances")
+
+# ==============================================================================
+# ── MATERIALS ──────────────────────────────────────────────────────
+# ==============================================================================
+
+class Material(Base):
+    __tablename__ = "materials"
+
+    material_id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), nullable=False)
+    file_name = Column(String(255))
+    file_path = Column(String(500))
+    material_type = Column(String(50))
+
+    workspace = relationship("Workspace", back_populates="materials")
