@@ -16,7 +16,8 @@ class MaterialCreate(MaterialBase):
     pass
 
 class MaterialResponse(MaterialBase):
-    id: int
+    # 👉 THE FIX: Changed 'id' to 'material_id' to perfectly match NeonDB!
+    material_id: int 
     workspace_id: int
 
     class Config:
