@@ -17,6 +17,8 @@ from repositories.pg_workspace_repository import PgWorkspaceRepository
 from repositories.pg_student_repository import PgStudentRepository
 from services.student_service import StudentService
 from repositories.pg_section_repository import PgSectionRepository
+from sqlalchemy.dialects.postgresql import insert
+from db import models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -158,8 +160,8 @@ async def import_students(
     workspace_id: int,
     file: UploadFile = File(...),
     section_id: Optional[str] = Form(None),
-    service: StudentService = Depends(get_student_service),
     section_repo: PgSectionRepository = Depends(get_section_repo),
+    db: Session = Depends(get_db), # 👉 We need direct database access here!
 ):
     filename = file.filename or ""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -171,27 +173,102 @@ async def import_students(
 
     content = await file.read() 
     file_hash = hashlib.sha256(content).hexdigest()
+    
     try:
-        students = service.import_students(
-            workspace_id, content, filename,
-            section_id=section_id or "",
+        if ext in [".xlsx", ".xls"]:
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            df = pd.read_csv(io.BytesIO(content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read file: {e}")
+
+    # Standardize column headers
+    df.columns = df.columns.str.strip().str.upper()
+    imported_count = 0
+
+    for index, row in df.iterrows():
+        # 1. Clean the Student ID
+        raw_id = str(row.get('STUDENT_ID', '')).split('.')[0].strip()
+        if not raw_id or raw_id.upper() == 'NAN':
+            continue
+            
+        student_id = raw_id.zfill(9)
+        student_name = str(row.get('STUDENT_NAME', '')).strip()
+
+        # 2. Clean Campus Data with Constraints
+        campus_code = str(row.get('CAMPUS_CODE', 'AD')).strip()[:2].upper()
+        if campus_code not in ['AD', 'AL']:
+            campus_code = 'AD'
+            
+        campus_desc = str(row.get('CAMPUS_DESC', 'Abu Dhabi')).strip()
+        if campus_desc not in ['Abu Dhabi', 'Al Ain']:
+            campus_desc = 'Abu Dhabi'
+
+        # 3. Clean College & Level (Major) Data
+        college_code_raw = row.get('COLLEGE_CODE')
+        # Pandas loads blanks as NaN, safely convert to int if it exists
+        college_code = int(float(college_code_raw)) if pd.notna(college_code_raw) and str(college_code_raw).strip() else None
+        
+        college_desc_raw = row.get('COLLEGE_DESC')
+        college_desc = str(college_desc_raw).strip() if pd.notna(college_desc_raw) else None
+
+        level_code_raw = row.get('LEVEL_CODE')
+        level_code = str(level_code_raw).strip()[:10] if pd.notna(level_code_raw) else None
+
+        level_desc_raw = row.get('LEVEL_DESC')
+        level_desc = str(level_desc_raw).strip() if pd.notna(level_desc_raw) else None
+
+        # 4. PostgreSQL Upsert Command
+        stmt = insert(models.Student).values(
+            student_id=student_id,
+            student_name=student_name,
+            campus_code=campus_code,
+            campus_desc=campus_desc,
+            college_code=college_code,
+            college_desc=college_desc,
+            major_code=level_code, # Mapped from LEVEL_CODE
+            major_desc=level_desc  # Mapped from LEVEL_DESC
         )
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        
+        # If student exists, update their demographic info
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['student_id'],
+            set_={
+                "student_name": stmt.excluded.student_name,
+                "campus_code": stmt.excluded.campus_code,
+                "campus_desc": stmt.excluded.campus_desc,
+                "college_code": stmt.excluded.college_code,
+                "college_desc": stmt.excluded.college_desc,
+                "major_code": stmt.excluded.major_code,
+                "major_desc": stmt.excluded.major_desc,
+            }
+        )
+        db.execute(stmt)
+
+        # 5. Enroll in Section
+        actual_section_id = section_id or str(row.get('CRN', '')).split('.')[0].strip()
+        if actual_section_id and actual_section_id.upper() != 'NAN':
+            enroll_stmt = insert(models.Enrollment).values(
+                student_id=student_id,
+                section_id=actual_section_id,
+                workspace_id=workspace_id
+            ).on_conflict_do_nothing()
+            db.execute(enroll_stmt)
+            
+        imported_count += 1
+
+    # Commit all changes to NeonDB
+    db.commit()
     
     if section_id:
         section_repo.update_import_hash(section_id, file_hash)
 
-    logger.info(
-        "Imported %d students into workspace=%s section=%s",
-        len(students), workspace_id, section_id or "",
-    )
+    logger.info("Imported %d students into workspace=%s section=%s", imported_count, workspace_id, section_id or "")
+    
     return {
         "workspaceId": workspace_id,
         "section_id":  section_id or "",
-        "imported":    len(students),
+        "imported":    imported_count,
         "file_hash":   file_hash, 
     }
 
