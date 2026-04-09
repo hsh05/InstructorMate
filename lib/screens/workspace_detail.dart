@@ -9,6 +9,11 @@ import 'widgets/notification_bell.dart';
 import 'workspace_sections.dart';
 import 'workspace_ask.dart';
 
+// 👉 ADDED: Required imports for Quiz Generation
+import '../models/config_model.dart';
+import '../models/question_model.dart';
+import 'review_screen.dart'; 
+
 const _fieldLabels = {
   'course_title': 'Course Title',
   'course_code': 'Course Code',
@@ -44,6 +49,14 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   static const _editableKeys = ['course_title', 'course_code', 'semester'];
 
+  // 👉 ADDED: Quiz Generation Variables
+  bool _isGenerating = false;
+  final Map<String, QuestionTypeConfig> _configs = {
+    'MCQ': QuestionTypeConfig(name: 'Multiple Choice', isSelected: true, count: 10),
+    'Essay': QuestionTypeConfig(name: 'Essay', isSelected: false, count: 2),
+    'True/False': QuestionTypeConfig(name: 'True/False', isSelected: false, count: 5),
+  };
+
   /// Chat history lives in the VM keyed by workspace id so it survives
   /// navigation. Falls back to an empty list (auto-created on first write).
   List<ChatMsg> get _chat =>
@@ -63,16 +76,13 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     });
     
     _syncControllersFromWorkspace();
-
     widget.vm.addListener(_onVmUpdate);
-
     _startSmartPolling();
   }
 
   void _onVmUpdate() {
     final ws = widget.vm.current;
     if (ws != null && _needsPolling(ws)) {
-      // If it's a draft and we aren't already polling, start the engine!
       if (_pollingTimer == null || !_pollingTimer!.isActive) {
         debugPrint("🔄 Detected Draft Workspace. Starting Polling Timer...");
         _startSmartPolling();
@@ -86,7 +96,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     final ws = widget.vm.current;
     if (ws != null && _needsPolling(ws)) {
       _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
-        debugPrint("⏳ Polling backend for AI updates..."); // Watch this in your console!
+        debugPrint("⏳ Polling backend for AI updates..."); 
         
         await widget.vm.refreshCurrentQuietly(); 
         
@@ -139,12 +149,17 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   @override
   void dispose() {
     widget.vm.removeListener(_onVmUpdate);
-
     _pollingTimer?.cancel();
     _tabs.dispose();
     _askCtrl.dispose();
     _askScroll.dispose();
-    for (final c in _fieldCtrl.values) c.dispose();
+    for (final c in _fieldCtrl.values) {
+      c.dispose();
+    }
+    // 👉 ADDED: Clean up config controllers
+    for (var config in _configs.values) {
+      config.topicController.dispose();
+    }
     super.dispose();
   }
 
@@ -160,21 +175,157 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   bool _needsPolling(Workspace ws) {
     if (!ws.isReady) return true;
-    
-    // Grab all the fields and force them to lowercase so we don't get tricked by capitalization
     final topTitle = ws.title.toLowerCase();
     final titleField = (ws.fields['course_title'] ?? '').toLowerCase();
     final codeField = (ws.fields['course_code'] ?? '').toLowerCase();
 
-    // If ANY of these have our default placeholders, the AI is still processing!
     if (topTitle.contains('untitled') || titleField.contains('untitled')) return true;
     if (codeField == 'tbd' || codeField.isEmpty) return true;
-    
     return false;
   }
 
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
+
+  // 👉 ADDED: Generate Quiz Method
+  void _generateQuiz() async {
+    final selectedIds = widget.vm.selectedMaterialIdsForQuiz.toList();
+    if (selectedIds.isEmpty || widget.vm.current == null) return;
+
+    setState(() => _isGenerating = true);
+
+    try {
+      var activeConfigs = _configs.values.where((c) => c.isSelected && c.count > 0).toList();
+
+      var questions = await widget.vm.api.generateQuiz(
+        widget.vm.current!.id,
+        selectedIds,
+        activeConfigs,
+      );
+
+      if (mounted && questions.isNotEmpty) {
+        // Clear selection after successful generation
+        widget.vm.clearMaterialSelection(); 
+        
+        Navigator.push(context, MaterialPageRoute(
+          builder: (context) => ReviewScreen(questions: questions.cast<QuizQuestion>()),
+        ));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI returned no questions.")));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Generation Error: $e")));
+      }
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
+    }
+  }
+
+  // 👉 ADDED: Settings Popup
+  void _showSettings() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.tune, color: AppColors.primary), 
+                  SizedBox(width: 10), 
+                  Text("Configure Options")
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _configs.values.map((config) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        elevation: config.isSelected ? 2 : 0,
+                        shape: RoundedRectangleBorder(
+                          side: BorderSide(color: config.isSelected ? AppColors.primary : Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8)
+                        ),
+                        child: Column(
+                          children: [
+                            CheckboxListTile(
+                              title: Text(config.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              value: config.isSelected,
+                              activeColor: AppColors.primary,
+                              onChanged: (val) {
+                                setDialogState(() { config.isSelected = val ?? false; });
+                                setState(() {}); 
+                              }
+                            ),
+                            if (config.isSelected)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 15, right: 15, bottom: 15),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            initialValue: config.count.toString(),
+                                            keyboardType: TextInputType.number,
+                                            decoration: const InputDecoration(labelText: "Count", isDense: true, border: OutlineInputBorder()),
+                                            onChanged: (val) => config.count = int.tryParse(val) ?? 0,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            value: config.difficulty,
+                                            decoration: const InputDecoration(labelText: "Difficulty", isDense: true, border: OutlineInputBorder()),
+                                            items: ['Easy', 'Medium', 'Hard'].map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+                                            onChanged: (val) {
+                                              setDialogState(() { config.difficulty = val!; });
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: config.topicController,
+                                      decoration: const InputDecoration(
+                                        labelText: "Optional Info / Focus",
+                                        hintText: "e.g., Focus on Chapter 2",
+                                        isDense: true,
+                                        border: OutlineInputBorder()
+                                      ),
+                                    )
+                                  ],
+                                ),
+                              )
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _generateQuiz(); 
+                  },
+                  child: const Text("Confirm & Generate"),
+                )
+              ],
+            );
+          }
+        );
+      }
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -194,26 +345,30 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         }
 
         final ready = !_needsPolling(ws);
-        final missing =
-            widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
+        final missing = widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
 
         return Scaffold(
           backgroundColor: AppColors.bg,
 
+          // 👉 ADDED: Dynamic Floating Action Button
           floatingActionButton: (ready && _currentTabIndex == 3) ? FloatingActionButton.extended(
-            onPressed: () {
-              Navigator.pushNamed(context, '/generate');
-            },
-            icon: const Icon(Icons.auto_awesome_rounded), 
-            label: const Text('Generate', style: TextStyle(fontWeight: FontWeight.w700)),
-            backgroundColor: AppColors.primary, 
+            onPressed: widget.vm.selectedMaterialIdsForQuiz.isEmpty || _isGenerating 
+                ? null 
+                : _showSettings,
+            icon: _isGenerating 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.auto_awesome_rounded), 
+            label: Text(
+              _isGenerating ? 'Thinking...' : 'Generate (${widget.vm.selectedMaterialIdsForQuiz.length})', 
+              style: const TextStyle(fontWeight: FontWeight.w700)
+            ),
+            backgroundColor: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? Colors.grey : AppColors.primary, 
             foregroundColor: Colors.white,
-            elevation: 4,
+            elevation: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? 0 : 4,
           ) : null,
           
           body: ScrollConfiguration(
-            behavior:
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
             child: NestedScrollView(
               headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
               body: Column(
@@ -221,8 +376,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                   // ── Tab bar ──────────────────────────────────────────
                   Container(
                     color: AppColors.surface,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Container(
                       decoration: BoxDecoration(
                         color: AppColors.surfaceAlt,
@@ -246,10 +400,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                         dividerColor: Colors.transparent,
                         labelColor: Colors.white,
                         unselectedLabelColor: AppColors.inkMid,
-                        labelStyle: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 11),
-                        unselectedLabelStyle: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 11),
+                        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+                        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
                         tabs: const [
                           Tab(icon: Icon(Icons.info_outline_rounded, size: 16), text: 'Info'),
                           Tab(icon: Icon(Icons.groups_2_rounded, size: 16), text: 'Sections'),
@@ -267,7 +419,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                   Expanded(
                     child: widget.vm.loadingDetail
                         ? const _DetailSkeleton()
-                        : (!ready) // 👉 THE FIX: Intercept the UI if AI is processing!
+                        : (!ready) 
                             ? Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -307,8 +459,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                     ws: ws,
                                     vm: widget.vm,
                                     onError: _showError,
-                                    onNavigateToStudents: () =>
-                                        _tabs.animateTo(2),
+                                    onNavigateToStudents: () => _tabs.animateTo(2),
                                   ),
                                   StudentsTab(
                                     ws: ws,
@@ -387,7 +538,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        // 👉 THE FIX: Show shimmer effect instead of "Untitled Workspace"
                         child: (!ready)
                             ? _ShimmerBar(
                                 width: 200,
@@ -410,11 +560,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                       ),
                       const SizedBox(width: 10),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: (ready ? AppColors.accent : AppColors.warn)
-                              .withOpacity(0.2),
+                          color: (ready ? AppColors.accent : AppColors.warn).withOpacity(0.2),
                           borderRadius: AppColors.r20,
                           border: Border.all(
                             color: ready ? AppColors.accent : AppColors.warn,
@@ -425,9 +573,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              ready
-                                  ? Icons.check_circle_rounded
-                                  : Icons.pending_rounded,
+                              ready ? Icons.check_circle_rounded : Icons.pending_rounded,
                               color: ready ? AppColors.accent : AppColors.warn,
                               size: 12,
                             ),
@@ -435,8 +581,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                             Text(
                               ready ? 'Ready' : 'Draft',
                               style: TextStyle(
-                                color:
-                                    ready ? AppColors.accent : AppColors.warn,
+                                color: ready ? AppColors.accent : AppColors.warn,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 11,
                               ),
@@ -460,21 +605,17 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                             const SizedBox(width: 8),
                           ],
                           if (semester.isNotEmpty) ...[
-                            _StatPill(
-                                icon: Icons.calendar_today_rounded,
-                                label: semester),
+                            _StatPill(icon: Icons.calendar_today_rounded, label: semester),
                             const SizedBox(width: 8),
                           ],
                           _StatPill(
                             icon: Icons.groups_2_rounded,
-                            label:
-                                '$sectionCount section${sectionCount == 1 ? "" : "s"}',
+                            label: '$sectionCount section${sectionCount == 1 ? "" : "s"}',
                           ),
                           const SizedBox(width: 8),
                           _StatPill(
                             icon: Icons.people_alt_rounded,
-                            label:
-                                '$totalStudents student${totalStudents == 1 ? "" : "s"}',
+                            label: '$totalStudents student${totalStudents == 1 ? "" : "s"}',
                             highlight: totalStudents > 0,
                           ),
                         ],
@@ -633,8 +774,7 @@ class _InfoTabState extends State<_InfoTab>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionHeader(
-            title: 'workspace Details', icon: Icons.info_outline_rounded),
+        const _SectionHeader(title: 'Workspace Details', icon: Icons.info_outline_rounded),
         const SizedBox(height: 4),
         const Text('Tap any field to edit. All fields are required.',
             style: TextStyle(fontSize: 12, color: AppColors.inkMid)),
@@ -673,11 +813,7 @@ class _InfoTabState extends State<_InfoTab>
                     }),
                   ),
                   if (!isLast)
-                    const Divider(
-                        height: 1,
-                        indent: 16,
-                        endIndent: 16,
-                        color: AppColors.border),
+                    const Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.border),
                 ]);
               }),
               AnimatedSize(
@@ -694,21 +830,18 @@ class _InfoTabState extends State<_InfoTab>
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
                               elevation: 0,
-                              shape: const RoundedRectangleBorder(
-                                  borderRadius: AppColors.r12),
+                              shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
                             ),
                             onPressed: _saving ? null : _save,
                             icon: _saving
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white),
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                   )
                                 : const Icon(Icons.save_rounded, size: 17),
                             label: Text(_saving ? 'Saving…' : 'Save Changes',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 14)),
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                           ),
                         ),
                       )
@@ -730,21 +863,15 @@ class _InfoTabState extends State<_InfoTab>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: const [
-                  Icon(Icons.warning_amber_rounded,
-                      color: AppColors.warn, size: 15),
+                  Icon(Icons.warning_amber_rounded, color: AppColors.warn, size: 15),
                   SizedBox(width: 6),
                   Text('Please fix the following:',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                          color: AppColors.warn)),
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.warn)),
                 ]),
                 const SizedBox(height: 6),
                 ..._errors.entries.map((e) => Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text('• ${e.value}',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.warn)),
+                      child: Text('• ${e.value}', style: const TextStyle(fontSize: 12, color: AppColors.warn)),
                     )),
               ],
             ),
@@ -792,14 +919,10 @@ class _InfoFieldRow extends StatelessWidget {
 
     if (isEditing) {
       Widget inputWidget;
-
-      // 👉 THE FIX: If the field is Semester, show the strict Dropdown!
       if (fieldKey == 'semester') {
         const semesterOptions = ['Spring', 'Fall', 'Summer 1', 'Summer 2', 'TBD'];
-        // Fallback to TBD if the current value isn't in our strict list
         String currentDropVal = semesterOptions.contains(liveValue) ? liveValue : 'TBD';
         
-        // Quietly sync the controller to match the dropdown visual
         if (liveValue != currentDropVal) {
           ctrl(fieldKey, value).text = currentDropVal;
         }
@@ -814,74 +937,52 @@ class _InfoFieldRow extends StatelessWidget {
           }).toList(),
           onChanged: (String? newValue) {
             if (newValue != null) {
-              ctrl(fieldKey, value).text = newValue; // Updates your saving logic!
+              ctrl(fieldKey, value).text = newValue; 
             }
           },
-          icon: const SizedBox.shrink(), // Hides default arrow to favor your checkmark
-          dropdownColor: AppColors.surface, // Matches your theme
-          style: const TextStyle(
-              color: AppColors.ink,
-              fontSize: 14,
-              fontWeight: FontWeight.w500),
+          icon: const SizedBox.shrink(),
+          dropdownColor: AppColors.surface, 
+          style: const TextStyle(color: AppColors.ink, fontSize: 14, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon,
-                color: hasError ? AppColors.warn : AppColors.primary,
-                size: 17),
+            prefixIcon: Icon(icon, color: hasError ? AppColors.warn : AppColors.primary, size: 17),
             suffixIcon: IconButton(
-              icon: Icon(Icons.check_circle_rounded,
-                  color: hasError ? AppColors.warn : AppColors.accent),
+              icon: Icon(Icons.check_circle_rounded, color: hasError ? AppColors.warn : AppColors.accent),
               onPressed: onDone,
             ),
             filled: true,
             fillColor: hasError ? AppColors.warnSoft : AppColors.primarySoft,
-            border: OutlineInputBorder(
-                borderRadius: AppColors.r12, borderSide: BorderSide.none),
+            border: OutlineInputBorder(borderRadius: AppColors.r12, borderSide: BorderSide.none),
             focusedBorder: OutlineInputBorder(
               borderRadius: AppColors.r12,
-              borderSide: BorderSide(
-                  color: hasError ? AppColors.warn : AppColors.primary,
-                  width: 2),
+              borderSide: BorderSide(color: hasError ? AppColors.warn : AppColors.primary, width: 2),
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             errorText: error,
             errorStyle: const TextStyle(fontSize: 11),
           ),
         );
       } else {
-        // Render the standard text field for everything else
         inputWidget = TextField(
           controller: ctrl(fieldKey, value),
           autofocus: true,
           keyboardType: keyboardType,
-          style: const TextStyle(
-              color: AppColors.ink,
-              fontSize: 14,
-              fontWeight: FontWeight.w500),
+          style: const TextStyle(color: AppColors.ink, fontSize: 14, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon,
-                color: hasError ? AppColors.warn : AppColors.primary,
-                size: 17),
+            prefixIcon: Icon(icon, color: hasError ? AppColors.warn : AppColors.primary, size: 17),
             suffixIcon: IconButton(
-              icon: Icon(Icons.check_circle_rounded,
-                  color: hasError ? AppColors.warn : AppColors.accent),
+              icon: Icon(Icons.check_circle_rounded, color: hasError ? AppColors.warn : AppColors.accent),
               onPressed: onDone,
             ),
             hintText: _hintFor(fieldKey),
-            hintStyle:
-                const TextStyle(color: AppColors.inkLight, fontSize: 13),
+            hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 13),
             filled: true,
             fillColor: hasError ? AppColors.warnSoft : AppColors.primarySoft,
-            border: OutlineInputBorder(
-                borderRadius: AppColors.r12, borderSide: BorderSide.none),
+            border: OutlineInputBorder(borderRadius: AppColors.r12, borderSide: BorderSide.none),
             focusedBorder: OutlineInputBorder(
               borderRadius: AppColors.r12,
-              borderSide: BorderSide(
-                  color: hasError ? AppColors.warn : AppColors.primary,
-                  width: 2),
+              borderSide: BorderSide(color: hasError ? AppColors.warn : AppColors.primary, width: 2),
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             errorText: error,
             errorStyle: const TextStyle(fontSize: 11),
           ),
@@ -900,13 +1001,12 @@ class _InfoFieldRow extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            inputWidget, // Uses the Dropdown OR TextField dynamically
+            inputWidget,
           ],
         ),
       );
     }
 
-    // View Mode (When not editing)
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -920,60 +1020,38 @@ class _InfoFieldRow extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: hasError
-                    ? AppColors.warnSoft
-                    : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
+                color: hasError ? AppColors.warnSoft : (isEmpty ? AppColors.warnSoft : AppColors.primarySoft),
                 borderRadius: AppColors.r10,
               ),
-              child: Icon(icon,
-                  color: hasError
-                      ? AppColors.warn
-                      : (isEmpty ? AppColors.warn : AppColors.primary),
-                  size: 17),
+              child: Icon(icon, color: hasError ? AppColors.warn : (isEmpty ? AppColors.warn : AppColors.primary), size: 17),
             ),
             const SizedBox(width: 13),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: const TextStyle(
-                          color: AppColors.inkLight,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600)),
+                  Text(label, style: const TextStyle(color: AppColors.inkLight, fontSize: 11, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text(
                     liveValue.isEmpty ? 'Tap to add…' : liveValue,
                     style: TextStyle(
-                      color: liveValue.isEmpty
-                          ? AppColors.inkLight
-                          : AppColors.ink,
+                      color: liveValue.isEmpty ? AppColors.inkLight : AppColors.ink,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      fontStyle: liveValue.isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
+                      fontStyle: liveValue.isEmpty ? FontStyle.italic : FontStyle.normal,
                     ),
                   ),
                   if (hasError) ...[
                     const SizedBox(height: 3),
-                    Text(error!,
-                        style: const TextStyle(
-                            color: AppColors.warn,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600)),
+                    Text(error!, style: const TextStyle(color: AppColors.warn, fontSize: 11, fontWeight: FontWeight.w600)),
                   ],
                 ],
               ),
             ),
             Icon(
-              isEmpty || hasError
-                  ? Icons.error_outline_rounded
-                  : Icons.edit_outlined,
+              isEmpty || hasError ? Icons.error_outline_rounded : Icons.edit_outlined,
               size: 15,
-              color: hasError
-                  ? AppColors.warn
-                  : (isEmpty ? AppColors.warn : AppColors.inkLight),
+              color: hasError ? AppColors.warn : (isEmpty ? AppColors.warn : AppColors.inkLight),
             ),
           ]),
         ),
@@ -1007,21 +1085,13 @@ class _SectionHeader extends StatelessWidget {
         children: [
           Icon(icon, color: AppColors.primary, size: 17),
           const SizedBox(width: 7),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: AppColors.ink,
-            ),
-          ),
+          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.ink)),
         ],
       );
 }
 
 class _StatPill extends StatelessWidget {
-  const _StatPill(
-      {required this.icon, required this.label, this.highlight = false});
+  const _StatPill({required this.icon, required this.label, this.highlight = false});
   final IconData icon;
   final String label;
   final bool highlight;
@@ -1030,19 +1100,14 @@ class _StatPill extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: highlight
-              ? AppColors.accent.withOpacity(0.2)
-              : Colors.white.withOpacity(0.15),
+          color: highlight ? AppColors.accent.withOpacity(0.2) : Colors.white.withOpacity(0.15),
           borderRadius: AppColors.r20,
           border: Border.all(
-            color: highlight
-                ? AppColors.accent.withOpacity(0.5)
-                : Colors.white.withOpacity(0.25),
+            color: highlight ? AppColors.accent.withOpacity(0.5) : Colors.white.withOpacity(0.25),
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon,
-              color: highlight ? AppColors.accent : Colors.white, size: 11),
+          Icon(icon, color: highlight ? AppColors.accent : Colors.white, size: 11),
           const SizedBox(width: 5),
           Text(
             label,
@@ -1068,16 +1133,12 @@ class _MissingBanner extends StatelessWidget {
       color: AppColors.warnSoft,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
       child: Row(children: [
-        const Icon(Icons.warning_amber_rounded,
-            color: AppColors.warn, size: 16),
+        const Icon(Icons.warning_amber_rounded, color: AppColors.warn, size: 16),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             'Complete: $labels',
-            style: const TextStyle(
-                color: AppColors.warn,
-                fontSize: 12,
-                fontWeight: FontWeight.w600),
+            style: const TextStyle(color: AppColors.warn, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ),
       ]),
@@ -1118,10 +1179,8 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
       animation: _ctrl,
       builder: (_, __) {
         final t = Curves.easeInOut.transform(_ctrl.value);
-        final dim =
-            Color.lerp(const Color(0xFFE8E8EE), const Color(0xFFF2F2F6), t)!;
-        final bright =
-            Color.lerp(const Color(0xFFDDDDE6), const Color(0xFFECECF2), t)!;
+        final dim = Color.lerp(const Color(0xFFE8E8EE), const Color(0xFFF2F2F6), t)!;
+        final bright = Color.lerp(const Color(0xFFDDDDE6), const Color(0xFFECECF2), t)!;
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
@@ -1153,8 +1212,7 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
             const SizedBox(height: 14),
             _skeletonCard(dim, bright, children: [_sectionRow(dim, bright)]),
             const SizedBox(height: 10),
-            _skeletonCard(dim, bright,
-                children: [_sectionRow(dim, bright, narrowName: true)]),
+            _skeletonCard(dim, bright, children: [_sectionRow(dim, bright, narrowName: true)]),
             const SizedBox(height: 28),
             Center(
               child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1183,20 +1241,15 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
     );
   }
 
-  Widget _pill(Color color, {required double w, double h = 12, double r = 6}) =>
-      Container(
+  Widget _pill(Color color, {required double w, double h = 12, double r = 6}) => Container(
         width: w,
         height: h,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(r),
-        ),
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(r)),
       );
 
   Widget _divider(Color color) => Container(height: 1, color: color);
 
-  Widget _skeletonCard(Color bg, Color hi, {required List<Widget> children}) =>
-      Container(
+  Widget _skeletonCard(Color bg, Color hi, {required List<Widget> children}) => Container(
         decoration: BoxDecoration(
           color: bg,
           borderRadius: AppColors.r16,
@@ -1209,11 +1262,7 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
   Widget _fieldRow(Color bg, Color hi) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         child: Row(children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: hi, borderRadius: AppColors.r10),
-          ),
+          Container(width: 36, height: 36, decoration: BoxDecoration(color: hi, borderRadius: AppColors.r10)),
           const SizedBox(width: 13),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _pill(hi, w: 56, h: 10),
@@ -1228,15 +1277,10 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
   Widget _sectionRow(Color bg, Color hi, {bool narrowName = false}) => Padding(
         padding: const EdgeInsets.all(14),
         child: Row(children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(color: hi, borderRadius: AppColors.r12),
-          ),
+          Container(width: 42, height: 42, decoration: BoxDecoration(color: hi, borderRadius: AppColors.r12)),
           const SizedBox(width: 12),
           Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _pill(hi, w: narrowName ? 90.0 : 130.0, h: 13),
               const SizedBox(height: 7),
               Row(children: [
@@ -1253,11 +1297,7 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
 
 // ─── Shimmer Bar ──────────────────────────────────────────────────────────────
 class _ShimmerBar extends StatefulWidget {
-  const _ShimmerBar(
-      {required this.width,
-      required this.height,
-      required this.light,
-      required this.lighter});
+  const _ShimmerBar({required this.width, required this.height, required this.light, required this.lighter});
   final double width, height;
   final Color light, lighter;
 
@@ -1265,16 +1305,13 @@ class _ShimmerBar extends StatefulWidget {
   State<_ShimmerBar> createState() => _ShimmerBarState();
 }
 
-class _ShimmerBarState extends State<_ShimmerBar>
-    with SingleTickerProviderStateMixin {
+class _ShimmerBarState extends State<_ShimmerBar> with SingleTickerProviderStateMixin {
   late final AnimationController _c;
 
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
   }
 
   @override
@@ -1305,8 +1342,6 @@ class MaterialsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // NOTE: Ensure your Workspace model has a 'materials' list. 
-    // For now, we will assume it's a list of dynamic maps or a Material model.
     final materials = vm.current?.materials ?? [];
 
     return Column(
@@ -1368,38 +1403,42 @@ class MaterialsTab extends StatelessWidget {
                   itemCount: materials.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
-                    // 👉 THE FIX: It now automatically uses your existing WorkspaceMaterial!
                     final material = materials[index]; 
+                    
+                    // 👉 FIXED: Safely check if this specific material is selected
+                    final isSelected = vm.selectedMaterialIdsForQuiz.contains(material.id);
                     
                     return Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isSelected ? AppColors.primarySoft : Colors.white, // Highlight if selected
                         borderRadius: AppColors.r12,
                         boxShadow: AppColors.shadow,
+                        border: isSelected ? Border.all(color: AppColors.primary.withOpacity(0.5)) : null,
                       ),
-                      child: ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.insert_drive_file_rounded, color: AppColors.primary, size: 20),
+                      child: CheckboxListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        activeColor: AppColors.primary,
+                        checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        value: isSelected,
+                        onChanged: (bool? value) {
+                          // Toggle the selection in the VM
+                          vm.toggleMaterialSelection(material.id);
+                        },
+                        title: Row(
+                          children: [
+                            const Icon(Icons.insert_drive_file_rounded, color: AppColors.primary, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                material.fileName,
+                                style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600, fontSize: 14),
+                              ),
+                            ),
+                          ],
                         ),
-                        title: Text(
-                          material.fileName, // Your property is perfectly named
-                          style: const TextStyle(
-                            color: AppColors.ink,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                        trailing: IconButton(
+                        secondary: IconButton(
                           icon: const Icon(Icons.delete_outline_rounded, color: AppColors.warn, size: 20),
-                          onPressed: () {
-                            // 👉 THE FIX: Use material.id instead of material.materialId
-                            vm.deleteMaterial(material.id); 
-                          },
+                          onPressed: () => vm.deleteMaterial(material.id),
                         ),
                       ),
                     );

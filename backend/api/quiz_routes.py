@@ -154,7 +154,7 @@ async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest,
     # 1. Find the selected files in NeonDB
     materials = db.query(models.Material).filter(
         models.Material.workspace_id == workspace_id,
-        models.Material.id.in_(selected_ids)
+        models.Material.material_id.in_(selected_ids) 
     ).all()
     
     if not materials:

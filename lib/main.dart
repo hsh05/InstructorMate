@@ -8,9 +8,6 @@ import 'screens/workspace_detail.dart';
 import 'services/api_service.dart';
 import 'app/state/workspaces_vm.dart';
 
-// --- Your Original Screens ---
-import 'screens/generate_screen.dart';
-
 // 1. The Global Navigator Key (Kept exactly as you had it!)
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -52,7 +49,6 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       // 4. Define the routes for navigation
       routes: {
         '/workspace': (context) => WorkspaceDetailPage(vm: _workspacesVM),
-        '/generate': (context) => GenerateScreen(vm: _workspacesVM), 
       },
     );
   }

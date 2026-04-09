@@ -359,6 +359,23 @@ class WorkspacesViewModel extends ChangeNotifier {
     }
   }
 
+  // ── Material Selection for Quiz Generation ──────────────────────────────
+  final Set<int> selectedMaterialIdsForQuiz = {};
+
+  void toggleMaterialSelection(int materialId) {
+    if (selectedMaterialIdsForQuiz.contains(materialId)) {
+      selectedMaterialIdsForQuiz.remove(materialId);
+    } else {
+      selectedMaterialIdsForQuiz.add(materialId);
+    }
+    notifyListeners();
+  }
+
+  void clearMaterialSelection() {
+    selectedMaterialIdsForQuiz.clear();
+    notifyListeners();
+  }
+
   // ── Update fields ─────────────────────────────────────────────────────────
 
   Future<void> updateFields(Map<String, String> fields) async {
