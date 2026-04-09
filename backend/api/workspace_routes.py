@@ -10,12 +10,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db.database import get_db
+from db import models # 👉 ADDED: So we can query the new Materials table
 from repositories.pg_workspace_repository import PgWorkspaceRepository
 from repositories.pg_section_repository import PgSectionRepository
 from repositories.pg_student_repository import PgStudentRepository
 from services.file_hash_service import FileHashService
 from services.workspace_service import WorkspaceService
 from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
+from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,13 +62,31 @@ def get_workspace_service(
     )
 
 
-def _ws_dict(workspace_id, ws, section_repo, student_repo) -> dict:
+# 👉 THE FIX: Added 'db' parameter so we can manually fetch the materials!
+def _ws_dict(workspace_id, ws, section_repo, student_repo, db: Session) -> dict:
     d = ws.to_dict()
     sections = section_repo.list_by_workspace(workspace_id)
     for s in sections:
         s["students_count"] = student_repo.count_by_section(workspace_id, s["section_id"])
     d["sections"] = sections
     d["students_count"] = sum(s["students_count"] for s in sections)
+    
+    # Fetch Materials for this workspace and attach them!
+    try:
+        ws_id_int = int(workspace_id)
+        materials = db.query(models.Material).filter(models.Material.workspace_id == ws_id_int).all()
+        d["materials"] = [
+            {
+                "material_id": m.material_id,
+                "workspace_id": m.workspace_id,
+                "file_name": m.file_name,
+                "file_path": m.file_path,
+                "material_type": m.material_type
+            } for m in materials
+        ]
+    except ValueError:
+        d["materials"] = []
+        
     return d
 
 def _mirror_workspace_name_fields(fields: dict) -> dict:
@@ -83,10 +103,11 @@ def list_workspaces(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
+    db: Session = Depends(get_db), # 👉 Added DB Session
 ):
     return {
         "workspaces": [
-            _ws_dict(ws.workspace_id, ws, section_repo, student_repo)
+            _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db) # 👉 Passed DB Session
             for ws in workspace_repo.list_all()
         ]
     }
@@ -133,7 +154,7 @@ async def import_workspace(
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
                 ws.workspace_id, result["already_uploaded"], ext)
     return {
-        "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo),
+        "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db), # 👉 Passed DB Session
         "already_uploaded": result["already_uploaded"],
     }
 
@@ -144,11 +165,12 @@ def get_workspace(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
+    db: Session = Depends(get_db), # 👉 Added DB Session
 ):
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    d = _ws_dict(workspace_id, ws, section_repo, student_repo)
+    d = _ws_dict(workspace_id, ws, section_repo, student_repo, db) # 👉 Passed DB Session
     return {"workspace": d}
 
 
@@ -170,7 +192,7 @@ def update_workspace(
     workspace_repo.save(ws)
     
     logger.info("Updated workspace id=%s", workspace_id)
-    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo)}
+    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo, db)} # 👉 Passed DB Session
 
 
 @router.delete("/workspaces/{workspace_id}")

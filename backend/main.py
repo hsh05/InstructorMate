@@ -283,7 +283,7 @@ async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest,
     # Send the combined textbook/slides text to OpenAI!
     questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
     return {"questions": questions}
-    
+
 
 @app.post("/generate-direct")
 async def generate_direct(

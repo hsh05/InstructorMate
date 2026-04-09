@@ -32,6 +32,7 @@ class WorkspaceDetailPage extends StatefulWidget {
 class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
+  int _currentTabIndex = 0;
 
   Timer? _pollingTimer;
 
@@ -52,6 +53,15 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   void initState() {
     super.initState();
     _tabs = TabController(length: 6, vsync: this);
+
+    _tabs.addListener(() {
+      if (_tabs.index != _currentTabIndex) {
+        setState(() {
+          _currentTabIndex = _tabs.index;
+        });
+      }
+    });
+    
     _syncControllersFromWorkspace();
 
     widget.vm.addListener(_onVmUpdate);
@@ -190,7 +200,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         return Scaffold(
           backgroundColor: AppColors.bg,
 
-          floatingActionButton: ready ? FloatingActionButton.extended(
+          floatingActionButton: (ready && _currentTabIndex == 3) ? FloatingActionButton.extended(
             onPressed: () {
               Navigator.pushNamed(context, '/generate');
             },
@@ -199,7 +209,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             backgroundColor: AppColors.primary, 
             foregroundColor: Colors.white,
             elevation: 4,
-          ) : null, // Only show the button if the workspace is "Ready"
+          ) : null,
           
           body: ScrollConfiguration(
             behavior:
