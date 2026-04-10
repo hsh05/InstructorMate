@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from db.database import get_db
 from repositories.pg_workspace_repository import PgWorkspaceRepository
@@ -161,7 +162,7 @@ async def import_students(
     file: UploadFile = File(...),
     section_id: Optional[str] = Form(None),
     section_repo: PgSectionRepository = Depends(get_section_repo),
-    db: Session = Depends(get_db), # 👉 We need direct database access here!
+    db: Session = Depends(get_db),
 ):
     filename = file.filename or ""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -182,88 +183,48 @@ async def import_students(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read file: {e}")
 
-    # Standardize column headers
     df.columns = df.columns.str.strip().str.upper()
     imported_count = 0
 
+    # 👉 THE SAFETY NET: Grab all existing Student IDs in the database instantly
+    # We use a Python Set for blazingly fast lookups inside the loop
+    existing_student_ids = {row[0] for row in db.query(models.Student.student_id).all()}
+
     for index, row in df.iterrows():
-        # 1. Clean the Student ID
+        # 1. Clean the Student ID to match DB format
         raw_id = str(row.get('STUDENT_ID', '')).split('.')[0].strip()
         if not raw_id or raw_id.upper() == 'NAN':
             continue
             
         student_id = raw_id.zfill(9)
-        student_name = str(row.get('STUDENT_NAME', '')).strip()
 
-        # 2. Clean Campus Data with Constraints
-        campus_code = str(row.get('CAMPUS_CODE', 'AD')).strip()[:2].upper()
-        if campus_code not in ['AD', 'AL']:
-            campus_code = 'AD'
-            
-        campus_desc = str(row.get('CAMPUS_DESC', 'Abu Dhabi')).strip()
-        if campus_desc not in ['Abu Dhabi', 'Al Ain']:
-            campus_desc = 'Abu Dhabi'
+        # 2. Prevent Foreign Key Crashes
+        if student_id not in existing_student_ids:
+            logger.warning(f"Skipped {student_id}: Not found in Global Students Roster.")
+            continue
 
-        # 3. Clean College & Level (Major) Data
-        college_code_raw = row.get('COLLEGE_CODE')
-        # Pandas loads blanks as NaN, safely convert to int if it exists
-        college_code = int(float(college_code_raw)) if pd.notna(college_code_raw) and str(college_code_raw).strip() else None
-        
-        college_desc_raw = row.get('COLLEGE_DESC')
-        college_desc = str(college_desc_raw).strip() if pd.notna(college_desc_raw) else None
-
-        level_code_raw = row.get('LEVEL_CODE')
-        level_code = str(level_code_raw).strip()[:10] if pd.notna(level_code_raw) else None
-
-        level_desc_raw = row.get('LEVEL_DESC')
-        level_desc = str(level_desc_raw).strip() if pd.notna(level_desc_raw) else None
-
-        # 4. PostgreSQL Upsert Command
-        stmt = insert(models.Student).values(
-            student_id=student_id,
-            student_name=student_name,
-            campus_code=campus_code,
-            campus_desc=campus_desc,
-            college_code=college_code,
-            college_desc=college_desc,
-            major_code=level_code, # Mapped from LEVEL_CODE
-            major_desc=level_desc  # Mapped from LEVEL_DESC
-        )
-        
-        # If student exists, update their demographic info
-        stmt = stmt.on_conflict_do_update(
-            index_elements=['student_id'],
-            set_={
-                "student_name": stmt.excluded.student_name,
-                "campus_code": stmt.excluded.campus_code,
-                "campus_desc": stmt.excluded.campus_desc,
-                "college_code": stmt.excluded.college_code,
-                "college_desc": stmt.excluded.college_desc,
-                "major_code": stmt.excluded.major_code,
-                "major_desc": stmt.excluded.major_desc,
-            }
-        )
-        db.execute(stmt)
-
-        # 5. Enroll in Section
+        # 3. Grab the Section ID
         actual_section_id = section_id or str(row.get('CRN', '')).split('.')[0].strip()
-        if actual_section_id and actual_section_id.upper() != 'NAN':
-            enroll_stmt = insert(models.Enrollment).values(
-                student_id=student_id,
-                section_id=actual_section_id,
-                workspace_id=workspace_id
-            ).on_conflict_do_nothing()
-            db.execute(enroll_stmt)
-            
+        if not actual_section_id or actual_section_id.upper() == 'NAN':
+            continue
+
+        # 4. Enroll the Student (Ignores if already enrolled in this exact section)
+        enroll_stmt = insert(models.Enrollment).values(
+            student_id=student_id,
+            section_id=actual_section_id,
+            workspace_id=workspace_id
+        ).on_conflict_do_nothing()
+        
+        db.execute(enroll_stmt)
         imported_count += 1
 
-    # Commit all changes to NeonDB
+    # Commit all enrollments to NeonDB
     db.commit()
     
     if section_id:
         section_repo.update_import_hash(section_id, file_hash)
 
-    logger.info("Imported %d students into workspace=%s section=%s", imported_count, workspace_id, section_id or "")
+    logger.info("Enrolled %d students into workspace=%s section=%s", imported_count, workspace_id, section_id or "")
     
     return {
         "workspaceId": workspace_id,
