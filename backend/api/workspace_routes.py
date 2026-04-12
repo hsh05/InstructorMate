@@ -141,8 +141,8 @@ async def import_workspace(
         ws.start_date = start_date
     if end_date:
         ws.end_date = end_date
-        
-        workspace_repo.save(ws)
+
+    workspace_repo.save(ws)
     
     # FIREBASE UPLOAD ONLY (Bridge removed)
     if not result["already_uploaded"]:

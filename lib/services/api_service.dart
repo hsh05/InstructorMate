@@ -169,8 +169,8 @@ class ApiService {
     required Uint8List bytes,
     required String filename,
     String preferredId = '',
-    String? startDate, // 👉 ADDED: Optional start date
-    String? endDate,   // 👉 ADDED: Optional end date
+    String? startDate,
+    String? endDate,
   }) async {
     final req = http.MultipartRequest('POST', _u('/workspaces/upload'))
       ..fields['preferred_id'] = preferredId
@@ -181,8 +181,12 @@ class ApiService {
       );
 
     // 👉 THE FIX: Securely attach the dates to the backend request
-    if (startDate != null) req.fields['start_date'] = startDate;
-    if (endDate != null) req.fields['end_date'] = endDate;
+    if (startDate != null && startDate.isNotEmpty) {
+      req.fields['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      req.fields['end_date'] = endDate;
+    }
 
     http.StreamedResponse streamed;
     try {
