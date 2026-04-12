@@ -129,40 +129,50 @@ class Workspace {
   });
 
   factory Workspace.fromJson(Map<String, dynamic> j) {
-    final fieldsRaw = (j['fields'] as Map?) ?? {};
-    
-    // Safety mapping for our new optimized DB schema
-    if (j.containsKey('workspace_code')) fieldsRaw['workspace_code'] = j['workspace_code'];
-    if (j.containsKey('workspace_title')) fieldsRaw['workspace_title'] = j['workspace_title'];
-    if (j.containsKey('semester')) fieldsRaw['semester'] = j['semester'];
-
-    final sectionsRaw = (j['sections'] as List?) ?? [];
-    final matsRaw = (j['materials'] as List?) ?? [];
-
-    final createdAt = (j['created_at'] ?? '').toString();
-    final rawUpdated = j['updated_at']?.toString();
-    final parsedCreated = DateTime.tryParse(createdAt);
-    final parsedUpdated = rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
-    final updatedAtRaw = (parsedUpdated != null &&
-            parsedCreated != null &&
-            parsedUpdated.difference(parsedCreated).inSeconds >= 5)
-        ? rawUpdated
-        : null;
-
-    return Workspace(
-      // 👉 Safe int parsing
-      id: int.tryParse((j['id'] ?? j['workspace_id'] ?? '0').toString()) ?? 0,
-      createdAt: createdAt,
-      updatedAtRaw: updatedAtRaw,
-      originalFilename: (j['original_filename'] ?? '').toString(),
-      pdfHash: (j['file_hash'] ?? '').toString(),
-      status: (j['status'] ?? 'draft').toString(),
-      fields: fieldsRaw.map((k, v) => MapEntry(k.toString(), (v ?? '').toString())),
-      sections: sectionsRaw.map((e) => Section.fromJson(e as Map<String, dynamic>)).toList(),
-      studentsCount: int.tryParse((j['students_count'] ?? 0).toString()) ?? 0,
-      materials: matsRaw.map((e) => WorkspaceMaterial.fromJson(e as Map<String, dynamic>)).toList(),
-    );
+  // 1. Create a mutable copy of the fields map
+  final Map<String, dynamic> fieldsRaw = Map<String, dynamic>.from(j['fields'] ?? {});
+  
+  // 2. Map top-level DB columns into the fields dictionary for the UI
+  if (j.containsKey('workspace_code')) fieldsRaw['workspace_code'] = j['workspace_code'];
+  if (j.containsKey('workspace_title')) fieldsRaw['workspace_title'] = j['workspace_title'];
+  if (j.containsKey('semester')) fieldsRaw['semester'] = j['semester'];
+  
+  // 👉 THE FIX: Inject the new Date columns into the fields map
+  if (j.containsKey('start_date') && j['start_date'] != null) {
+    fieldsRaw['start_date'] = j['start_date'];
   }
+  if (j.containsKey('end_date') && j['end_date'] != null) {
+    fieldsRaw['end_date'] = j['end_date'];
+  }
+
+  final sectionsRaw = (j['sections'] as List?) ?? [];
+  final matsRaw = (j['materials'] as List?) ?? [];
+
+  final createdAt = (j['created_at'] ?? '').toString();
+  final rawUpdated = j['updated_at']?.toString();
+  final parsedCreated = DateTime.tryParse(createdAt);
+  final parsedUpdated = rawUpdated != null ? DateTime.tryParse(rawUpdated) : null;
+  
+  final updatedAtRaw = (parsedUpdated != null &&
+          parsedCreated != null &&
+          parsedUpdated.difference(parsedCreated).inSeconds >= 5)
+      ? rawUpdated
+      : null;
+
+  return Workspace(
+    id: int.tryParse((j['id'] ?? j['workspace_id'] ?? '0').toString()) ?? 0,
+    createdAt: createdAt,
+    updatedAtRaw: updatedAtRaw,
+    originalFilename: (j['original_filename'] ?? '').toString(),
+    pdfHash: (j['file_hash'] ?? '').toString(),
+    status: (j['status'] ?? 'draft').toString(),
+    // Convert everything to String for the UI components
+    fields: fieldsRaw.map((k, v) => MapEntry(k.toString(), (v ?? '').toString())),
+    sections: sectionsRaw.map((e) => Section.fromJson(e as Map<String, dynamic>)).toList(),
+    studentsCount: int.tryParse((j['students_count'] ?? 0).toString()) ?? 0,
+    materials: matsRaw.map((e) => WorkspaceMaterial.fromJson(e as Map<String, dynamic>)).toList(),
+  );
+}
 
   bool get isReady => status == 'ready';
   bool get isProcessing => status == 'draft' && title.isEmpty;

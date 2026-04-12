@@ -19,6 +19,7 @@ from services.workspace_service import WorkspaceService
 from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
 from sqlalchemy.orm import joinedload
 from typing import Optional
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -137,10 +138,18 @@ async def import_workspace(
     result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
 
-    if start_date:
-        ws.start_date = start_date
-    if end_date:
-        ws.end_date = end_date
+    try:
+        if start_date and start_date.strip():
+            # Standardizes format to YYYY-MM-DD
+            ws.start_date = datetime.strptime(start_date.split('T')[0], "%Y-%m-%d").date()
+        if end_date and end_date.strip():
+            ws.end_date = datetime.strptime(end_date.split('T')[0], "%Y-%m-%d").date()
+    except Exception as e:
+        logger.error(f"Date parsing failed: {e}")
+
+    db.add(ws) 
+    db.commit() 
+    db.refresh(ws)
 
     workspace_repo.save(ws)
     
@@ -163,6 +172,9 @@ async def import_workspace(
 
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
                 ws.workspace_id, result["already_uploaded"], ext)
+    
+    workspace_data = _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db)
+    
     return {
         "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db), # 👉 Passed DB Session
         "already_uploaded": result["already_uploaded"],
