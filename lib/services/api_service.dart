@@ -15,7 +15,7 @@ import '../models/question_model.dart';
 import '../models/config_model.dart';
 
 class ImportResult {
-  final int imported;
+  final int imported; 
   final String sectionId;
   final String fileHash;
 
@@ -120,7 +120,7 @@ class ApiService {
     required List<Map<String, dynamic>> configs,
   }) async {
     final response = await http.post(
-      _u('/workspaces/$workspaceId/generate-quiz/'), // 👉 FIXED: using _u() helper
+      _u('/workspaces/$workspaceId/generate-quiz/'), 
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'selected_material_ids': selectedMaterialIds,
@@ -138,7 +138,7 @@ class ApiService {
 
   // ── Materials API ────────────────────────────────────────────────────────
   Future<void> uploadMaterial(String workspaceId, Uint8List bytes, String filename) async {
-    final request = http.MultipartRequest('POST', _u('/workspaces/$workspaceId/materials/')); // 👉 FIXED: using _u() helper
+    final request = http.MultipartRequest('POST', _u('/workspaces/$workspaceId/materials/')); 
 
     request.files.add(http.MultipartFile.fromBytes(
       'file', 
@@ -155,7 +155,7 @@ class ApiService {
   }
 
   Future<void> deleteMaterial(String materialId) async {
-    final response = await http.delete(_u('/materials/$materialId')); // 👉 FIXED: using _u() helper
+    final response = await http.delete(_u('/materials/$materialId')); 
     if (response.statusCode != 200) {
       throw Exception('Failed to delete material: ${response.body}');
     }
@@ -169,6 +169,8 @@ class ApiService {
     required Uint8List bytes,
     required String filename,
     String preferredId = '',
+    String? startDate, // 👉 ADDED: Optional start date
+    String? endDate,   // 👉 ADDED: Optional end date
   }) async {
     final req = http.MultipartRequest('POST', _u('/workspaces/upload'))
       ..fields['preferred_id'] = preferredId
@@ -177,6 +179,10 @@ class ApiService {
           'file', bytes, filename: filename, contentType: _contentTypeFor(filename),
         ),
       );
+
+    // 👉 THE FIX: Securely attach the dates to the backend request
+    if (startDate != null) req.fields['start_date'] = startDate;
+    if (endDate != null) req.fields['end_date'] = endDate;
 
     http.StreamedResponse streamed;
     try {

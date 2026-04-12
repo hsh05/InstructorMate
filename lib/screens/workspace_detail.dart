@@ -18,11 +18,15 @@ const _fieldLabels = {
   'course_title': 'Course Title',
   'course_code': 'Course Code',
   'semester': 'Semester',
+  'start_date': 'Semester Start Date',
+  'end_date': 'Semester End Date',
 };
 const _fieldIcons = {
   'course_title': Icons.book_rounded,
   'course_code': Icons.tag_rounded,
   'semester': Icons.calendar_today_rounded,
+  'start_date': Icons.event_available_rounded,
+  'end_date': Icons.event_busy_rounded,
 };
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -47,7 +51,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askScroll = ScrollController();
   bool _asking = false;
 
-  static const _editableKeys = ['course_title', 'course_code', 'semester'];
+  static const _editableKeys = ['course_title', 'course_code', 'semester', 'start_date', 'end_date'];
 
   // 👉 ADDED: Quiz Generation Variables
   bool _isGenerating = false;
@@ -108,12 +112,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             setState(() {
               _syncControllersFromWorkspace();
             });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✨ AI Extraction Complete!'), 
-                backgroundColor: AppColors.accent
-              ),
-            );
           }
         }
       });
@@ -762,6 +760,48 @@ class _InfoTabState extends State<_InfoTab>
     return TextInputType.text;
   }
 
+  // 👉 ADDED: The dedicated Prompt Screen for Dates
+  Future<void> _promptForDates() async {
+    // Try to parse existing dates so the calendar opens to the right month
+    DateTime? currentStart = DateTime.tryParse(widget.ctrl('start_date', '').text);
+    DateTime? currentEnd = DateTime.tryParse(widget.ctrl('end_date', '').text);
+
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      helpText: 'SELECT SEMESTER DATES',
+      saveText: 'CONFIRM DATES',
+      initialEntryMode: DatePickerEntryMode.calendarOnly, 
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+      initialDateRange: (currentStart != null && currentEnd != null && currentEnd.isAfter(currentStart))
+          ? DateTimeRange(start: currentStart, end: currentEnd)
+          : null,
+      builder: (context, child) {
+        return Theme(
+          // Themes the prompt to match your InstructorMate colors!
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              surface: AppColors.surface,
+              onSurface: AppColors.ink,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    // If they hit save, instantly update the text controllers and mark as ready to save
+    if (picked != null) {
+      setState(() {
+        widget.ctrl('start_date', '').text = picked.start.toIso8601String().split('T').first;
+        widget.ctrl('end_date', '').text = picked.end.toIso8601String().split('T').first;
+        _dirty = true;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -800,15 +840,21 @@ class _InfoTabState extends State<_InfoTab>
                     isEditing: _editing.contains(group.key),
                     error: _errors[group.key],
                     keyboardType: _keyboardType(group.key),
-                    onTap: () => setState(() {
-                      _editing.add(group.key);
-                      _dirty = true;
-                    }),
+                    onTap: () {
+                      // 👉 ADDED: If they tap a date, open the prompt screen instead of keyboard!
+                      if (group.key == 'start_date' || group.key == 'end_date') {
+                        _promptForDates();
+                      } else {
+                        setState(() {
+                          _editing.add(group.key);
+                          _dirty = true;
+                        });
+                      }
+                    },
                     onDone: () => setState(() {
                       _editing.remove(group.key);
                       if (_triedSave) {
-                        _errors[group.key] = _validateField(
-                            group.key, widget.ctrl(group.key, '').text);
+                        _errors[group.key] = _validateField(group.key, widget.ctrl(group.key, '').text);
                       }
                     }),
                   ),

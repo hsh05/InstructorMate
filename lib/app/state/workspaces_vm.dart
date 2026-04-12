@@ -280,6 +280,8 @@ class WorkspacesViewModel extends ChangeNotifier {
   Future<void> importSyllabusBytes({
     required Uint8List bytes,
     required String filename,
+    String? startDate,
+    String? endDate,
   }) async {
     if (importing) return;
     importing = true;
@@ -287,8 +289,14 @@ class WorkspacesViewModel extends ChangeNotifier {
     lastImportWasDuplicate = false;
     notifyListeners();
     try {
-      final result =
-          await api.importWorkspace(bytes: bytes, filename: filename);
+      // 👉 THE FIX: Pass the dates down into the API Service!
+      final result = await api.importWorkspace(
+        bytes: bytes, 
+        filename: filename,
+        startDate: startDate, // Passes the start date
+        endDate: endDate,     // Passes the end date
+      );
+      
       _current = result.workspace;
       lastImportWasDuplicate = result.alreadyUploaded;
       _syncCurrentToList(wasUpdated: false);

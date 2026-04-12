@@ -17,8 +17,6 @@ class WorkspacesHome extends StatefulWidget {
 }
 
 class _WorkspacesHomeState extends State<WorkspacesHome> {
-  bool _dragOver = false;
-
   // ── Helpers ───────────────────────────────────────────────────────────────
   void _showSuccess(String message) {
     if (!mounted) return;
@@ -83,22 +81,30 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             ),
           ),
           centerTitle: true,
-          actions: [
-            const NotificationBell(),
-            IconButton(
-              tooltip: 'Import syllabus',
-              icon: widget.vm.importing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.upload_file_rounded, color: Colors.white),
-              onPressed: widget.vm.importing ? null : _pickFile,
-            ),
+          actions: const [
+            NotificationBell(),
+            SizedBox(width: 8), // Small padding so the bell isn't pushed to the edge
           ],
         ),
+        
+        // 👉 ADDED: Floating Action Button in the bottom right corner
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: widget.vm.importing ? null : _pickFile,
+          icon: widget.vm.importing
+              ? const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.add_rounded),
+          label: Text(
+            widget.vm.importing ? 'Importing...' : 'Add Workspace',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 4,
+        ),
+
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -129,62 +135,47 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       );
     }
 
-    return Column(
-      children: [
-        _DropZone(
-          dragOver: _dragOver,
-          importing: widget.vm.importing,
-          onDragOver: (v) => setState(() => _dragOver = v),
-          onPickFile: _pickFile,
-          onDropBytes: _importBytes,
-        ),
-        if (widget.vm.workspaces.isNotEmpty)
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-              itemCount: widget.vm.workspaces.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (_, i) {
-                final ws = widget.vm.workspaces[i];
-                
-                // FIX: Force the shimmer card if the AI hasn't renamed it yet
-                final isStillProcessing = ws.isProcessing || ws.title.toLowerCase().contains('untitled');
+    if (widget.vm.workspaces.isNotEmpty) {
+      return ListView.separated(
+        // 👉 Added 80px of bottom padding so the FAB doesn't cover the last card
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), 
+        itemCount: widget.vm.workspaces.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (_, i) {
+          final ws = widget.vm.workspaces[i];
+          
+          final isStillProcessing = ws.isProcessing || ws.title.toLowerCase().contains('untitled');
 
-                if (isStillProcessing) {
-                  return _PollingWorkspaceCard(
-                    key: ValueKey(ws.id),
-                    workspace: ws,
-                    vm: widget.vm,
-                    onReady: (title) => _showSuccess(
-                      '"$title" imported successfully ✓',
-                    ),
-                    onDelete: () => _confirmDelete(context, ws),
-                  );
-                }
-                return _WorkspaceCard(
-                  workspace: ws,
-                  onTap: () => _openWorkspace(context, ws.id.toString()),
-                  onDelete: () => _confirmDelete(context, ws),
-                );
-              },
-            ),
-          )
-        else
-          const Expanded(
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Drop a PDF above or tap the upload button to get started.',
-                  textAlign: TextAlign.center,
-                  style:
-                      TextStyle(color: AppColors.textSecondary, fontSize: 14),
-                ),
+          if (isStillProcessing) {
+            return _PollingWorkspaceCard(
+              key: ValueKey(ws.id),
+              workspace: ws,
+              vm: widget.vm,
+              onReady: (title) => _showSuccess(
+                '"$title" imported successfully ✓',
               ),
-            ),
+              onDelete: () => _confirmDelete(context, ws),
+            );
+          }
+          return _WorkspaceCard(
+            workspace: ws,
+            onTap: () => _openWorkspace(context, ws.id.toString()),
+            onDelete: () => _confirmDelete(context, ws),
+          );
+        },
+      );
+    } else {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Tap "+ Add Workspace" below to get started.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.inkLight, fontSize: 14),
           ),
-      ],
-    );
+        ),
+      );
+    }
   }
 
   // ── Instant open — no await ───────────────────────────────────────────────
@@ -195,18 +186,54 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   Future<void> _pickFile() async {
     if (widget.vm.importing) return;
+
+    // 👉 1. Let the user pick the syllabus file FIRST
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'docx', 'txt'],
       withData: true,
     );
+    
+    // If they cancel the file picker, just stop here
     if (res == null || res.files.isEmpty) return;
     final f = res.files.first;
     if (f.bytes == null) return;
-    await _importBytes(f.bytes!, f.name);
+
+    // 👉 2. Pop up the Date Range Picker AFTER the file is selected
+    final DateTimeRange? pickedDates = await showDateRangePicker(
+      context: context,
+      helpText: 'SELECT SEMESTER DATES (REQUIRED)',
+      saveText: 'UPLOAD & CREATE', // Changed the button text to make the action clear
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)), 
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),   
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              surface: AppColors.surface,
+              onSurface: AppColors.ink,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    // 👉 3. If they cancel the dates, we safely abort the upload BEFORE hitting the database
+    if (pickedDates == null) {
+      _showError("Semester dates are required to create a workspace.");
+      return;
+    }
+    
+    // 👉 4. Both file and dates are secure, send them to the server!
+    await _importBytes(f.bytes!, f.name, pickedDates);
   }
 
-  Future<void> _importBytes(Uint8List bytes, String filename) async {
+  // 👉 Notice we added the `dates` parameter here
+  Future<void> _importBytes(Uint8List bytes, String filename, DateTimeRange dates) async {
     await widget.vm.importSyllabusBytes(bytes: bytes, filename: filename);
     if (!mounted) return;
 
@@ -401,6 +428,15 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     if (widget.vm.error != null) {
       _showError(widget.vm.error!);
       return;
+    }
+
+    // 👉 4. THE FIX: Immediately save the required dates to the new workspace!
+    // As soon as the workspace is created on the server, we silently patch it with the dates
+    if (widget.vm.current != null) {
+      await widget.vm.updateFields({
+        'start_date': dates.start.toIso8601String().split('T').first,
+        'end_date': dates.end.toIso8601String().split('T').first,
+      });
     }
 
     // ── Success — workspace queued for processing ─────────────────────────
@@ -641,7 +677,6 @@ class _PollingWorkspaceCardState extends State<_PollingWorkspaceCard> {
       final fresh = await widget.vm.api.getWorkspace(widget.workspace.id.toString());
       if (!mounted) return;
       
-      // FIX: Do not stop the timer if it still says "Untitled Workspace"
       final stillProcessing = fresh.isProcessing || fresh.title.toLowerCase().contains('untitled');
 
       if (!stillProcessing) {
@@ -823,9 +858,6 @@ class _WorkspaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Only show "Last Updated" if updated_at is at least 5 seconds after
-    // created_at — filters out the false "just now" that appears on creation
-    // when the backend sets both timestamps within milliseconds of each other.
     final updatedAt = workspace.updatedAt;
     final createdAt = workspace.createdAt.isNotEmpty
         ? DateTime.tryParse(workspace.createdAt)
@@ -991,104 +1023,6 @@ class _StatusBadge extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── Drop Zone ────────────────────────────────────────────────────────────────
-class _DropZone extends StatelessWidget {
-  const _DropZone({
-    required this.dragOver,
-    required this.importing,
-    required this.onDragOver,
-    required this.onPickFile,
-    required this.onDropBytes,
-  });
-  final bool dragOver;
-  final bool importing;
-  final void Function(bool) onDragOver;
-  final VoidCallback onPickFile;
-  final Future<void> Function(Uint8List, String) onDropBytes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: DragTarget<Object>(
-        onWillAcceptWithDetails: (_) {
-          onDragOver(true);
-          return true;
-        },
-        onLeave: (_) => onDragOver(false),
-        onAcceptWithDetails: (_) async {
-          onDragOver(false);
-          onPickFile();
-        },
-        builder: (_, __, ___) => GestureDetector(
-          onTap: importing ? null : onPickFile,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            decoration: BoxDecoration(
-              color: dragOver ? AppColors.bgTop : AppColors.surfaceAlt,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: dragOver ? AppColors.primary : AppColors.border,
-                width: dragOver ? 2 : 1.5,
-              ),
-            ),
-            child: importing
-                ? const Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.5, color: AppColors.primary),
-                      ),
-                      SizedBox(height: 10),
-                      Text('Importing syllabus…',
-                          style: TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13)),
-                    ],
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedScale(
-                        scale: dragOver ? 1.15 : 1.0,
-                        duration: const Duration(milliseconds: 180),
-                        child: Icon(
-                          dragOver
-                              ? Icons.file_download_rounded
-                              : Icons.upload_file_rounded,
-                          color: AppColors.primary,
-                          size: 34,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        dragOver
-                            ? 'Drop to upload'
-                            : 'Drag & drop a PDF/DOCX here',
-                        style: const TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14),
-                      ),
-                      const SizedBox(height: 3),
-                      const Text('or tap to browse — PDF, DOCX',
-                          style: TextStyle(
-                              color: AppColors.inkLight, fontSize: 12)),
-                    ],
-                  ),
-          ),
-        ),
       ),
     );
   }

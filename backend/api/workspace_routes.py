@@ -5,7 +5,7 @@ import uuid
 import urllib.parse
 from firebase_admin import storage
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from services.file_hash_service import FileHashService
 from services.workspace_service import WorkspaceService
 from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
 from sqlalchemy.orm import joinedload
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -107,7 +108,7 @@ def list_workspaces(
 ):
     return {
         "workspaces": [
-            _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db) # 👉 Passed DB Session
+            _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db)
             for ws in workspace_repo.list_all()
         ]
     }
@@ -116,6 +117,8 @@ def list_workspaces(
 @router.post("/workspaces/upload")
 async def import_workspace(
     file: UploadFile = File(...),
+    start_date: Optional[str] = Form(None),
+    end_date: Optional[str] = Form(None),
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:      PgSectionRepository   = Depends(get_section_repo),
     student_repo:      PgStudentRepository   = Depends(get_student_repo),
@@ -133,6 +136,13 @@ async def import_workspace(
     content = await file.read()
     result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
+
+    if start_date and end_date:
+        ws.update_fields({
+            "start_date": start_date,
+            "end_date": end_date
+        })
+        workspace_repo.save(ws)
     
     # FIREBASE UPLOAD ONLY (Bridge removed)
     if not result["already_uploaded"]:
