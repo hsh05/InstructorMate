@@ -225,16 +225,50 @@ def update_workspace(
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     db: Session = Depends(get_db), 
 ):
+    # 1. Fetch the domain model using your teammate's repo
     ws = workspace_repo.get_by_id(workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    mirrored_fields = _mirror_workspace_name_fields(data.fields)
+    # 2. Make a mutable dictionary of the incoming fields
+    incoming_fields = dict(data.fields)
+
+    # 👉 THE FIX: Intercept the dates and save them directly to the database
+    ws_id_int = int(workspace_id)
+    db_ws = db.query(DBWorkspace).filter(DBWorkspace.workspace_id == ws_id_int).first()
+    
+    if db_ws:
+        try:
+            # .pop() grabs the date AND removes it from the JSON dictionary
+            if "start_date" in incoming_fields:
+                start_str = incoming_fields.pop("start_date") 
+                if start_str and start_str.strip():
+                    db_ws.start_date = datetime.strptime(start_str.split('T')[0], "%Y-%m-%d").date()
+                else:
+                    db_ws.start_date = None
+                    
+            if "end_date" in incoming_fields:
+                end_str = incoming_fields.pop("end_date")
+                if end_str and end_str.strip():
+                    db_ws.end_date = datetime.strptime(end_str.split('T')[0], "%Y-%m-%d").date()
+                else:
+                    db_ws.end_date = None
+            
+            # Save the dates securely to NeonDB
+            db.commit()
+            db.refresh(db_ws)
+        except Exception as e:
+            logger.error(f"Date parsing failed during update: {e}")
+
+    # 3. Process all remaining fields (like course_title) using your teammate's logic
+    mirrored_fields = _mirror_workspace_name_fields(incoming_fields)
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     
     logger.info("Updated workspace id=%s", workspace_id)
-    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo, db)} # 👉 Passed DB Session
+    
+    # 4. Return the fully populated dictionary (which we fixed in the previous step!)
+    return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo, db)}
 
 
 @router.delete("/workspaces/{workspace_id}")
