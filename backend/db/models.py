@@ -2,7 +2,7 @@
 
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, ForeignKey, 
-    TIMESTAMP, Time, Float, ForeignKeyConstraint
+    TIMESTAMP, Time, Float, ForeignKeyConstraint, Date
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -64,6 +64,9 @@ class Workspace(Base):
     instructor = relationship("Instructor", back_populates="workspaces")
     sections = relationship("Section", back_populates="workspace", cascade="all, delete-orphan")
     materials = relationship("Material", back_populates="workspace", cascade="all, delete-orphan")
+
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
 
 # ==============================================================================
 # ── SECTIONS & SCHEDULING ─────────────────────────────────────────────────────

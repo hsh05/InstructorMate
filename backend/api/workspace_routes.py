@@ -137,11 +137,11 @@ async def import_workspace(
     result  = workspace_service.create_from_file(filename, content)
     ws      = result["workspace"]
 
-    if start_date and end_date:
-        ws.update_fields({
-            "start_date": start_date,
-            "end_date": end_date
-        })
+    if start_date:
+        ws.start_date = start_date
+    if end_date:
+        ws.end_date = end_date
+        
         workspace_repo.save(ws)
     
     # FIREBASE UPLOAD ONLY (Bridge removed)

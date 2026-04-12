@@ -234,8 +234,24 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   // 👉 Notice we added the `dates` parameter here
   Future<void> _importBytes(Uint8List bytes, String filename, DateTimeRange dates) async {
-    await widget.vm.importSyllabusBytes(bytes: bytes, filename: filename);
+    final startStr = dates.start.toIso8601String().split('T').first;
+    final endStr = dates.end.toIso8601String().split('T').first;
+
+    await widget.vm.importSyllabusBytes(
+      bytes: bytes, 
+      filename: filename,
+      startDate: startStr,
+      endDate: endStr,
+    );
+
     if (!mounted) return;
+
+    if (widget.vm.current != null) {
+      await widget.vm.updateFields({
+        'start_date': startStr,
+        'end_date': endStr,
+      });
+    }
 
     // ── Duplicate ─────────────────────────────────────────────────────────
     if (widget.vm.lastImportWasDuplicate) {

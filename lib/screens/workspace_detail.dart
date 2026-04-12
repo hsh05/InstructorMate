@@ -51,6 +51,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askScroll = ScrollController();
   bool _asking = false;
 
+  // Make sure start_date and end_date are in this list, otherwise the UI will hide them!
   static const _editableKeys = ['course_title', 'course_code', 'semester', 'start_date', 'end_date'];
 
   // 👉 ADDED: Quiz Generation Variables
