@@ -141,7 +141,7 @@ async def import_workspace(
     domain_ws   = result["workspace"]
 
     # 2. 👉 THE FIX: Fetch the raw SQLAlchemy DB Model directly
-    db_ws = db.query(DBWorkspace).filter(DBWorkspace.id == domain_ws.workspace_id).first()
+    db_ws = db.query(DBWorkspace).filter(DBWorkspace.workspace_id == domain_ws.workspace_id).first()
 
     # 3. Safely parse and assign the dates to the DB record
     if db_ws:
