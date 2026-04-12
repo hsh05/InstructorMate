@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db.database import get_db
+from db.models import Workspace as DBWorkspace
 from db import models # 👉 ADDED: So we can query the new Materials table
 from repositories.pg_workspace_repository import PgWorkspaceRepository
 from repositories.pg_section_repository import PgSectionRepository
@@ -134,35 +135,36 @@ async def import_workspace(
             detail=f"Unsupported file type '{ext}'. Allowed: {sorted(_ALLOWED_SYLLABUS_EXTENSIONS)}",
         )
 
+    # 1. Read the file and let the service do the initial creation
     content     = await file.read()
     result      = workspace_service.create_from_file(filename, content)
     domain_ws   = result["workspace"]
 
-    ws = workspace_repo.get_by_id(domain_ws.workspace_id)
+    # 2. 👉 THE FIX: Fetch the raw SQLAlchemy DB Model directly
+    db_ws = db.query(DBWorkspace).filter(DBWorkspace.id == domain_ws.workspace_id).first()
 
-    if not ws:
-        raise HTTPException(status_code=404, detail="Workspace created but not found in DB")
-
-    try:
-        if start_date and start_date.strip():
-            # Standardizes format to YYYY-MM-DD
-            ws.start_date = datetime.strptime(start_date.split('T')[0], "%Y-%m-%d").date()
-        if end_date and end_date.strip():
-            ws.end_date = datetime.strptime(end_date.split('T')[0], "%Y-%m-%d").date()
-    except Exception as e:
-        logger.error(f"Date parsing failed: {e}")
-
-    db.add(ws) 
-    db.commit() 
-    db.refresh(ws)
-
-    workspace_repo.save(ws)
+    # 3. Safely parse and assign the dates to the DB record
+    if db_ws:
+        try:
+            if start_date and start_date.strip():
+                # Standardizes format to YYYY-MM-DD
+                db_ws.start_date = datetime.strptime(start_date.split('T')[0], "%Y-%m-%d").date()
+            if end_date and end_date.strip():
+                db_ws.end_date = datetime.strptime(end_date.split('T')[0], "%Y-%m-%d").date()
+            
+            # Save the dates directly to NeonDB
+            db.commit() 
+            db.refresh(db_ws)
+        except Exception as e:
+            logger.error(f"Date parsing failed: {e}")
+    else:
+        logger.warning(f"Could not find DB record to update dates for workspace {domain_ws.workspace_id}")
     
-    # FIREBASE UPLOAD ONLY (Bridge removed)
+    # 4. FIREBASE UPLOAD ONLY (Bridge removed)
     if not result["already_uploaded"]:
         try:
             bucket = storage.bucket()
-            blob_path = f"workspaces/{ws.workspace_id}/{filename}"
+            blob_path = f"workspaces/{domain_ws.workspace_id}/{filename}"
             blob = bucket.blob(blob_path)
             
             blob.upload_from_string(content, content_type=file.content_type)
@@ -176,12 +178,12 @@ async def import_workspace(
             logger.error(f"Firebase upload failed: {e}")
 
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
-                ws.workspace_id, result["already_uploaded"], ext)
+                domain_ws.workspace_id, result["already_uploaded"], ext)
     
-    workspace_data = _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db)
-    
+    # 5. Return the fully populated dictionary back to Flutter
     return {
-        "workspace":        _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db), # 👉 Passed DB Session
+        # Note: We pass 'domain_ws' here so the helper function works exactly as your teammate wrote it
+        "workspace":        _ws_dict(domain_ws.workspace_id, domain_ws, section_repo, student_repo, db), 
         "already_uploaded": result["already_uploaded"],
     }
 
