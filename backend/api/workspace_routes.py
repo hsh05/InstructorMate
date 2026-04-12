@@ -134,9 +134,14 @@ async def import_workspace(
             detail=f"Unsupported file type '{ext}'. Allowed: {sorted(_ALLOWED_SYLLABUS_EXTENSIONS)}",
         )
 
-    content = await file.read()
-    result  = workspace_service.create_from_file(filename, content)
-    ws      = result["workspace"]
+    content     = await file.read()
+    result      = workspace_service.create_from_file(filename, content)
+    domain_ws   = result["workspace"]
+
+    ws = workspace_repo.get_by_id(domain_ws.workspace_id)
+
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace created but not found in DB")
 
     try:
         if start_date and start_date.strip():
