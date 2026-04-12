@@ -74,9 +74,20 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo, db: Session) -> dict:
     d["sections"] = sections
     d["students_count"] = sum(s["students_count"] for s in sections)
     
-    # Fetch Materials for this workspace and attach them!
     try:
         ws_id_int = int(workspace_id)
+        
+        # 👉 THE FIX: Safely grab the start and end dates directly from NeonDB!
+        # This guarantees the dates are always included, even if ws.to_dict() misses them.
+        db_ws = db.query(models.Workspace).filter(models.Workspace.workspace_id == ws_id_int).first()
+        if db_ws:
+            d["start_date"] = str(db_ws.start_date) if db_ws.start_date else ""
+            d["end_date"] = str(db_ws.end_date) if db_ws.end_date else ""
+        else:
+            d["start_date"] = ""
+            d["end_date"] = ""
+
+        # Fetch Materials for this workspace and attach them!
         materials = db.query(models.Material).filter(models.Material.workspace_id == ws_id_int).all()
         d["materials"] = [
             {
@@ -89,6 +100,8 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo, db: Session) -> dict:
         ]
     except ValueError:
         d["materials"] = []
+        d["start_date"] = ""
+        d["end_date"] = ""
         
     return d
 
