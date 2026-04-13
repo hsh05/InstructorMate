@@ -24,7 +24,6 @@ class ProfileResponse(BaseModel):
     college: Optional[str] = None
     department: Optional[str] = None
     job_title: Optional[str] = None
-    office_number: Optional[str] = None
 
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = None
@@ -33,7 +32,6 @@ class ProfileUpdateRequest(BaseModel):
     college: Optional[str] = None
     department: Optional[str] = None
     job_title: Optional[str] = None
-    office_number: Optional[str] = None
 
 # ─── GET /profile/{user_id} ───────────────────────────────────────────────────
 @router.get("/{user_id}", response_model=ProfileResponse)
@@ -41,23 +39,21 @@ async def get_profile(user_id: str, db=Depends(get_db)):
     row = await db.fetchrow(
         """
         SELECT
-            u.id::text  AS user_id,
-            u.full_name,
-            u.email,
-            p.phone_number,
-            p.university_name,
-            p.college,
-            p.department,
-            p.job_title,
-            p.office_number
-        FROM users u
-        LEFT JOIN instructor_profiles p ON p.user_id = u.id
-        WHERE u.id = $1::uuid
+            instructor_id::text AS user_id,
+            full_name,
+            email,
+            phone_number,
+            university_name,
+            college,
+            department,
+            job_title
+        FROM instructor
+        WHERE instructor_id = $1
         """,
-        user_id,
+        int(user_id), # Cast to int for Neon DB
     )
     if not row:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Instructor not found")
     return dict(row)
 
 
@@ -68,40 +64,32 @@ async def update_profile(
     body: ProfileUpdateRequest,
     db=Depends(get_db),
 ):
-    user = await db.fetchrow("SELECT id FROM users WHERE id = $1::uuid", user_id)
+    instructor_id = int(user_id)
+    
+    # Check if instructor exists
+    user = await db.fetchrow("SELECT instructor_id FROM instructor WHERE instructor_id = $1", instructor_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Instructor not found")
 
-    if body.full_name is not None:
-        await db.execute(
-            "UPDATE users SET full_name = $1 WHERE id = $2::uuid",
-            body.full_name,
-            user_id,
-        )
-
+    # Update all fields in a single query using COALESCE (keeps old data if new data is None)
     await db.execute(
         """
-        INSERT INTO instructor_profiles (
-            user_id, phone_number, university_name,
-            college, department, job_title, office_number, updated_at
-        )
-        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, NOW())
-        ON CONFLICT (user_id) DO UPDATE SET
-            phone_number    = COALESCE(EXCLUDED.phone_number,    instructor_profiles.phone_number),
-            university_name = COALESCE(EXCLUDED.university_name, instructor_profiles.university_name),
-            college         = COALESCE(EXCLUDED.college,         instructor_profiles.college),
-            department      = COALESCE(EXCLUDED.department,      instructor_profiles.department),
-            job_title       = COALESCE(EXCLUDED.job_title,       instructor_profiles.job_title),
-            office_number   = COALESCE(EXCLUDED.office_number,   instructor_profiles.office_number),
-            updated_at      = NOW()
+        UPDATE instructor SET
+            full_name = COALESCE($1, full_name),
+            phone_number = COALESCE($2, phone_number),
+            university_name = COALESCE($3, university_name),
+            college = COALESCE($4, college),
+            department = COALESCE($5, department),
+            job_title = COALESCE($6, job_title)
+        WHERE instructor_id = $7
         """,
-        user_id,
+        body.full_name,
         body.phone_number,
         body.university_name,
         body.college,
         body.department,
         body.job_title,
-        body.office_number,
+        instructor_id
     )
 
     return await get_profile(user_id, db)

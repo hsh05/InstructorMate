@@ -27,7 +27,6 @@ from db.models import Workspace
 # --- Teammate's Auth & Profile Imports ---
 from routers import auth
 from routers import profileRouter
-from database import create_tables
 
 # --- External Services ---
 from openai import OpenAI
@@ -87,14 +86,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 👉 MERGED: Teammate's database startup event
+# 👉 UPDATED: Removed the table creation step!
 @app.on_event("startup")
 async def startup():
-    try:
-        await create_tables()
-        print("✅ Database connected and tables ensured.")
-    except Exception as e:
-        print(f"⚠️ Failed to connect to database on startup: {e}")
+    print("✅ API started. (Database table creation is disabled).")
 
 # Include Modular Routers
 app.include_router(workspace_router)

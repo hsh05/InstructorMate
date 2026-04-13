@@ -49,20 +49,20 @@ async def get_current_user(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Token expired or invalid")
     return payload
 
-async def issue_tokens(user_id: str, email: str, pool) -> dict:
-    access_token = create_access_token(user_id, email)
+async def issue_tokens(instructor_id: int, email: str, pool) -> dict:
+    access_token = create_access_token(str(instructor_id), email)
     refresh_token = create_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
     async with pool.acquire() as conn:
         await conn.execute(
-            """INSERT INTO refresh_tokens (user_id, token, expires_at)
+            """INSERT INTO refresh_tokens (instructor_id, token, expires_at)
                VALUES ($1, $2, $3)""",
-            user_id, refresh_token, expires_at
+            instructor_id, refresh_token, expires_at
         )
 
     return {
-        "user_id": user_id,          # ← added so Flutter can use it directly
+        "user_id": str(instructor_id),          # Keep user_id in output for Flutter compatibility
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
@@ -75,18 +75,18 @@ async def issue_tokens(user_id: str, email: str, pool) -> dict:
 async def signup(body: SignUpRequest):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", body.email)
+        existing = await conn.fetchrow("SELECT instructor_id FROM instructor WHERE email = $1", body.email)
         if existing:
             raise HTTPException(status_code=409, detail="Email already registered")
 
         hashed = hash_password(body.password)
         user = await conn.fetchrow(
-            """INSERT INTO users (email, hashed_password, full_name)
-               VALUES ($1, $2, $3) RETURNING id, email""",
+            """INSERT INTO instructor (email, hashed_password, full_name)
+               VALUES ($1, $2, $3) RETURNING instructor_id, email""",
             body.email, hashed, body.full_name
         )
 
-    return await issue_tokens(str(user["id"]), user["email"], pool)
+    return await issue_tokens(user["instructor_id"], user["email"], pool)
 
 
 @router.post("/login")
@@ -94,15 +94,20 @@ async def login(body: LoginRequest):
     pool = await get_pool()
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, email, hashed_password FROM users WHERE email = $1", body.email
+            "SELECT instructor_id, email, hashed_password FROM instructor WHERE email = $1", body.email
         )
 
     if not user or not user["hashed_password"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Don't let OAuth users log in with empty passwords
+    if user["hashed_password"] == "OAUTH_LOGIN":
+        raise HTTPException(status_code=401, detail="Please log in with Google")
+        
     if not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    return await issue_tokens(str(user["id"]), user["email"], pool)
+    return await issue_tokens(user["instructor_id"], user["email"], pool)
 
 
 # ── Google OAuth ──────────────────────────────────────────────────────────────
@@ -132,23 +137,20 @@ async def google_callback(body: GoogleCallbackRequest):
         info = verify_res.json()
         google_id = info["sub"]
         email = info["email"]
-        full_name = info.get("name")
-        avatar_url = info.get("picture")
+        full_name = info.get("name", "Unknown Name")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            """INSERT INTO users (email, google_id, full_name, avatar_url, is_verified)
-               VALUES ($1, $2, $3, $4, TRUE)
+            """INSERT INTO instructor (email, google_id, full_name, hashed_password, is_verified)
+               VALUES ($1, $2, $3, 'OAUTH_LOGIN', TRUE)
                ON CONFLICT (email) DO UPDATE
-                 SET google_id = EXCLUDED.google_id,
-                     avatar_url = EXCLUDED.avatar_url,
-                     updated_at = NOW()
-               RETURNING id, email""",
-            email, google_id, full_name, avatar_url
+                 SET google_id = EXCLUDED.google_id
+               RETURNING instructor_id, email""",
+            email, google_id, full_name
         )
 
-    return await issue_tokens(str(user["id"]), user["email"], pool)
+    return await issue_tokens(user["instructor_id"], user["email"], pool)
 
 
 # ── Token Refresh ─────────────────────────────────────────────────────────────
@@ -157,11 +159,12 @@ async def google_callback(body: GoogleCallbackRequest):
 async def refresh(body: RefreshRequest):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # Cast to uuid to match the refresh_tokens table schema
         row = await conn.fetchrow(
-            """SELECT rt.user_id, rt.expires_at, u.email
+            """SELECT rt.instructor_id, rt.expires_at, i.email
                FROM refresh_tokens rt
-               JOIN users u ON u.id = rt.user_id
-               WHERE rt.token = $1""",
+               JOIN instructor i ON i.instructor_id = rt.instructor_id
+               WHERE rt.token = $1::uuid""",
             body.refresh_token
         )
         if not row:
@@ -169,9 +172,9 @@ async def refresh(body: RefreshRequest):
         if row["expires_at"] < datetime.now(timezone.utc):
             raise HTTPException(status_code=401, detail="Refresh token expired")
 
-        await conn.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refresh_token)
+        await conn.execute("DELETE FROM refresh_tokens WHERE token = $1::uuid", body.refresh_token)
 
-    return await issue_tokens(str(row["user_id"]), row["email"], pool)
+    return await issue_tokens(row["instructor_id"], row["email"], pool)
 
 
 # ── Me ────────────────────────────────────────────────────────────────────────
@@ -181,8 +184,8 @@ async def me(current_user: dict = Depends(get_current_user)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, email, full_name, avatar_url, is_verified, created_at FROM users WHERE id = $1",
-            current_user["sub"]
+            "SELECT instructor_id as id, email, full_name, is_verified FROM instructor WHERE instructor_id = $1",
+            int(current_user["sub"]) # Cast JWT string payload back to Integer
         )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -195,5 +198,5 @@ async def me(current_user: dict = Depends(get_current_user)):
 async def logout(body: RefreshRequest):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refresh_token)
+        await conn.execute("DELETE FROM refresh_tokens WHERE token = $1::uuid", body.refresh_token)
     return {"message": "Logged out"}
