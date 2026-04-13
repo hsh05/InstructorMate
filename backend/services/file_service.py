@@ -1,11 +1,9 @@
-# backend/syllabus_converter.py
+# backend/services/file_service.py
 
-from __future__ import annotations
-
+import hashlib
 import time
 import csv
 import re
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +12,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from openai import OpenAI
 import pdfplumber
 
-
 try:
     from docx import Document as DocxDocument
     _DOCX_AVAILABLE = True
@@ -22,12 +19,19 @@ except ImportError:
     _DOCX_AVAILABLE = False
 
 
+# ── File Hashing ──────────────────────────────────────────────────────────────
+class FileHashService:
+    @staticmethod
+    def compute(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+
+# ── Data Classes ──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class PdfChunk:
     chunk_id: int
     page: int
     text: str
-
 
 @dataclass(frozen=True)
 class ConversionResult:
@@ -35,9 +39,9 @@ class ConversionResult:
     chunks_csv: str
 
 
+# ── JSON Parsing ──────────────────────────────────────────────────────────────
 class JsonParseError(ValueError):
     pass
-
 
 class SafeJson:
     @staticmethod
@@ -96,8 +100,7 @@ class SafeJson:
         return None
 
 
-# ── PDF extractor ──────────────────────────────────────────────────────────────
-
+# ── Extractors ────────────────────────────────────────────────────────────────
 class PdfTextExtractor:
     def extract_chunks(self, pdf_path: Path) -> List[PdfChunk]:
         if not pdf_path.exists():
@@ -108,46 +111,29 @@ class PdfTextExtractor:
         
         with pdfplumber.open(str(pdf_path)) as pdf:
             for page_index, page in enumerate(pdf.pages, start=1):
-                # 👉 THE FIX: layout=True forces the extractor to read left-to-right!
-                # This perfectly preserves table rows and spacing.
                 text = (page.extract_text(layout=True) or "").strip()
-                
                 if not text:
                     continue
-                    
                 chunks.append(PdfChunk(chunk_id=chunk_id, page=page_index, text=text))
                 chunk_id += 1
                 
         if not chunks:
             raise RuntimeError("No text extracted. PDF may be scanned; OCR would be needed.")
-            
         return chunks
 
-# ── DOCX extractor ─────────────────────────────────────────────────────────────
-
 class DocxTextExtractor:
-    """
-    Extracts text from .docx files using python-docx.
-    Groups paragraphs into ~page-sized chunks (every 40 paragraphs = 1 chunk)
-    so the downstream pipeline treats them the same as PDF pages.
-    """
-
     _PARAS_PER_CHUNK = 40
 
     def extract_chunks(self, docx_path: Path) -> List[PdfChunk]:
         if not _DOCX_AVAILABLE:
-            raise RuntimeError(
-                "python-docx is not installed. Run: pip install python-docx --break-system-packages"
-            )
+            raise RuntimeError("python-docx is not installed. Run: pip install python-docx")
         if not docx_path.exists():
             raise FileNotFoundError(f"DOCX not found: {docx_path.resolve()}")
 
         doc = DocxDocument(str(docx_path))
         all_text: list[str] = []
-        from docx.oxml.ns import qn
 
         def _iter_block_items(parent):
-            """Yield paragraphs and tables in document order."""
             from docx.table import Table
             from docx.text.paragraph import Paragraph
             for child in parent.element.body:
@@ -167,7 +153,6 @@ class DocxTextExtractor:
             elif isinstance(block, Table):
                 for row in block.rows:
                     row_cells = [c.text.strip() for c in row.cells if c.text.strip()]
-                    # Deduplicate merged cells (python-docx repeats them)
                     seen = []
                     for cell in row_cells:
                         if not seen or cell != seen[-1]:
@@ -185,34 +170,13 @@ class DocxTextExtractor:
         for i in range(0, len(paragraphs), self._PARAS_PER_CHUNK):
             group = paragraphs[i: i + self._PARAS_PER_CHUNK]
             text = "\n".join(group)
-            # "page" is a virtual page number — fine for downstream use
-            page = chunk_id
-            chunks.append(PdfChunk(chunk_id=chunk_id, page=page, text=text))
+            chunks.append(PdfChunk(chunk_id=chunk_id, page=chunk_id, text=text))
             chunk_id += 1
 
         return chunks
 
 
-# ── Schema loader ──────────────────────────────────────────────────────────────
-
-class CsvSchemaLoader:
-    def load_columns(self, csv_path: str) -> List[str]:
-        path = Path(csv_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Template CSV not found: {path.resolve()}")
-        with path.open("r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            header = next(reader, None)
-        if not header:
-            raise ValueError("Template CSV has no header row.")
-        cols = [h.strip() for h in header if h and h.strip()]
-        if not cols:
-            raise ValueError("Template CSV header is empty.")
-        return cols
-
-
-# ── LLM field extractor ────────────────────────────────────────────────────────
-
+# ── AI Field Extraction ───────────────────────────────────────────────────────
 class SyllabusFieldExtractor:
     def __init__(self, model: str = "gpt-4o") -> None:
         self.client = OpenAI()
@@ -233,11 +197,9 @@ class SyllabusFieldExtractor:
             "- If a value is not found, use an empty string.\n"
             "- Keys MUST match the given columns EXACTLY.\n"
             "Definitions:\n"
-            "- 'course_title': The actual name of the class (e.g. 'Intro to Physics', 'Calculus I'). DO NOT put the instructor's name here.\n"
-            "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101', 'CS102').\n"
-            "\n"
-            f"COLUMNS(JSON array of strings): {cols_json}\n"
-            "\n"
+            "- 'course_title': The actual name of the class. DO NOT put the instructor's name here.\n"
+            "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n\n"
+            f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
 
@@ -294,8 +256,7 @@ class SyllabusFieldExtractor:
         return joined[:max_chars]
 
 
-# ── CSV writer ─────────────────────────────────────────────────────────────────
-# (Keep your CsvFileWriter exactly as is)
+# ── CSV Writers ───────────────────────────────────────────────────────────────
 class CsvFileWriter:
     def write_single_row(self, csv_path: Path, row: Dict[str, str]) -> None:
         csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -314,10 +275,7 @@ class CsvFileWriter:
                 writer.writerow({"chunk_id": c.chunk_id, "page": c.page, "text": c.text})
 
 
-# ── Main service ───────────────────────────────────────────────────────────────
-
-_SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
-
+# ── Main File Converter Service ───────────────────────────────────────────────
 class SyllabusConverterService:
     def __init__(self, model: str = "gpt-4o") -> None:
         self.pdf_extractor  = PdfTextExtractor()
@@ -339,7 +297,7 @@ class SyllabusConverterService:
         self,
         pdf_path: str,
         output_dir: str,
-        template_csv_path: str, # We keep the argument so we don't break function calls, but we ignore it!
+        template_csv_path: str, 
         output_base_name: Optional[str] = None,
     ) -> ConversionResult:
         doc_path = Path(pdf_path)
@@ -350,7 +308,6 @@ class SyllabusConverterService:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # 👉 THE FIX: Bypass the confusing CSV template. Force the exact 3 DB columns!
         columns = ["course_title", "course_code"]
 
         doc_bytes  = doc_path.read_bytes()
@@ -378,22 +335,3 @@ class SyllabusConverterService:
         self.writer.write_chunks(chunks_path, chunks)
 
         return ConversionResult(single_row_csv=str(single_row_path), chunks_csv=str(chunks_path))
-
-
-# ── Public helper ──────────────────────────────────────────────────────────────
-
-def convert_pdf_to_csvs(
-    pdf_path: str,
-    output_dir: str = "output",
-    model: str = "gpt-4o",
-    template_csv_path: str = "templates/default_template.csv",
-    output_base_name: Optional[str] = None,
-) -> Dict[str, str]:
-    service = SyllabusConverterService(model=model)
-    result = service.convert(
-        pdf_path=pdf_path,
-        output_dir=output_dir,
-        template_csv_path=template_csv_path,
-        output_base_name=output_base_name,
-    )
-    return {"single_row_csv": result.single_row_csv, "chunks_csv": result.chunks_csv}
