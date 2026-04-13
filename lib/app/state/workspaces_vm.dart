@@ -12,6 +12,7 @@ import '../../services/web_notification_service.dart';
 import '../../models/workspace_model.dart';
 import '../../utils/schedule_utils.dart';
 import '../../screens/workspace_ask.dart';
+import 'package:cross_file/cross_file.dart';
 
 class WorkspacesViewModel extends ChangeNotifier {
   WorkspacesViewModel({required this.api});
@@ -333,20 +334,48 @@ class WorkspacesViewModel extends ChangeNotifier {
   // ── Materials ─────────────────────────────────────────────────────────────
   bool uploadingMaterial = false;
 
-  Future<void> uploadMaterial() async {
+  Future<void> uploadMaterial({List<XFile>? droppedFiles}) async {
     final ws = _current;
     if (ws == null) return;
-    
-    final picked = await _pickFileBytes(extensions: ['pdf', 'docx', 'txt', 'csv', 'xlsx', 'pptx']);
-    if (picked == null) return;
+
+    List<({Uint8List bytes, String name})> filesToUpload = [];
+
+    // 1. Check if files were dragged and dropped
+    if (droppedFiles != null && droppedFiles.isNotEmpty) {
+      for (final f in droppedFiles) {
+        final bytes = await f.readAsBytes();
+        filesToUpload.add((bytes: bytes, name: f.name));
+      }
+    } 
+    // 2. Otherwise, open the File Picker with MULTI-SELECT enabled
+    else {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'docx', 'txt', 'csv', 'xlsx', 'pptx'],
+        withData: true,
+        allowMultiple: true, // 👉 THE FIX: Users can now highlight multiple files!
+      );
+      if (res == null || res.files.isEmpty) return;
+      
+      for (final f in res.files) {
+        if (f.bytes != null) {
+          filesToUpload.add((bytes: f.bytes!, name: f.name));
+        }
+      }
+    }
+
+    if (filesToUpload.isEmpty) return;
 
     uploadingMaterial = true;
     error = null;
     notifyListeners();
 
     try {
-      // 👉 THE FIX: Actually call your ApiService!
-      await api.uploadMaterial(ws.id.toString(), picked.bytes, picked.name);
+      // 👉 Upload all selected files sequentially
+      for (final file in filesToUpload) {
+        await api.uploadMaterial(ws.id.toString(), file.bytes, file.name);
+      }
+      // Refresh the UI once all files are uploaded
       await refreshCurrentQuietly();
     } catch (e) {
       error = e.toString();

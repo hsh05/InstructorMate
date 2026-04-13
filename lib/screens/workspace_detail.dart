@@ -13,6 +13,7 @@ import 'workspace_ask.dart';
 import '../models/config_model.dart';
 import '../models/question_model.dart';
 import 'review_screen.dart'; 
+import 'package:desktop_drop/desktop_drop.dart';
 
 const _fieldLabels = {
   'course_title': 'Course Title',
@@ -761,9 +762,8 @@ class _InfoTabState extends State<_InfoTab>
     return TextInputType.text;
   }
 
-  // 👉 ADDED: The dedicated Prompt Screen for Dates
+  // 👉 The dedicated Prompt Screen for Dates
   Future<void> _promptForDates() async {
-    // Try to parse existing dates so the calendar opens to the right month
     DateTime? currentStart = DateTime.tryParse(widget.ctrl('start_date', '').text);
     DateTime? currentEnd = DateTime.tryParse(widget.ctrl('end_date', '').text);
 
@@ -779,7 +779,6 @@ class _InfoTabState extends State<_InfoTab>
           : null,
       builder: (context, child) {
         return Theme(
-          // Themes the prompt to match your InstructorMate colors!
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
               primary: AppColors.primary,
@@ -793,7 +792,6 @@ class _InfoTabState extends State<_InfoTab>
       },
     );
 
-    // If they hit save, instantly update the text controllers and mark as ready to save
     if (picked != null) {
       setState(() {
         widget.ctrl('start_date', '').text = picked.start.toIso8601String().split('T').first;
@@ -801,6 +799,42 @@ class _InfoTabState extends State<_InfoTab>
         _dirty = true;
       });
     }
+  }
+
+  // 👉 ADDED: Calculates the current week assuming Monday start
+  String _calculateCurrentWeek() {
+    final startStr = widget.ws.fields['start_date'];
+    final endStr = widget.ws.fields['end_date'];
+    
+    if (startStr == null || startStr.isEmpty) return 'Week --';
+    final start = DateTime.tryParse(startStr);
+    if (start == null) return 'Week --';
+
+    final now = DateTime.now();
+
+    // If the semester is over
+    if (endStr != null && endStr.isNotEmpty) {
+      final end = DateTime.tryParse(endStr);
+      if (end != null && now.isAfter(end.add(const Duration(days: 1)))) {
+        return 'Ended';
+      }
+    }
+
+    // Strip time to avoid edge-case daylight savings / time bugs
+    final startOnly = DateTime(start.year, start.month, start.day);
+    final nowOnly = DateTime(now.year, now.month, now.day);
+
+    if (nowOnly.isBefore(startOnly)) return 'Starts Soon';
+
+    // In Dart, DateTime.weekday is 1 for Monday and 7 for Sunday.
+    // Subtracting (weekday - 1) shifts any day back to its respective Monday.
+    final startMonday = startOnly.subtract(Duration(days: startOnly.weekday - 1));
+    final nowMonday = nowOnly.subtract(Duration(days: nowOnly.weekday - 1));
+
+    final diffDays = nowMonday.difference(startMonday).inDays;
+    final weekNum = (diffDays / 7).floor() + 1;
+
+    return 'Week $weekNum';
   }
 
   @override
@@ -812,10 +846,50 @@ class _InfoTabState extends State<_InfoTab>
       groups.add(_FieldGroup.single(key));
     }
 
+    // 👉 Generate the week string to display
+    final weekText = _calculateCurrentWeek();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionHeader(title: 'Workspace Details', icon: Icons.info_outline_rounded),
+        // 👉 ADDED: A beautiful row containing the Header and the Week Badge!
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const _SectionHeader(title: 'Workspace Details', icon: Icons.info_outline_rounded),
+            
+            // The dynamic Week Badge
+            Container(
+              // 👉 INCREASED: More padding makes the box taller and wider
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10), // Slightly rounder edges to match the larger size
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 👉 INCREASED: Icon size bumped from 14 to 16
+                  const Icon(Icons.date_range_rounded, size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6), // Slightly wider gap
+                  Text(
+                    weekText,
+                    style: const TextStyle(
+                      // 👉 INCREASED: Font size bumped from 12 to 13
+                      fontSize: 13, 
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        
         const SizedBox(height: 4),
         const Text('Tap any field to edit. All fields are required.',
             style: TextStyle(fontSize: 12, color: AppColors.inkMid)),
@@ -842,7 +916,6 @@ class _InfoTabState extends State<_InfoTab>
                     error: _errors[group.key],
                     keyboardType: _keyboardType(group.key),
                     onTap: () {
-                      // 👉 ADDED: If they tap a date, open the prompt screen instead of keyboard!
                       if (group.key == 'start_date' || group.key == 'end_date') {
                         _promptForDates();
                       } else {
@@ -1382,117 +1455,151 @@ class _ShimmerBarState extends State<_ShimmerBar> with SingleTickerProviderState
 }
 
 // ─── TAB 4 — Materials ────────────────────────────────────────────────────────
-class MaterialsTab extends StatelessWidget {
+class MaterialsTab extends StatefulWidget {
   const MaterialsTab({super.key, required this.ws, required this.vm});
   final Workspace ws;
   final WorkspacesViewModel vm;
 
   @override
-  Widget build(BuildContext context) {
-    final materials = vm.current?.materials ?? [];
+  State<MaterialsTab> createState() => _MaterialsTabState();
+}
 
-    return Column(
-      children: [
-        // Upload Button Header
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: InkWell(
-            onTap: vm.uploadingMaterial ? null : () => vm.uploadMaterial(),
-            borderRadius: AppColors.r12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              decoration: BoxDecoration(
-                color: AppColors.primarySoft,
+class _MaterialsTabState extends State<MaterialsTab> {
+  bool _isDragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final materials = widget.vm.current?.materials ?? [];
+
+    // 👉 Wrap the entire tab in a DropTarget!
+    return DropTarget(
+      onDragDone: (detail) {
+        setState(() => _isDragging = false);
+        // 👉 Pulse check: Are the files even registering?
+        debugPrint("🟢 DRAG EVENT FIRED! Files dropped: ${detail.files.length}");
+        
+        widget.vm.uploadMaterial(droppedFiles: detail.files);
+      },
+      onDragEntered: (detail) {
+        setState(() => _isDragging = true);
+      },
+      onDragExited: (detail) {
+        setState(() => _isDragging = false);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: double.infinity,
+        height: double.infinity,
+        color: _isDragging ? AppColors.primary.withOpacity(0.08) : Colors.transparent,
+        child: Column(
+          children: [
+            // Upload Button Header
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: InkWell(
+                // 👉 Updated to call the new plural function
+                onTap: widget.vm.uploadingMaterial ? null : () => widget.vm.uploadMaterial(),
                 borderRadius: AppColors.r12,
-                border: Border.all(
-                  color: AppColors.primary.withOpacity(0.3),
-                  width: 1.5,
-                  style: BorderStyle.solid,
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (vm.uploadingMaterial)
-                    const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                    )
-                  else
-                    const Icon(Icons.cloud_upload_rounded, color: AppColors.primary, size: 24),
-                  const SizedBox(width: 12),
-                  Text(
-                    vm.uploadingMaterial ? 'Uploading material...' : 'Upload Course Material',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  decoration: BoxDecoration(
+                    color: _isDragging ? AppColors.primary.withOpacity(0.15) : AppColors.primarySoft,
+                    borderRadius: AppColors.r12,
+                    border: Border.all(
+                      color: _isDragging ? AppColors.primary : AppColors.primary.withOpacity(0.3),
+                      width: _isDragging ? 2.0 : 1.5,
+                      style: BorderStyle.solid,
                     ),
                   ),
-                ],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (widget.vm.uploadingMaterial)
+                        const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                        )
+                      else
+                        Icon(
+                          _isDragging ? Icons.download_rounded : Icons.cloud_upload_rounded, 
+                          color: AppColors.primary, 
+                          size: 24
+                        ),
+                      const SizedBox(width: 12),
+                      Text(
+                        widget.vm.uploadingMaterial 
+                            ? 'Uploading material...' 
+                            : (_isDragging ? 'Drop files here!' : 'Upload Course Material'),
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
 
-        // Materials List
-        Expanded(
-          child: materials.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No materials uploaded yet.\nAdd PDFs, slides, or reading materials.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.inkLight, fontSize: 14),
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: materials.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final material = materials[index]; 
-                    
-                    // 👉 FIXED: Safely check if this specific material is selected
-                    final isSelected = vm.selectedMaterialIdsForQuiz.contains(material.id);
-                    
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primarySoft : Colors.white, // Highlight if selected
-                        borderRadius: AppColors.r12,
-                        boxShadow: AppColors.shadow,
-                        border: isSelected ? Border.all(color: AppColors.primary.withOpacity(0.5)) : null,
+            // Materials List
+            Expanded(
+              child: materials.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No materials uploaded yet.\nDrop PDFs, slides, or reading materials here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.inkLight, fontSize: 14),
                       ),
-                      child: CheckboxListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        activeColor: AppColors.primary,
-                        checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                        value: isSelected,
-                        onChanged: (bool? value) {
-                          // Toggle the selection in the VM
-                          vm.toggleMaterialSelection(material.id);
-                        },
-                        title: Row(
-                          children: [
-                            const Icon(Icons.insert_drive_file_rounded, color: AppColors.primary, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                material.fileName,
-                                style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600, fontSize: 14),
-                              ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      itemCount: materials.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final material = materials[index]; 
+                        
+                        final isSelected = widget.vm.selectedMaterialIdsForQuiz.contains(material.id);
+                        
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.primarySoft : Colors.white,
+                            borderRadius: AppColors.r12,
+                            boxShadow: AppColors.shadow,
+                            border: isSelected ? Border.all(color: AppColors.primary.withOpacity(0.5)) : null,
+                          ),
+                          child: CheckboxListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            activeColor: AppColors.primary,
+                            checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            value: isSelected,
+                            onChanged: (bool? value) {
+                              widget.vm.toggleMaterialSelection(material.id);
+                            },
+                            title: Row(
+                              children: [
+                                const Icon(Icons.insert_drive_file_rounded, color: AppColors.primary, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    material.fileName,
+                                    style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600, fontSize: 14),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        secondary: IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, color: AppColors.warn, size: 20),
-                          onPressed: () => vm.deleteMaterial(material.id),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                            secondary: IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.warn, size: 20),
+                              onPressed: () => widget.vm.deleteMaterial(material.id),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

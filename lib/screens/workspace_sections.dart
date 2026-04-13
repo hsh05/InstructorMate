@@ -32,46 +32,8 @@ class _SectionsTabState extends State<SectionsTab>
   bool get wantKeepAlive => true;
 
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  static final List<String> _minLabels = [
-    '00',
-    '05',
-    '10',
-    '15',
-    '20',
-    '25',
-    '30',
-    '35',
-    '40',
-    '45',
-    '50',
-    '55',
-  ];
 
-  ({int hour, int minIdx, bool isPM}) _parseTime(String val) {
-    if (val.isEmpty) return (hour: 8, minIdx: 0, isPM: false);
-    final upper = val.toUpperCase();
-    final isPM = upper.contains('PM');
-    final clean = val.replaceAll(RegExp(r'[AaPp][Mm]'), '').trim();
-    final parts = clean.split(':');
-    int h = int.tryParse(parts[0].trim()) ?? 8;
-    int m = int.tryParse(parts.length > 1 ? parts[1].trim() : '0') ?? 0;
-    if (h == 0)
-      h = 12;
-    else if (h > 12) h -= 12;
-    int minIdx = 0, minDist = 999;
-    for (int j = 0; j < _minLabels.length; j++) {
-      final d = (int.parse(_minLabels[j]) - m).abs();
-      if (d < minDist) {
-        minDist = d;
-        minIdx = j;
-      }
-    }
-    return (hour: h.clamp(1, 12), minIdx: minIdx, isPM: isPM);
-  }
-
-  String _formatTime(int hour12, int minIdx, bool isPM) =>
-      '$hour12:${_minLabels[minIdx]} ${isPM ? "PM" : "AM"}';
-
+  // Helper method to convert backend string to minutes for math
   int? _timeToMins(String val) {
     if (val.isEmpty) return null;
     final upper = val.toUpperCase();
@@ -111,10 +73,7 @@ class _SectionsTabState extends State<SectionsTab>
         onError: (e) {
           if (mounted) widget.onError(e);
         },
-        parseTime: _parseTime,
-        formatTime: _formatTime,
         timeToMins: _timeToMins,
-        minLabels: _minLabels,
         days: _days,
       ),
     );
@@ -203,20 +162,14 @@ class SectionSheetContent extends StatefulWidget {
     required this.vm,
     required this.onSuccess,
     required this.onError,
-    required this.parseTime,
-    required this.formatTime,
     required this.timeToMins,
-    required this.minLabels,
     required this.days,
   });
   final Section? editing;
   final WorkspacesViewModel vm;
   final void Function(String) onSuccess;
   final void Function(String) onError;
-  final ({int hour, int minIdx, bool isPM}) Function(String) parseTime;
-  final String Function(int, int, bool) formatTime;
   final int? Function(String) timeToMins;
-  final List<String> minLabels;
   final List<String> days;
 
   @override
@@ -228,12 +181,15 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
   late final TextEditingController _locationCtrl;
   late List<String> _selDays;
   late int _selReminderMins;
-  late int _startH, _startMIdx;
-  late bool _startPM;
-  late int _endH, _endMIdx;
-  late bool _endPM;
+  
+  late TimeOfDay _startTime;
+  late int _durationMinutes;
+  
   bool _saving = false;
   String? _error;
+
+  static const _standardDurations = [30, 60, 90, 120];
+  static const _standardReminders = [5, 10, 15, 20, 30];
 
   @override
   void initState() {
@@ -243,14 +199,25 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
     _locationCtrl = TextEditingController(text: e?.location ?? '');
     _selDays = List.from(e?.schedule.days ?? []);
     _selReminderMins = e?.schedule.reminderMinutes ?? 10;
-    final sp = widget.parseTime(e?.schedule.startTime ?? '');
-    final ep = widget.parseTime(e?.schedule.endTime ?? '');
-    _startH = sp.hour;
-    _startMIdx = sp.minIdx;
-    _startPM = sp.isPM;
-    _endH = ep.hour;
-    _endMIdx = ep.minIdx;
-    _endPM = ep.isPM;
+
+    TimeOfDay defaultStart = const TimeOfDay(hour: 9, minute: 0);
+    int defaultDuration = 60; 
+
+    if (e != null && e.schedule.startTime.isNotEmpty) {
+      final sMins = widget.timeToMins(e.schedule.startTime);
+      final eMins = widget.timeToMins(e.schedule.endTime);
+      
+      if (sMins != null && eMins != null) {
+        defaultDuration = eMins - sMins;
+        if (defaultDuration <= 0) defaultDuration = 60; 
+      }
+      if (sMins != null) {
+        defaultStart = TimeOfDay(hour: sMins ~/ 60, minute: sMins % 60);
+      }
+    }
+    
+    _startTime = defaultStart;
+    _durationMinutes = defaultDuration;
   }
 
   @override
@@ -258,6 +225,18 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
     _nameCtrl.dispose();
     _locationCtrl.dispose();
     super.dispose();
+  }
+
+  String _formatTimeOfDay(TimeOfDay t) {
+    final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+    final m = t.minute.toString().padLeft(2, '0');
+    final p = t.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$h:$m $p';
+  }
+
+  TimeOfDay _calculateEndTime() {
+    final totalMins = _startTime.hour * 60 + _startTime.minute + _durationMinutes;
+    return TimeOfDay(hour: (totalMins ~/ 60) % 24, minute: totalMins % 60);
   }
 
   Widget _label(String text) => Padding(
@@ -270,96 +249,105 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                 letterSpacing: 1.2)),
       );
 
-  Widget _hourRow(int selHour, void Function(int) onSel) =>
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: List.generate(12, (idx) {
-            final h = idx + 1;
-            final sel = selHour == h;
-            return GestureDetector(
-              onTap: () => setState(() => onSel(h)),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 110),
-                margin: const EdgeInsets.only(right: 6),
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                  borderRadius: AppColors.r10,
-                  border: Border.all(
-                      color: sel ? AppColors.primary : AppColors.border),
-                ),
-                alignment: Alignment.center,
-                child: Text('$h',
-                    style: TextStyle(
-                        color: sel ? Colors.white : AppColors.ink,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15)),
-              ),
-            );
-          }),
+  Future<void> _showCustomDurationDialog() async {
+    final isCustom = !_standardDurations.contains(_durationMinutes);
+    final ctrl = TextEditingController(text: isCustom ? _durationMinutes.toString() : '');
+    
+    final val = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: AppColors.r16),
+        title: const Text('Custom Duration', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.ink)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.ink),
+          decoration: InputDecoration(
+            hintText: 'e.g. 45',
+            hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 14),
+            suffixText: 'min',
+            suffixStyle: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.inkMid),
+            filled: true,
+            fillColor: AppColors.surfaceAlt,
+            border: OutlineInputBorder(borderRadius: AppColors.r10, borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(borderRadius: AppColors.r10, borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v)),
         ),
-      );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.inkLight, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: AppColors.r10),
+            ),
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text)),
+            child: const Text('Set Time', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
 
-  Widget _minRow(int selMin, void Function(int) onSel) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: List.generate(widget.minLabels.length, (idx) {
-            final sel = selMin == idx;
-            return GestureDetector(
-              onTap: () => setState(() => onSel(idx)),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 110),
-                margin: const EdgeInsets.only(right: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                  borderRadius: AppColors.r10,
-                  border: Border.all(
-                      color: sel ? AppColors.primary : AppColors.border),
-                ),
-                child: Text(':${widget.minLabels[idx]}',
-                    style: TextStyle(
-                        color: sel ? Colors.white : AppColors.ink,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
-              ),
-            );
-          }),
-        ),
-      );
+    if (val != null && val > 0) {
+      setState(() => _durationMinutes = val);
+    }
+  }
 
-  Widget _ampmRow(bool isPM, void Function(bool) onSel) => Container(
-        decoration: BoxDecoration(
-            color: AppColors.surfaceAlt,
-            borderRadius: AppColors.r10,
-            border: Border.all(color: AppColors.border)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final pm in [false, true])
-              GestureDetector(
-                onTap: () => setState(() => onSel(pm)),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 110),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 28, vertical: 11),
-                  decoration: BoxDecoration(
-                    color: isPM == pm ? AppColors.primary : Colors.transparent,
-                    borderRadius: AppColors.r10,
-                  ),
-                  child: Text(pm ? 'PM' : 'AM',
-                      style: TextStyle(
-                          color: isPM == pm ? Colors.white : AppColors.inkMid,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14)),
-                ),
-              ),
-          ],
+  Future<void> _showCustomReminderDialog() async {
+    final isCustom = !_standardReminders.contains(_selReminderMins);
+    final ctrl = TextEditingController(text: isCustom ? _selReminderMins.toString() : '');
+    
+    final val = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: AppColors.r16),
+        title: const Text('Custom Reminder', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.ink)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.ink),
+          decoration: InputDecoration(
+            hintText: 'e.g. 45',
+            hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 14),
+            suffixText: 'min',
+            suffixStyle: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.inkMid),
+            filled: true,
+            fillColor: AppColors.surfaceAlt,
+            border: OutlineInputBorder(borderRadius: AppColors.r10, borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(borderRadius: AppColors.r10, borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v)),
         ),
-      );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.inkLight, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: AppColors.r10),
+            ),
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text)),
+            child: const Text('Set Reminder', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (val != null && val >= 0) {
+      setState(() => _selReminderMins = val);
+    }
+  }
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
@@ -371,19 +359,16 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
       setState(() => _error = 'Please select at least one day.');
       return;
     }
-    final startStr = widget.formatTime(_startH, _startMIdx, _startPM);
-    final endStr = widget.formatTime(_endH, _endMIdx, _endPM);
-    final startMins = widget.timeToMins(startStr);
-    final endMins = widget.timeToMins(endStr);
-    if (startMins != null && endMins != null && endMins <= startMins) {
-      setState(() =>
-          _error = 'End time must be after start time ($startStr → $endStr).');
-      return;
-    }
+
+    final startStr = _formatTimeOfDay(_startTime);
+    final endT = _calculateEndTime();
+    final endStr = _formatTimeOfDay(endT);
+
     setState(() {
       _saving = true;
       _error = null;
     });
+    
     try {
       final draft = SectionDraft()
         ..name = name
@@ -392,6 +377,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
         ..startTime = startStr
         ..endTime = endStr
         ..reminderMinutes = _selReminderMins;
+        
       if (widget.editing != null) {
         await widget.vm.updateSection(widget.editing!.id, draft);
       } else {
@@ -411,6 +397,8 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
 
   @override
   Widget build(BuildContext context) {
+    final endT = _calculateEndTime();
+
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.94,
@@ -437,6 +425,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                 fontSize: 16,
                 color: AppColors.ink),
           ),
+          
           _label('SECTION NAME'),
           TextField(
             controller: _nameCtrl,
@@ -444,8 +433,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             decoration: InputDecoration(
               hintText: 'e.g. Section A',
-              hintStyle:
-                  const TextStyle(color: AppColors.inkLight, fontSize: 13),
+              hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 13),
               filled: true,
               fillColor: AppColors.surfaceAlt,
               border: OutlineInputBorder(
@@ -456,20 +444,18 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                   borderSide: const BorderSide(color: AppColors.border)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: AppColors.r10,
-                  borderSide:
-                      const BorderSide(color: AppColors.primary, width: 1.5)),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+          
           _label('LOCATION / ROOM'),
           TextField(
             controller: _locationCtrl,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             decoration: InputDecoration(
               hintText: 'e.g. Room 204',
-              hintStyle:
-                  const TextStyle(color: AppColors.inkLight, fontSize: 13),
+              hintStyle: const TextStyle(color: AppColors.inkLight, fontSize: 13),
               filled: true,
               fillColor: AppColors.surfaceAlt,
               border: OutlineInputBorder(
@@ -480,12 +466,11 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                   borderSide: const BorderSide(color: AppColors.border)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: AppColors.r10,
-                  borderSide:
-                      const BorderSide(color: AppColors.primary, width: 1.5)),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+          
           _label('DAYS'),
           Wrap(
             spacing: 6,
@@ -499,13 +484,11 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                 }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 110),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
                     color: sel ? AppColors.primary : AppColors.surfaceAlt,
                     borderRadius: AppColors.r10,
-                    border: Border.all(
-                        color: sel ? AppColors.primary : AppColors.border),
+                    border: Border.all(color: sel ? AppColors.primary : AppColors.border),
                   ),
                   child: Text(d,
                       style: TextStyle(
@@ -516,48 +499,180 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
               );
             }).toList(),
           ),
-          _label('START — HOUR'),
-          _hourRow(_startH, (h) => _startH = h),
-          _label('START — MINUTES'),
-          _minRow(_startMIdx, (m) => _startMIdx = m),
-          _label('START — PERIOD'),
-          _ampmRow(_startPM, (pm) => _startPM = pm),
-          _label('END — HOUR'),
-          _hourRow(_endH, (h) => _endH = h),
-          _label('END — MINUTES'),
-          _minRow(_endMIdx, (m) => _endMIdx = m),
-          _label('END — PERIOD'),
-          _ampmRow(_endPM, (pm) => _endPM = pm),
+          
+          _label('CLASS START TIME'),
+          Material(
+            color: AppColors.surfaceAlt,
+            borderRadius: AppColors.r10,
+            child: InkWell(
+              borderRadius: AppColors.r10,
+              onTap: () async {
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: _startTime,
+                  builder: (context, child) => Theme(
+                    data: ThemeData.light().copyWith(
+                      colorScheme: const ColorScheme.light(primary: AppColors.primary),
+                    ),
+                    child: child!,
+                  ),
+                );
+                if (picked != null) {
+                  setState(() => _startTime = picked);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: AppColors.r10,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule_rounded, color: AppColors.primary, size: 20),
+                    const SizedBox(width: 10),
+                    Text(
+                      _formatTimeOfDay(_startTime),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.ink),
+                    ),
+                    const Spacer(),
+                    const Icon(Icons.edit_rounded, color: AppColors.inkLight, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          _label('CLASS DURATION'),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ..._standardDurations.map((mins) {
+                  final sel = _durationMinutes == mins;
+                  return GestureDetector(
+                    onTap: () => setState(() => _durationMinutes = mins),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 110),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                        borderRadius: AppColors.r10,
+                        border: Border.all(color: sel ? AppColors.primary : AppColors.border),
+                      ),
+                      child: Text('$mins min',
+                          style: TextStyle(
+                              color: sel ? Colors.white : AppColors.ink,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                    ),
+                  );
+                }),
+                Builder(
+                  builder: (context) {
+                    final isCustom = !_standardDurations.contains(_durationMinutes);
+                    return GestureDetector(
+                      onTap: _showCustomDurationDialog,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isCustom ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: isCustom ? AppColors.primary : AppColors.border,
+                            strokeAlign: BorderSide.strokeAlignInside,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(isCustom ? '$_durationMinutes min' : 'Other...',
+                                style: TextStyle(
+                                    color: isCustom ? Colors.white : AppColors.ink,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
+                            if (!isCustom) ...[
+                              const SizedBox(width: 4),
+                              const Icon(Icons.edit_rounded, size: 13, color: AppColors.inkLight),
+                            ]
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                ),
+              ],
+            ),
+          ),
+
           _label('REMINDER BEFORE CLASS'),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: [5, 10, 15, 20, 30].map((mins) {
-                final sel = _selReminderMins == mins;
-                return GestureDetector(
-                  onTap: () => setState(() => _selReminderMins = mins),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 110),
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: sel ? AppColors.primary : AppColors.surfaceAlt,
-                      borderRadius: AppColors.r10,
-                      border: Border.all(
-                          color: sel ? AppColors.primary : AppColors.border),
+              children: [
+                ..._standardReminders.map((mins) {
+                  final sel = _selReminderMins == mins;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selReminderMins = mins),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 110),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? AppColors.primary : AppColors.surfaceAlt,
+                        borderRadius: AppColors.r10,
+                        border: Border.all(color: sel ? AppColors.primary : AppColors.border),
+                      ),
+                      child: Text('${mins}min',
+                          style: TextStyle(
+                              color: sel ? Colors.white : AppColors.ink,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
                     ),
-                    child: Text('${mins}min',
-                        style: TextStyle(
-                            color: sel ? Colors.white : AppColors.ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13)),
-                  ),
-                );
-              }).toList(),
+                  );
+                }),
+                Builder(
+                  builder: (context) {
+                    final isCustom = !_standardReminders.contains(_selReminderMins);
+                    return GestureDetector(
+                      onTap: _showCustomReminderDialog,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 110),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isCustom ? AppColors.primary : AppColors.surfaceAlt,
+                          borderRadius: AppColors.r10,
+                          border: Border.all(
+                            color: isCustom ? AppColors.primary : AppColors.border,
+                            strokeAlign: BorderSide.strokeAlignInside,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(isCustom ? '${_selReminderMins}min' : 'Other...',
+                                style: TextStyle(
+                                    color: isCustom ? Colors.white : AppColors.ink,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
+                            if (!isCustom) ...[
+                              const SizedBox(width: 4),
+                              const Icon(Icons.edit_rounded, size: 13, color: AppColors.inkLight),
+                            ]
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                ),
+              ],
             ),
           ),
+          
           const SizedBox(height: 20),
+          
           Center(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -568,8 +683,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
               ),
               child: Text(
                 '${_selDays.isEmpty ? "No days" : _selDays.join(", ")}  ·  '
-                '${widget.formatTime(_startH, _startMIdx, _startPM)} → '
-                '${widget.formatTime(_endH, _endMIdx, _endPM)}',
+                '${_formatTimeOfDay(_startTime)} → ${_formatTimeOfDay(endT)}',
                 style: const TextStyle(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w700,
@@ -577,6 +691,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
               ),
             ),
           ),
+          
           if (_error != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -587,8 +702,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                 border: Border.all(color: AppColors.warn.withOpacity(0.4)),
               ),
               child: Row(children: [
-                const Icon(Icons.warning_amber_rounded,
-                    size: 15, color: AppColors.warn),
+                const Icon(Icons.warning_amber_rounded, size: 15, color: AppColors.warn),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(_error!,
@@ -609,23 +723,18 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 elevation: 0,
-                shape:
-                    const RoundedRectangleBorder(borderRadius: AppColors.r12),
+                shape: const RoundedRectangleBorder(borderRadius: AppColors.r12),
               ),
               onPressed: _saving ? null : _save,
               child: _saving
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : Text(
-                      widget.editing != null
-                          ? 'Save Changes'
-                          : 'Create Section',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
+                      widget.editing != null ? 'Save Changes' : 'Create Section',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             ),
           ),
         ],
@@ -650,21 +759,28 @@ class SectionCard extends StatelessWidget {
 
   static const _allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  String _stripSeconds(String time) {
+    return time.replaceAllMapped(RegExp(r'(:[0-9]{2}):[0-9]{2}'), (match) => match.group(1)!);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sch = section.schedule;
     final activeDays = sch.days.toSet();
-    final rawEnd = sch.endTime.trim();
+    
+    final cleanStart = _stripSeconds(sch.startTime.trim());
+    final rawEnd = _stripSeconds(sch.endTime.trim());
+    
     final endDisplay = (rawEnd.isEmpty ||
             rawEnd == sch.timezone ||
             rawEnd.toUpperCase() == 'UTC')
         ? ''
         : rawEnd;
-    final hasTime = sch.startTime.isNotEmpty;
+    final hasTime = cleanStart.isNotEmpty;
     final timeString = hasTime
         ? (endDisplay.isNotEmpty
-            ? '${sch.startTime} – $endDisplay'
-            : sch.startTime)
+            ? '$cleanStart – $endDisplay'
+            : cleanStart)
         : null;
 
     return Container(
@@ -958,16 +1074,21 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
     super.dispose();
   }
 
+  String _stripSeconds(String time) {
+    return time.replaceAllMapped(RegExp(r'(:[0-9]{2}):[0-9]{2}'), (match) => match.group(1)!);
+  }
+
   Future<void> _loadRoster() async {
     setState(() => _loadingRoster = true);
     try {
       final list = await widget.vm.api
           .listSectionStudents(widget.ws.id.toString(), widget.section.id);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _students = list;
           _loadingRoster = false;
         });
+      }
     } catch (e) {
       if (mounted) setState(() => _loadingRoster = false);
       widget.onError(e.toString());
@@ -1053,17 +1174,22 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
     final hasStudents = count > 0;
     final sch = widget.section.schedule;
     final days = sch.days.isEmpty ? '' : sch.days.join(', ');
-    final rawEnd = sch.endTime.trim();
+    
+    final cleanStart = _stripSeconds(sch.startTime.trim());
+    final rawEnd = _stripSeconds(sch.endTime.trim());
+    
     final endDisplay = (rawEnd.isEmpty ||
             rawEnd == sch.timezone ||
             rawEnd.toUpperCase() == 'UTC')
         ? ''
         : rawEnd;
-    final time = sch.startTime.isNotEmpty
+        
+    final time = cleanStart.isNotEmpty
         ? (endDisplay.isNotEmpty
-            ? '${sch.startTime} – $endDisplay'
-            : sch.startTime)
+            ? '$cleanStart – $endDisplay'
+            : cleanStart)
         : '';
+        
     final filtered = _search.isEmpty
         ? _students
         : _students
