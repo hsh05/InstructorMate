@@ -27,7 +27,7 @@ class NotificationService {
 
   static const _channel = MethodChannel('com.instructormate/battery');
 
-  // App purple — matches AppColors.primary
+  // App purple — matches AppStyles.primary
   static const int _purple = 0xFF6747B0;
 
   bool _initialized = false;
