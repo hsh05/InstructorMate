@@ -1,7 +1,7 @@
 // lib/screens/workspace_ask.dart
 
 import 'package:flutter/material.dart';
-import '../config/app_colors.dart';
+import '../app_styles.dart';
 
 // ─── TAB 4 — Ask AI ───────────────────────────────────────────────────────────
 class AskTab extends StatelessWidget {
@@ -37,22 +37,23 @@ class AskTab extends StatelessWidget {
       ),
       Container(
         decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
+          color: AppStyles.white, // Mapped from surface
+          border: Border(top: BorderSide(color: AppStyles.borderLight)), // Mapped
         ),
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
         child: Row(children: [
           Expanded(
             child: TextField(
               controller: ctrl,
-              style: const TextStyle(color: AppColors.ink, fontSize: 13),
+              style: const TextStyle(color: AppStyles.textPrimary, fontSize: 13), // Mapped
               decoration: InputDecoration(
                 hintText: 'Ask about the syllabus…',
-                hintStyle: const TextStyle(color: AppColors.inkLight),
+                hintStyle: const TextStyle(color: AppStyles.darkGray), // Mapped
                 filled: true,
-                fillColor: AppColors.surfaceAlt,
+                fillColor: AppStyles.lightGray, // Mapped
                 border: OutlineInputBorder(
-                    borderRadius: AppColors.r20, borderSide: BorderSide.none),
+                    borderRadius: AppStyles.borderRadiusXL, // Mapped
+                    borderSide: BorderSide.none),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               ),
@@ -68,8 +69,8 @@ class AskTab extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: asking ? AppColors.inkLight : AppColors.primary,
-                borderRadius: AppColors.r20,
+                color: asking ? AppStyles.darkGray : AppStyles.primaryPurple, // Mapped
+                borderRadius: AppStyles.borderRadiusXL, // Mapped
               ),
               child: asking
                   ? const Center(
@@ -108,13 +109,13 @@ class AskEmptyState extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.all(22),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
               colors: [Color(0xFF6747B0), Color(0xFF9B78E0)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: AppColors.r20,
+            borderRadius: AppStyles.borderRadiusXL, // Mapped
           ),
           child: Column(children: [
             Container(
@@ -122,7 +123,7 @@ class AskEmptyState extends StatelessWidget {
               height: 54,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.15),
-                borderRadius: AppColors.r16,
+                borderRadius: AppStyles.borderRadiusL, // Mapped
               ),
               child: const Icon(Icons.auto_awesome_rounded,
                   color: Colors.white, size: 26),
@@ -147,41 +148,41 @@ class AskEmptyState extends StatelessWidget {
               style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.inkMid)),
+                  color: AppStyles.darkGray)), // Mapped
         ),
         ...suggestions.map((q) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
-                color: AppColors.surface,
-                borderRadius: AppColors.r12,
+                color: AppStyles.white, // Mapped
+                borderRadius: AppStyles.borderRadiusM, // Mapped
                 child: InkWell(
                   onTap: () => onAsk(q),
-                  borderRadius: AppColors.r12,
+                  borderRadius: AppStyles.borderRadiusM, // Mapped
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 13),
                     decoration: BoxDecoration(
-                        borderRadius: AppColors.r12,
-                        border: Border.all(color: AppColors.border)),
+                        borderRadius: AppStyles.borderRadiusM, // Mapped
+                        border: Border.all(color: AppStyles.borderLight)), // Mapped
                     child: Row(children: [
                       Container(
                         width: 30,
                         height: 30,
-                        decoration: const BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: AppColors.r8),
+                        decoration: BoxDecoration(
+                            color: AppStyles.primaryPurple.withOpacity(0.15), // Mapped
+                            borderRadius: AppStyles.borderRadiusS), // Mapped
                         child: const Icon(Icons.lightbulb_outline_rounded,
-                            color: AppColors.primary, size: 15),
+                            color: AppStyles.primaryPurple, size: 15), // Mapped
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                           child: Text(q,
                               style: const TextStyle(
-                                  color: AppColors.ink,
+                                  color: AppStyles.textPrimary, // Mapped
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500))),
                       const Icon(Icons.arrow_forward_ios_rounded,
-                          size: 11, color: AppColors.inkLight),
+                          size: 11, color: AppStyles.darkGray), // Mapped
                     ]),
                   ),
                 ),
@@ -206,19 +207,19 @@ class ChatBubble extends StatelessWidget {
               maxWidth: MediaQuery.of(context).size.width * 0.76),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           decoration: BoxDecoration(
-            color: msg.isUser ? AppColors.primary : AppColors.surface,
+            color: msg.isUser ? AppStyles.primaryPurple : AppStyles.white, // Mapped
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(14),
               topRight: const Radius.circular(14),
               bottomLeft: Radius.circular(msg.isUser ? 14 : 3),
               bottomRight: Radius.circular(msg.isUser ? 3 : 14),
             ),
-            boxShadow: AppColors.shadowSm,
-            border: msg.isUser ? null : Border.all(color: AppColors.border),
+            boxShadow: AppStyles.shadowLight, // Mapped
+            border: msg.isUser ? null : Border.all(color: AppStyles.borderLight), // Mapped
           ),
           child: Text(msg.text,
               style: TextStyle(
-                  color: msg.isUser ? Colors.white : AppColors.ink,
+                  color: msg.isUser ? Colors.white : AppStyles.textPrimary, // Mapped
                   fontSize: 13,
                   height: 1.5)),
         ),
@@ -236,22 +237,22 @@ class TypingIndicator extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: AppStyles.white, // Mapped
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(14),
               topRight: Radius.circular(14),
               bottomRight: Radius.circular(14),
               bottomLeft: Radius.circular(3),
             ),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: AppStyles.borderLight), // Mapped
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: const [
             Icon(Icons.auto_awesome_rounded,
-                size: 13, color: AppColors.primary),
+                size: 13, color: AppStyles.primaryPurple), // Mapped
             SizedBox(width: 5),
             Text('Thinking…',
                 style: TextStyle(
-                    color: AppColors.inkLight,
+                    color: AppStyles.darkGray, // Mapped
                     fontSize: 12,
                     fontStyle: FontStyle.italic)),
           ]),

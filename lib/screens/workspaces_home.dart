@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../app/state/workspaces_vm.dart';
 import '../models/workspace_model.dart';
-import '../config/app_colors.dart';
+import '../app_styles.dart';
 import 'widgets/notification_bell.dart';
 
 class WorkspacesHome extends StatefulWidget {
@@ -26,7 +26,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         const SizedBox(width: 8),
         Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
       ]),
-      backgroundColor: AppColors.accent,
+      backgroundColor: AppStyles.accent, // Keeps teal accent
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -41,7 +41,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         const SizedBox(width: 8),
         Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
       ]),
-      backgroundColor: AppColors.red,
+      backgroundColor: AppStyles.error, // Mapped from red
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -56,7 +56,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         const SizedBox(width: 8),
         Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
       ]),
-      backgroundColor: AppColors.inkMid,
+      backgroundColor: AppStyles.darkGray, // Mapped from inkMid
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -68,10 +68,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     return AnimatedBuilder(
       animation: widget.vm,
       builder: (_, __) => Scaffold(
-        backgroundColor: AppColors.bg,
+        backgroundColor: AppStyles.lightGray, // Mapped from bg
         appBar: AppBar(
           elevation: 0,
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppStyles.primaryPurple, // Mapped from primary
           title: const Text(
             'InstructorMate',
             style: TextStyle(
@@ -100,7 +100,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             widget.vm.importing ? 'Importing...' : 'Add Workspace',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppStyles.primaryPurple, // Mapped from primary
           foregroundColor: Colors.white,
           elevation: 4,
         ),
@@ -108,7 +108,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppColors.bgTop, AppColors.bg],
+              colors: [AppStyles.mediumGray, AppStyles.lightGray], // Mapped from bgTop, bg
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -122,7 +122,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   Widget _buildBody(BuildContext context) {
     if (widget.vm.loading && widget.vm.workspaces.isEmpty) {
       return const Center(
-          child: CircularProgressIndicator(color: AppColors.primary));
+          child: CircularProgressIndicator(color: AppStyles.primaryPurple)); // Mapped
     }
     if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
       return Center(
@@ -130,7 +130,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           padding: const EdgeInsets.all(20),
           child: Text(widget.vm.error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red)),
+              style: const TextStyle(color: AppStyles.error)), // Mapped
         ),
       );
     }
@@ -171,7 +171,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           child: Text(
             'Tap "+ Add Workspace" below to get started.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.inkLight, fontSize: 14),
+            style: TextStyle(color: AppStyles.darkGray, fontSize: 14), // Mapped from inkLight
           ),
         ),
       );
@@ -211,10 +211,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: AppColors.primary,
+              primary: AppStyles.primaryPurple, // Mapped
               onPrimary: Colors.white,
-              surface: AppColors.surface,
-              onSurface: AppColors.ink,
+              surface: AppStyles.white, // Mapped
+              onSurface: AppStyles.textPrimary, // Mapped
             ),
           ),
           child: child!,
@@ -334,18 +334,18 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                             color: const Color(0xFFF4F0FF),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                                color: AppColors.primary.withOpacity(0.2)),
+                                color: AppStyles.primaryPurple.withOpacity(0.2)), // Mapped
                           ),
                           child: Row(children: [
                             Container(
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.12),
+                                color: AppStyles.primaryPurple.withOpacity(0.12), // Mapped
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(Icons.school_rounded,
-                                  color: AppColors.primary, size: 20),
+                                  color: AppStyles.primaryPurple, size: 20), // Mapped
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -371,8 +371,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                         color: ws.status == 'ready'
-                                            ? const Color(0xFF22C55E)
-                                            : const Color(0xFFAAAAAA),
+                                            ? AppStyles.success // Mapped to success
+                                            : AppStyles.darkGray, // Mapped to darkGray
                                       ),
                                     ),
                                   ],
@@ -409,7 +409,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                         flex: 2,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
+                            backgroundColor: AppStyles.primaryPurple, // Mapped
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -489,7 +489,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                 decoration: BoxDecoration(
-                  color: AppColors.red.withOpacity(0.06),
+                  color: AppStyles.error.withOpacity(0.06), // Mapped
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(20)),
                 ),
@@ -500,11 +500,11 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: AppColors.red.withOpacity(0.12),
+                        color: AppStyles.error.withOpacity(0.12), // Mapped
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.delete_outline_rounded,
-                          color: AppColors.red, size: 22),
+                          color: AppStyles.error, size: 22), // Mapped
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -526,7 +526,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.inkMid,
+                              color: AppStyles.darkGray, // Mapped
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -547,7 +547,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       'This action is permanent and cannot be undone. The following will be removed:',
                       style: TextStyle(
                         fontSize: 13,
-                        color: AppColors.inkMid,
+                        color: AppStyles.darkGray, // Mapped
                         height: 1.5,
                       ),
                     ),
@@ -571,8 +571,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.inkMid,
-                        side: const BorderSide(color: AppColors.border),
+                        foregroundColor: AppStyles.darkGray, // Mapped
+                        side: const BorderSide(color: AppStyles.borderLight), // Mapped
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -588,7 +588,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                     flex: 2,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.red,
+                        backgroundColor: AppStyles.error, // Mapped
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 13),
@@ -636,10 +636,10 @@ class _DeleteBullet extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: AppColors.red.withOpacity(0.08),
+            color: AppStyles.error.withOpacity(0.08), // Mapped
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, color: AppColors.red, size: 14),
+          child: Icon(icon, color: AppStyles.error, size: 14), // Mapped
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -647,7 +647,7 @@ class _DeleteBullet extends StatelessWidget {
             label,
             style: const TextStyle(
               fontSize: 13,
-              color: AppColors.ink,
+              color: AppStyles.textPrimary, // Mapped
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -745,16 +745,16 @@ class _ProcessingCardState extends State<_ProcessingCard>
       animation: _shimmer,
       builder: (_, __) {
         final shimmerColor =
-            Color.lerp(AppColors.border, AppColors.surfaceAlt, _shimmer.value)!;
+            Color.lerp(AppStyles.borderLight, AppStyles.lightGray, _shimmer.value)!; // Mapped
         return Material(
-          color: AppColors.surface,
+          color: AppStyles.white, // Mapped
           borderRadius: BorderRadius.circular(16),
           elevation: 0,
           child: Container(
             padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: AppStyles.borderLight), // Mapped
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -767,7 +767,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                     borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(Icons.hourglass_top_rounded,
-                      color: AppColors.primary.withOpacity(0.4), size: 22),
+                      color: AppStyles.primaryPurple.withOpacity(0.4), size: 22), // Mapped
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -788,7 +788,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
+                            color: AppStyles.mediumGray, // Mapped
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Row(
@@ -799,7 +799,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                                 height: 8,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  color: AppColors.primary
+                                  color: AppStyles.primaryPurple // Mapped
                                       .withOpacity(0.6 + _shimmer.value * 0.4),
                                 ),
                               ),
@@ -808,7 +808,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                                   style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
-                                      color: AppColors.primary,
+                                      color: AppStyles.primaryPurple, // Mapped
                                       letterSpacing: 0.2)),
                             ],
                           ),
@@ -828,7 +828,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                 ),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_horiz_rounded,
-                      color: AppColors.inkMid, size: 20),
+                      color: AppStyles.darkGray, size: 20), // Mapped
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   elevation: 3,
@@ -840,11 +840,11 @@ class _ProcessingCardState extends State<_ProcessingCard>
                       value: 'delete',
                       child: Row(children: const [
                         Icon(Icons.delete_outline_rounded,
-                            color: AppColors.red, size: 18),
+                            color: AppStyles.error, size: 18), // Mapped
                         SizedBox(width: 10),
                         Text('Delete',
                             style: TextStyle(
-                                color: AppColors.red,
+                                color: AppStyles.error, // Mapped
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13)),
                       ]),
@@ -885,7 +885,7 @@ class _WorkspaceCard extends StatelessWidget {
         : null;
 
     return Material(
-      color: AppColors.surface,
+      color: AppStyles.white, // Mapped
       borderRadius: BorderRadius.circular(16),
       elevation: 0,
       child: InkWell(
@@ -895,7 +895,7 @@ class _WorkspaceCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: AppStyles.borderLight), // Mapped
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -904,11 +904,11 @@ class _WorkspaceCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
+                  color: AppStyles.mediumGray, // Mapped
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: const Icon(Icons.school_rounded,
-                    color: AppColors.primary, size: 24),
+                    color: AppStyles.primaryPurple, size: 24), // Mapped
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -922,7 +922,7 @@ class _WorkspaceCard extends StatelessWidget {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14.5,
-                        color: AppColors.ink,
+                        color: AppStyles.textPrimary, // Mapped
                         letterSpacing: -0.2,
                       ),
                       maxLines: 1,
@@ -937,7 +937,7 @@ class _WorkspaceCard extends StatelessWidget {
                           '${workspace.sectionsCount} ${workspace.sectionsCount == 1 ? "Section" : "Sections"} · ${workspace.studentsCount} ${workspace.studentsCount == 1 ? "Student" : "Students"}',
                           style: const TextStyle(
                             fontSize: 12.5,
-                            color: AppColors.inkMid,
+                            color: AppStyles.darkGray, // Mapped
                             fontWeight: FontWeight.w500,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -950,7 +950,7 @@ class _WorkspaceCard extends StatelessWidget {
                         'Last Updated: $timeAgo',
                         style: const TextStyle(
                           fontSize: 11.5,
-                          color: AppColors.inkLight,
+                          color: AppStyles.darkGray, // Mapped
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -960,7 +960,7 @@ class _WorkspaceCard extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz_rounded,
-                    color: AppColors.inkMid, size: 20),
+                    color: AppStyles.darkGray, size: 20), // Mapped
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 elevation: 3,
@@ -972,11 +972,11 @@ class _WorkspaceCard extends StatelessWidget {
                     value: 'delete',
                     child: Row(children: const [
                       Icon(Icons.delete_outline_rounded,
-                          color: AppColors.red, size: 18),
+                          color: AppStyles.error, size: 18), // Mapped
                       SizedBox(width: 10),
                       Text('Delete',
                           style: TextStyle(
-                              color: AppColors.red,
+                              color: AppStyles.error, // Mapped
                               fontWeight: FontWeight.w600,
                               fontSize: 13)),
                     ]),
@@ -1013,7 +1013,7 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: isReady ? AppColors.accentSoft : AppColors.warnSoft,
+        color: isReady ? AppStyles.readyBg : AppStyles.draftBg, // Mapped to team design badge colors
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -1023,7 +1023,7 @@ class _StatusBadge extends StatelessWidget {
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-              color: isReady ? AppColors.accent : AppColors.warn,
+              color: isReady ? AppStyles.readyDot : AppStyles.draftDot, // Mapped
               shape: BoxShape.circle,
             ),
           ),
@@ -1033,8 +1033,7 @@ class _StatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color:
-                  isReady ? const Color(0xFF007A63) : const Color(0xFFB36200),
+              color: isReady ? AppStyles.readyFg : AppStyles.draftFg, // Mapped
               letterSpacing: 0.2,
             ),
           ),

@@ -11,6 +11,8 @@ import 'screens/profile_screen.dart';
 import 'services/api_service.dart';
 import 'app/state/workspaces_vm.dart';
 
+import '/app_styles.dart';
+
 // 1. The Global Navigator Key
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -49,8 +51,30 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       title: 'InstructorMate',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
+      
+      // 👉 Inject AppStyles globally here!
+      theme: ThemeData(
+        primaryColor: AppStyles.primaryPurple,
+        scaffoldBackgroundColor: AppStyles.lightGray,
+        colorScheme: const ColorScheme.light(
+          primary: AppStyles.primaryPurple,
+          secondary: AppStyles.accent,
+          error: AppStyles.error,
+          surface: AppStyles.white,
+        ),
+        textTheme: const TextTheme(
+          displayLarge: AppStyles.headingLarge,
+          displayMedium: AppStyles.headingMedium,
+          displaySmall: AppStyles.headingSmall,
+          bodyLarge: AppStyles.bodyLarge,
+          bodyMedium: AppStyles.bodyMedium,
+          bodySmall: AppStyles.bodySmall,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: AppStyles.elevatedButtonStyle,
+        ),
+      ),
 
-      // 3. Set the Login screen as the first screen the user sees
       initialRoute: '/login',
 
       // 4. Define the static routes for navigation

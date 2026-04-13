@@ -7,7 +7,7 @@
 // Exported publicly so both callers can use NotifToast directly.
 
 import 'package:flutter/material.dart';
-import '../../config/app_colors.dart';
+import '../../app_styles.dart'; // Ensure this points to the right path
 
 // ── Public helper — insert toast into the global overlay ─────────────────────
 // Pass the navigatorKey overlay. Works from any context, any page.
@@ -120,7 +120,7 @@ class _NotifToastState extends State<NotifToast>
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.primary.withOpacity(0.22),
+                        color: AppStyles.primaryPurple.withOpacity(0.22), // Mapped
                         blurRadius: 48,
                         offset: const Offset(0, 16),
                         spreadRadius: 4,
@@ -144,7 +144,7 @@ class _NotifToastState extends State<NotifToast>
                           decoration: const BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                AppColors.primaryDark,
+                                AppStyles.primaryDeepPurple, // Mapped
                                 Color(0xFF9B78E0),
                               ],
                               begin: Alignment.topLeft,
@@ -190,7 +190,7 @@ class _NotifToastState extends State<NotifToast>
                                   vertical: 14,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primarySoft,
+                                  color: AppStyles.mediumGray, // Mapped
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: Row(
@@ -199,14 +199,12 @@ class _NotifToastState extends State<NotifToast>
                                       width: 40,
                                       height: 40,
                                       decoration: BoxDecoration(
-                                        color: AppColors.primary.withOpacity(
-                                          0.15,
-                                        ),
+                                        color: AppStyles.primaryPurple.withOpacity(0.15), // Mapped
                                         borderRadius: BorderRadius.circular(11),
                                       ),
                                       child: const Icon(
                                         Icons.school_rounded,
-                                        color: AppColors.primary,
+                                        color: AppStyles.primaryPurple, // Mapped
                                         size: 22,
                                       ),
                                     ),
@@ -217,7 +215,7 @@ class _NotifToastState extends State<NotifToast>
                                         style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
-                                          color: AppColors.ink,
+                                          color: AppStyles.textPrimary, // Mapped
                                           height: 1.4,
                                         ),
                                       ),
@@ -231,7 +229,7 @@ class _NotifToastState extends State<NotifToast>
                                 child: TextButton(
                                   onPressed: _dismiss,
                                   style: TextButton.styleFrom(
-                                    backgroundColor: AppColors.surfaceAlt,
+                                    backgroundColor: AppStyles.lightGray, // Mapped
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 14,
                                     ),
@@ -244,7 +242,7 @@ class _NotifToastState extends State<NotifToast>
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
-                                      color: AppColors.inkMid,
+                                      color: AppStyles.darkGray, // Mapped
                                     ),
                                   ),
                                 ),
@@ -257,7 +255,7 @@ class _NotifToastState extends State<NotifToast>
                           padding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
                           child: _ToastProgressBar(
                             duration: _toastDuration,
-                            color: AppColors.primary,
+                            color: AppStyles.primaryPurple, // Mapped
                           ),
                         ),
                       ],

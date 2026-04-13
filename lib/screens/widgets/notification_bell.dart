@@ -1,14 +1,14 @@
 // lib/ui/widgets/notification_bell.dart
 //
 // Works on BOTH web and mobile — NO kIsWeb guard in build().
-// Web:    populated by WebNotificationService timer ticker.
+// Web:   populated by WebNotificationService timer ticker.
 // Mobile: populated by MobileToastService calling addMobileNotif().
 // Placed in: workspaces_home AppBar  AND  workspace_detail SliverAppBar.
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../services/web_notification_service.dart';
-import '../../config/app_colors.dart';
+import '../../../app_styles.dart'; // Ensure this path points to where app_styles.dart is!
 import '../../main.dart' show navigatorKey;
 import 'notification_toast.dart';
 
@@ -153,7 +153,7 @@ class _NotificationBellState extends State<NotificationBell>
                   child: Container(
                     padding: const EdgeInsets.all(3),
                     decoration: const BoxDecoration(
-                      color: AppColors.red,
+                      color: AppStyles.error, // mapped from red
                       shape: BoxShape.circle,
                     ),
                     constraints: const BoxConstraints(
@@ -191,14 +191,14 @@ class _DropdownPanel extends StatelessWidget {
     return Material(
       elevation: 12,
       borderRadius: const BorderRadius.all(Radius.circular(16)),
-      shadowColor: AppColors.primary.withOpacity(0.15),
+      shadowColor: AppStyles.primaryPurple.withOpacity(0.15), // mapped from primary
       child: Container(
         width: 320,
         constraints: const BoxConstraints(maxHeight: 400),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: const BorderRadius.all(Radius.circular(16)),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: AppStyles.borderLight), // mapped from border
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -206,7 +206,7 @@ class _DropdownPanel extends StatelessWidget {
             Container(
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
               decoration: const BoxDecoration(
-                color: AppColors.primarySoft,
+                color: AppStyles.mediumGray, // mapped from primarySoft
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(16),
                   topRight: Radius.circular(16),
@@ -216,7 +216,7 @@ class _DropdownPanel extends StatelessWidget {
                 children: [
                   const Icon(
                     Icons.notifications_rounded,
-                    color: AppColors.primary,
+                    color: AppStyles.primaryPurple, // mapped from primary
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -226,7 +226,7 @@ class _DropdownPanel extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
-                        color: AppColors.ink,
+                        color: AppStyles.textPrimary, // mapped from ink
                       ),
                     ),
                   ),
@@ -237,7 +237,7 @@ class _DropdownPanel extends StatelessWidget {
                         'Clear all',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.primary,
+                          color: AppStyles.primaryPurple, // mapped from primary
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -245,7 +245,7 @@ class _DropdownPanel extends StatelessWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.border),
+            const Divider(height: 1, color: AppStyles.borderLight), // mapped from border
             if (notifs.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32, horizontal: 16),
@@ -253,14 +253,14 @@ class _DropdownPanel extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.check_circle_outline_rounded,
-                      color: AppColors.accent,
+                      color: AppStyles.accent,
                       size: 32,
                     ),
                     SizedBox(height: 10),
                     Text(
                       'No notifications yet',
                       style: TextStyle(
-                        color: AppColors.inkLight,
+                        color: AppStyles.darkGray, // mapped from inkLight
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -270,7 +270,7 @@ class _DropdownPanel extends StatelessWidget {
                       'Reminders will appear here when they fire.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: AppColors.inkLight,
+                        color: AppStyles.darkGray, // mapped from inkLight
                         fontSize: 11,
                         height: 1.4,
                       ),
@@ -285,7 +285,7 @@ class _DropdownPanel extends StatelessWidget {
                   shrinkWrap: true,
                   itemCount: notifs.length,
                   separatorBuilder: (_, __) =>
-                      const Divider(height: 1, color: AppColors.border),
+                      const Divider(height: 1, color: AppStyles.borderLight), // mapped from border
                   itemBuilder: (_, i) => _NotifTile(notif: notifs[i]),
                 ),
               ),
@@ -320,12 +320,12 @@ class _NotifTile extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: const BoxDecoration(
-              color: AppColors.primarySoft,
+              color: AppStyles.mediumGray, // mapped from primarySoft
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.notifications_active_rounded,
-              color: AppColors.primary,
+              color: AppStyles.primaryPurple, // mapped from primary
               size: 20,
             ),
           ),
@@ -339,7 +339,7 @@ class _NotifTile extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
-                    color: AppColors.ink,
+                    color: AppStyles.textPrimary, // mapped from ink
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -347,7 +347,7 @@ class _NotifTile extends StatelessWidget {
                   notif.body,
                   style: const TextStyle(
                     fontSize: 12,
-                    color: AppColors.inkMid,
+                    color: AppStyles.darkGray, // mapped from inkMid
                     height: 1.3,
                   ),
                 ),
@@ -356,7 +356,7 @@ class _NotifTile extends StatelessWidget {
                   _timeAgo(notif.fireAt),
                   style: const TextStyle(
                     fontSize: 11,
-                    color: AppColors.inkLight,
+                    color: AppStyles.darkGray, // mapped from inkLight
                   ),
                 ),
               ],

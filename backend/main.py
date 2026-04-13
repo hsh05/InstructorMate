@@ -25,8 +25,8 @@ from db.database import engine, get_db
 from db.models import Workspace
 
 # --- Teammate's Auth & Profile Imports ---
-from routers import auth
-from routers import profileRouter
+from services import auth
+from services import profileRouter
 
 # --- External Services ---
 from openai import OpenAI

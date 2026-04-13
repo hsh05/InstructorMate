@@ -14,10 +14,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from db.database import get_db
-from repositories.pg_workspace_repository import PgWorkspaceRepository
-from repositories.pg_student_repository import PgStudentRepository
+from repositories.pg_repository import PgWorkspaceRepository
+from repositories.pg_repository import PgStudentRepository
 from services.student_service import StudentService
-from repositories.pg_section_repository import PgSectionRepository
+from repositories.pg_repository import PgSectionRepository
 from sqlalchemy.dialects.postgresql import insert
 from db import models
 
@@ -279,7 +279,7 @@ def add_student(
     req:          AddStudentRequest,
     repo:         PgStudentRepository = Depends(get_student_repo),
 ):
-    from domain.student import Student as DomainStudent
+    from domain.models import Student as DomainStudent
     if not req.name.strip() and not req.email.strip() and not req.student_no.strip():
         raise HTTPException(
             status_code=422,

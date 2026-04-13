@@ -4,12 +4,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-final String _baseUrl = dotenv.env['BACKEND_URL'] ?? 'https://fallback-url.com';
+// URL is evaluated dynamically so it waits for main.dart to load the .env
+String get _baseUrl => dotenv.env['BACKEND_URL'] ?? 'https://fallback-url.com';
 const _storage = FlutterSecureStorage();
 
 class AuthService {
 
-  // ── Google Sign-In Setup ─────────────────────────────────────
+  // ── Google Sign-In Setup (v7.0+ Syntax) ──────────────────────
   static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   static Future<void> initialize() async {
@@ -90,9 +91,9 @@ class AuthService {
 
   static Future<Map<String, dynamic>?> signInWithGoogle() async {
     try {
+      // In v7, authenticate() is non-nullable. If the user cancels the popup,
+      // it throws an exception and jumps straight to the catch (e) block.
       final account = await _googleSignIn.authenticate();
-
-      if (account == null) return null;
 
       final auth = await account.authentication;
       final idToken = auth.idToken;
@@ -116,6 +117,7 @@ class AuthService {
       return {'status': res.statusCode, ...data};
 
     } catch (e) {
+      // Cancellations and failed authentications are safely caught here
       return {'status': 500, 'detail': e.toString()};
     }
   }
@@ -171,7 +173,7 @@ class AuthService {
   // ── User Profile ─────────────────────────────────────────────
 
   static Future<Map<String, dynamic>?> getMe() async {
-    final res = await authGet('/auth/me');
+    final res = await authGet('/profile/me');
 
     if (res.statusCode == 200) {
       return jsonDecode(res.body);
