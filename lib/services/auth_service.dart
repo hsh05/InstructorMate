@@ -1,136 +1,41 @@
+// lib/services/auth_service.dart
+
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../config/app_config.dart';
+import '../models/instructor_model.dart';
 
-// URL is evaluated dynamically so it waits for main.dart to load the .env
-String get _baseUrl => dotenv.env['BACKEND_URL'] ?? 'https://fallback-url.com';
 const _storage = FlutterSecureStorage();
 
 class AuthService {
-
-  // ── Google Sign-In Setup (v7.0+ Syntax) ──────────────────────
   static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   static Future<void> initialize() async {
-    await _googleSignIn.initialize(
-      serverClientId: 'YOUR_GOOGLE_CLIENT_ID',
-    );
+    await _googleSignIn.initialize(serverClientId: 'YOUR_GOOGLE_CLIENT_ID');
   }
 
-  // ── Token Storage ────────────────────────────────────────────
-
+  // ── Tokens ──────────────────────────────────────────────────────────────────
   static Future<void> _saveTokens(String access, String refresh) async {
     await _storage.write(key: 'access_token', value: access);
     await _storage.write(key: 'refresh_token', value: refresh);
   }
 
-  static Future<String?> getAccessToken() {
-    return _storage.read(key: 'access_token');
-  }
-
-  static Future<String?> getRefreshToken() {
-    return _storage.read(key: 'refresh_token');
-  }
+  static Future<String?> getAccessToken() => _storage.read(key: 'access_token');
+  static Future<String?> getRefreshToken() => _storage.read(key: 'refresh_token');
 
   static Future<void> clearTokens() async {
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
   }
 
-  // ── Email / Password Auth ────────────────────────────────────
-
-  static Future<Map<String, dynamic>> signUp({
-    required String email,
-    required String password,
-    String? fullName,
-  }) async {
-    final res = await http.post(
-      Uri.parse('$_baseUrl/auth/signup'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-        'full_name': fullName,
-      }),
-    );
-
-    final data = jsonDecode(res.body);
-
-    if (res.statusCode == 200) {
-      await _saveTokens(data['access_token'], data['refresh_token']);
-    }
-
-    return {'status': res.statusCode, ...data};
-  }
-
-  static Future<Map<String, dynamic>> login({
-    required String email,
-    required String password,
-  }) async {
-    final res = await http.post(
-      Uri.parse('$_baseUrl/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-      }),
-    );
-
-    final data = jsonDecode(res.body);
-
-    if (res.statusCode == 200) {
-      await _saveTokens(data['access_token'], data['refresh_token']);
-    }
-
-    return {'status': res.statusCode, ...data};
-  }
-
-  // ── Google OAuth ─────────────────────────────────────────────
-
-  static Future<Map<String, dynamic>?> signInWithGoogle() async {
-    try {
-      // In v7, authenticate() is non-nullable. If the user cancels the popup,
-      // it throws an exception and jumps straight to the catch (e) block.
-      final account = await _googleSignIn.authenticate();
-
-      final auth = await account.authentication;
-      final idToken = auth.idToken;
-
-      if (idToken == null) {
-        throw Exception('No Google ID Token received');
-      }
-
-      final res = await http.post(
-        Uri.parse('$_baseUrl/auth/google'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'id_token': idToken}),
-      );
-
-      final data = jsonDecode(res.body);
-
-      if (res.statusCode == 200) {
-        await _saveTokens(data['access_token'], data['refresh_token']);
-      }
-
-      return {'status': res.statusCode, ...data};
-
-    } catch (e) {
-      // Cancellations and failed authentications are safely caught here
-      return {'status': 500, 'detail': e.toString()};
-    }
-  }
-
-  // ── Token Refresh ────────────────────────────────────────────
-
   static Future<bool> refreshAccessToken() async {
     final refreshToken = await getRefreshToken();
-
     if (refreshToken == null) return false;
 
     final res = await http.post(
-      Uri.parse('$_baseUrl/auth/refresh'),
+      AppConfig.refreshTokenUri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refresh_token': refreshToken}),
     );
@@ -140,61 +45,60 @@ class AuthService {
       await _saveTokens(data['access_token'], data['refresh_token']);
       return true;
     }
-
     return false;
   }
 
-  // ── Authenticated Requests ───────────────────────────────────
-
-  static Future<http.Response> authGet(String path) async {
+  // ── Authenticated Requests ──────────────────────────────────────────────────
+  static Future<http.Response> authGet(Uri uri) async {
     String? token = await getAccessToken();
-
-    var res = await http.get(
-      Uri.parse('$_baseUrl$path'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    var res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
 
     if (res.statusCode == 401) {
-      final refreshed = await refreshAccessToken();
-
-      if (refreshed) {
+      if (await refreshAccessToken()) {
         token = await getAccessToken();
-
-        res = await http.get(
-          Uri.parse('$_baseUrl$path'),
-          headers: {'Authorization': 'Bearer $token'},
-        );
+        res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
       }
     }
-
     return res;
   }
 
-  // ── User Profile ─────────────────────────────────────────────
-
-  static Future<Map<String, dynamic>?> getMe() async {
-    final res = await authGet('/profile/me');
-
-    if (res.statusCode == 200) {
-      return jsonDecode(res.body);
-    }
-
+  // ── Profile (Merged from ProfileService) ────────────────────────────────────
+  static Future<Instructor?> getMe() async {
+    final res = await authGet(AppConfig.meUri);
+    if (res.statusCode == 200) return Instructor.fromJson(jsonDecode(res.body));
     return null;
   }
 
-  // ── Logout ───────────────────────────────────────────────────
+  static Future<Instructor> getProfile(String userId) async {
+    final res = await authGet(AppConfig.getProfileUri(userId));
+    if (res.statusCode == 200) return Instructor.fromJson(jsonDecode(res.body));
+    throw Exception('Failed to load profile (${res.statusCode})');
+  }
 
+  static Future<Instructor> updateProfile(String userId, Map<String, dynamic> data) async {
+    String? token = await getAccessToken();
+    final res = await http.put(
+      AppConfig.getProfileUri(userId),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token'
+      },
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) return Instructor.fromJson(jsonDecode(res.body));
+    throw Exception('Failed to update profile (${res.statusCode})');
+  }
+
+  // ── Logout ──────────────────────────────────────────────────────────────────
   static Future<void> logout() async {
     final refreshToken = await getRefreshToken();
-
     if (refreshToken != null) {
       await http.post(
-        Uri.parse('$_baseUrl/auth/logout'),
+        AppConfig.logoutUri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refresh_token': refreshToken}),
       );
     }
-
     await clearTokens();
     await _googleSignIn.signOut();
   }

@@ -1,12 +1,13 @@
-// lib/screens/workspace_sections.dart
+// lib/screens/workspace/workspace_sections.dart
 
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../app/state/workspaces_vm.dart';
-import '../models/workspace_model.dart';
-import '../app_styles.dart';
+// 👉 THE FIX: Added '../' and updated the state folder path
+import '../../state/workspaces_vm.dart';
+import '../../models/workspace_model.dart';
+import '../../app_styles.dart';
 
 // ─── TAB 2 — Sections ─────────────────────────────────────────────────────────
 class SectionsTab extends StatefulWidget {
@@ -828,7 +829,7 @@ class SectionCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 5),
                     Row(children: [
-                      _Badge(
+                      const _Badge(
                           label: 'Section',
                           color: AppStyles.primaryPurple,
                           bgColor: AppStyles.mediumGray),

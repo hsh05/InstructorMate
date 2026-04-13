@@ -1,19 +1,21 @@
-// lib/screens/workspace_detail.dart
+// lib/screens/workspace/workspace_detail.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../app/state/workspaces_vm.dart';
-import '../models/workspace_model.dart';
-import '../app_styles.dart';
-import 'widgets/notification_bell.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+
+// 👉 THE FIX: Stepping out twice (../../) to reach the unified architecture folders!
+import '../../state/workspaces_vm.dart';
+import '../../models/workspace_model.dart';
+import '../../app_styles.dart';
+import '../../widgets/notification_bell.dart';
+import '../../models/config_model.dart';
+import '../../models/question_model.dart';
+
+// 👉 THE FIX: These screens are siblings inside the 'workspace' folder, so no slashes needed
 import 'workspace_sections.dart';
 import 'workspace_ask.dart';
-
-// 👉 ADDED: Required imports for Quiz Generation
-import '../models/config_model.dart';
-import '../models/question_model.dart';
 import 'review_screen.dart'; 
-import 'package:desktop_drop/desktop_drop.dart';
 
 const _fieldLabels = {
   'course_title': 'Course Title',
@@ -55,7 +57,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   // Make sure start_date and end_date are in this list, otherwise the UI will hide them!
   static const _editableKeys = ['course_title', 'course_code', 'semester', 'start_date', 'end_date'];
 
-  // 👉 ADDED: Quiz Generation Variables
+  // Quiz Generation Variables
   bool _isGenerating = false;
   final Map<String, QuestionTypeConfig> _configs = {
     'MCQ': QuestionTypeConfig(name: 'Multiple Choice', isSelected: true, count: 10),
@@ -156,7 +158,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     for (final c in _fieldCtrl.values) {
       c.dispose();
     }
-    // 👉 ADDED: Clean up config controllers
     for (var config in _configs.values) {
       config.topicController.dispose();
     }
@@ -187,7 +188,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
 
-  // 👉 ADDED: Generate Quiz Method
+  // Generate Quiz Method
   void _generateQuiz() async {
     final selectedIds = widget.vm.selectedMaterialIdsForQuiz.toList();
     if (selectedIds.isEmpty || widget.vm.current == null) return;
@@ -222,7 +223,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     }
   }
 
-  // 👉 ADDED: Settings Popup
+  // Settings Popup
   void _showSettings() {
     showDialog(
       context: context,
@@ -350,7 +351,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         return Scaffold(
           backgroundColor: AppStyles.lightGray,
 
-          // 👉 ADDED: Dynamic Floating Action Button
+          // Dynamic Floating Action Button
           floatingActionButton: (ready && _currentTabIndex == 3) ? FloatingActionButton.extended(
             onPressed: widget.vm.selectedMaterialIdsForQuiz.isEmpty || _isGenerating 
                 ? null 
@@ -762,7 +763,7 @@ class _InfoTabState extends State<_InfoTab>
     return TextInputType.text;
   }
 
-  // 👉 The dedicated Prompt Screen for Dates
+  // The dedicated Prompt Screen for Dates
   Future<void> _promptForDates() async {
     DateTime? currentStart = DateTime.tryParse(widget.ctrl('start_date', '').text);
     DateTime? currentEnd = DateTime.tryParse(widget.ctrl('end_date', '').text);
@@ -801,7 +802,7 @@ class _InfoTabState extends State<_InfoTab>
     }
   }
 
-  // 👉 ADDED: Calculates the current week assuming Monday start
+  // Calculates the current week assuming Monday start
   String _calculateCurrentWeek() {
     final startStr = widget.ws.fields['start_date'];
     final endStr = widget.ws.fields['end_date'];
@@ -846,13 +847,12 @@ class _InfoTabState extends State<_InfoTab>
       groups.add(_FieldGroup.single(key));
     }
 
-    // 👉 Generate the week string to display
+    // Generate the week string to display
     final weekText = _calculateCurrentWeek();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // 👉 ADDED: A beautiful row containing the Header and the Week Badge!
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -861,7 +861,6 @@ class _InfoTabState extends State<_InfoTab>
             
             // The dynamic Week Badge
             Container(
-              // 👉 INCREASED: More padding makes the box taller and wider
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: AppStyles.primaryPurple.withOpacity(0.1),
@@ -871,13 +870,11 @@ class _InfoTabState extends State<_InfoTab>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 👉 INCREASED: Icon size bumped from 14 to 16
                   const Icon(Icons.date_range_rounded, size: 16, color: AppStyles.primaryPurple),
                   const SizedBox(width: 6), // Slightly wider gap
                   Text(
                     weekText,
                     style: const TextStyle(
-                      // 👉 INCREASED: Font size bumped from 12 to 13
                       fontSize: 13, 
                       fontWeight: FontWeight.w800,
                       color: AppStyles.primaryPurple,
@@ -1471,11 +1468,9 @@ class _MaterialsTabState extends State<MaterialsTab> {
   Widget build(BuildContext context) {
     final materials = widget.vm.current?.materials ?? [];
 
-    // 👉 Wrap the entire tab in a DropTarget!
     return DropTarget(
       onDragDone: (detail) {
         setState(() => _isDragging = false);
-        // 👉 Pulse check: Are the files even registering?
         debugPrint("🟢 DRAG EVENT FIRED! Files dropped: ${detail.files.length}");
         
         widget.vm.uploadMaterial(droppedFiles: detail.files);
@@ -1497,7 +1492,6 @@ class _MaterialsTabState extends State<MaterialsTab> {
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: InkWell(
-                // 👉 Updated to call the new plural function
                 onTap: widget.vm.uploadingMaterial ? null : () => widget.vm.uploadMaterial(),
                 borderRadius: AppStyles.borderRadiusM,
                 child: Container(

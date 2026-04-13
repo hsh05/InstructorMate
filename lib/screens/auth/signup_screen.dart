@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:instructor_mate/controllers/signup_controller.dart';
-import 'package:instructor_mate/app_styles.dart';
+import '../../state/auth_vm.dart';
+import '../../app_styles.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -15,7 +15,9 @@ class _SignupScreenState extends State<SignupScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
-  late final _controller = SignupController(_name, _email, _password, _confirmPassword);
+  
+  // 👉 THE FIX: Replaced SignupController with AuthViewModel
+  final _authVM = AuthViewModel();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -35,7 +37,15 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    final success = await _controller.signup(_role);
+    
+    // 👉 THE FIX: Calling signup from AuthViewModel
+    final success = await _authVM.signup(
+      name: _name.text,
+      email: _email.text,
+      password: _password.text,
+      role: _role,
+    );
+    
     if (!mounted) return;
 
     setState(() => _isLoading = false);
@@ -65,7 +75,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _buildHeader(),
-                    SizedBox(height: AppStyles.spacingXL),
+                    const SizedBox(height: AppStyles.spacingXL),
                     _buildForm(),
                   ],
                 ),
@@ -80,13 +90,13 @@ class _SignupScreenState extends State<SignupScreen> {
           Container(
             padding: AppStyles.paddingMedium,
             decoration: AppStyles.logoDecoration,
-            child: Icon(Icons.person_add_rounded,
+            child: const Icon(Icons.person_add_rounded,
                 size: AppStyles.iconSizeLarge, color: AppStyles.primaryPurple),
           ),
-          SizedBox(height: AppStyles.spacingL),
-          Text('Create Account', style: AppStyles.headingLarge),
-          SizedBox(height: AppStyles.spacingS),
-          Text('Join InstructorMate today', style: AppStyles.subtitleWhite),
+          const SizedBox(height: AppStyles.spacingL),
+          const Text('Create Account', style: AppStyles.headingLarge),
+          const SizedBox(height: AppStyles.spacingS),
+          const Text('Join InstructorMate today', style: AppStyles.subtitleWhite),
         ],
       );
 
@@ -100,12 +110,12 @@ class _SignupScreenState extends State<SignupScreen> {
             children: [
               _field(_name, 'Full Name', Icons.person_rounded, AppStyles.primaryPurple,
                   validator: (v) => v!.isEmpty ? 'Enter name' : v.length < 2 ? 'Min 2 chars' : null),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               _field(_email, 'Email', Icons.email_rounded, AppStyles.primaryPurple,
                   type: TextInputType.emailAddress,
                   validator: (v) =>
                       v!.isEmpty ? 'Enter email' : !v.contains('@') ? 'Invalid email' : null),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               _field(_password, 'Password', Icons.lock_rounded, AppStyles.primaryDeepPurple,
                   obscure: _obscurePassword,
                   suffix: IconButton(
@@ -116,7 +126,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
                   validator: (v) => v!.isEmpty ? 'Enter password' : v.length < 6 ? 'Min 6 chars' : null),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               _field(_confirmPassword, 'Confirm Password', Icons.lock_outline_rounded,
                   AppStyles.primaryDeepPurple,
                   obscure: _obscureConfirm,
@@ -132,16 +142,16 @@ class _SignupScreenState extends State<SignupScreen> {
                       : v != _password.text
                           ? 'Passwords don\'t match'
                           : null),
-              SizedBox(height: AppStyles.spacingXL),
+              const SizedBox(height: AppStyles.spacingXL),
               _buildButton(),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('Already have an account? ', style: AppStyles.bodyMedium),
+                  const Text('Already have an account? ', style: AppStyles.bodyMedium),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
-                    child: Text('Login', style: AppStyles.linkText),
+                    child: const Text('Login', style: AppStyles.linkText),
                   ),
                 ],
               ),
@@ -172,7 +182,7 @@ class _SignupScreenState extends State<SignupScreen> {
           onPressed: _isLoading ? null : _submit,
           style: AppStyles.elevatedButtonStyle,
           child: _isLoading
-              ? SizedBox(
+              ? const SizedBox(
                   height: AppStyles.loadingIndicatorSize,
                   width: AppStyles.loadingIndicatorSize,
                   child: CircularProgressIndicator(
@@ -180,7 +190,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     valueColor: AlwaysStoppedAnimation(AppStyles.white),
                   ),
                 )
-              : Text('Create Account', style: AppStyles.buttonText),
+              : const Text('Create Account', style: AppStyles.buttonText),
         ),
       );
 }

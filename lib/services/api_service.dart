@@ -381,4 +381,19 @@ class ApiService {
     } catch (_) {}
     return 'Request failed (${resp.statusCode}).';
   }
+
+  // ── Edit Quiz Question ───────────────────────────────────────────────────
+  Future<QuizQuestion> editQuestionWithAI(QuizQuestion oldQuestion, String instruction) async {
+    var response = await http.post(
+      _u('/edit-question/'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"question_data": oldQuestion.toJson(), "instruction": instruction}),
+    );
+
+    if (response.statusCode == 200) {
+      var data = jsonDecode(response.body);
+      return QuizQuestion.fromJson(data['updated_question']);
+    } 
+    throw Exception("Failed to edit question");
+  }
 }

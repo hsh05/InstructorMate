@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:instructor_mate/app_styles.dart';
-import 'package:instructor_mate/models/instructor_profile.dart';
+import '../app_styles.dart';
+import '../models/instructor_model.dart';
 
 class ProfileHeaderCard extends StatelessWidget {
-  final InstructorProfile profile;
+  final Instructor profile;
   const ProfileHeaderCard({super.key, required this.profile});
 
   @override
@@ -21,16 +21,21 @@ class ProfileHeaderCard extends StatelessWidget {
         CircleAvatar(
           radius: 44,
           backgroundColor: AppStyles.white.withOpacity(0.2),
+          // 👉 THE FIX: Using the computed initials property from our new model!
           child: Text(
-            profile.fullName.isNotEmpty ? profile.fullName[0].toUpperCase() : '?',
+            profile.initials, 
             style: AppStyles.headingLarge,
           ),
         ),
         const SizedBox(height: AppStyles.gapM),
-        Text(profile.fullName,
+        
+        // 👉 THE FIX: Replaced fullName with name
+        Text(profile.name,
             style: AppStyles.headingSmall.copyWith(color: AppStyles.white)),
+            
         const SizedBox(height: AppStyles.gapXS),
         Text(profile.email, style: AppStyles.subtitleWhite),
+        
         if (profile.jobTitle != null && profile.jobTitle!.isNotEmpty) ...[
           const SizedBox(height: AppStyles.gapS),
           Container(

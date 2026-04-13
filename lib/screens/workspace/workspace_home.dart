@@ -1,12 +1,15 @@
-// lib/screens/workspaces_home.dart — tap navigates instantly, no await on openWorkspace
+// lib/screens/workspace/workspaces_home.dart
+
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import '../app/state/workspaces_vm.dart';
-import '../models/workspace_model.dart';
-import '../app_styles.dart';
-import 'widgets/notification_bell.dart';
+
+// 👉 THE FIX: Updated imports to step out of the workspace folder!
+import '../../state/workspaces_vm.dart';
+import '../../models/workspace_model.dart';
+import '../../app_styles.dart';
+import '../../widgets/notification_bell.dart';
 
 class WorkspacesHome extends StatefulWidget {
   const WorkspacesHome({super.key, required this.vm});
@@ -26,7 +29,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         const SizedBox(width: 8),
         Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
       ]),
-      backgroundColor: AppStyles.accent, // Keeps teal accent
+      backgroundColor: AppStyles.accent, 
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -41,7 +44,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         const SizedBox(width: 8),
         Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
       ]),
-      backgroundColor: AppStyles.error, // Mapped from red
+      backgroundColor: AppStyles.error, 
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -56,7 +59,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         const SizedBox(width: 8),
         Expanded(child: Text(message, overflow: TextOverflow.ellipsis)),
       ]),
-      backgroundColor: AppStyles.darkGray, // Mapped from inkMid
+      backgroundColor: AppStyles.darkGray, 
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -68,10 +71,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     return AnimatedBuilder(
       animation: widget.vm,
       builder: (_, __) => Scaffold(
-        backgroundColor: AppStyles.lightGray, // Mapped from bg
+        backgroundColor: AppStyles.lightGray, 
         appBar: AppBar(
           elevation: 0,
-          backgroundColor: AppStyles.primaryPurple, // Mapped from primary
+          backgroundColor: AppStyles.primaryPurple, 
           title: const Text(
             'InstructorMate',
             style: TextStyle(
@@ -83,11 +86,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           centerTitle: true,
           actions: const [
             NotificationBell(),
-            SizedBox(width: 8), // Small padding so the bell isn't pushed to the edge
+            SizedBox(width: 8), 
           ],
         ),
         
-        // 👉 ADDED: Floating Action Button in the bottom right corner
         floatingActionButton: FloatingActionButton.extended(
           onPressed: widget.vm.importing ? null : _pickFile,
           icon: widget.vm.importing
@@ -100,7 +102,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             widget.vm.importing ? 'Importing...' : 'Add Workspace',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          backgroundColor: AppStyles.primaryPurple, // Mapped from primary
+          backgroundColor: AppStyles.primaryPurple, 
           foregroundColor: Colors.white,
           elevation: 4,
         ),
@@ -108,7 +110,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppStyles.mediumGray, AppStyles.lightGray], // Mapped from bgTop, bg
+              colors: [AppStyles.mediumGray, AppStyles.lightGray], 
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -122,7 +124,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   Widget _buildBody(BuildContext context) {
     if (widget.vm.loading && widget.vm.workspaces.isEmpty) {
       return const Center(
-          child: CircularProgressIndicator(color: AppStyles.primaryPurple)); // Mapped
+          child: CircularProgressIndicator(color: AppStyles.primaryPurple)); 
     }
     if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
       return Center(
@@ -130,14 +132,13 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           padding: const EdgeInsets.all(20),
           child: Text(widget.vm.error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppStyles.error)), // Mapped
+              style: const TextStyle(color: AppStyles.error)), 
         ),
       );
     }
 
     if (widget.vm.workspaces.isNotEmpty) {
       return ListView.separated(
-        // 👉 Added 80px of bottom padding so the FAB doesn't cover the last card
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), 
         itemCount: widget.vm.workspaces.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -171,7 +172,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
           child: Text(
             'Tap "+ Add Workspace" below to get started.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppStyles.darkGray, fontSize: 14), // Mapped from inkLight
+            style: TextStyle(color: AppStyles.darkGray, fontSize: 14), 
           ),
         ),
       );
@@ -187,23 +188,20 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   Future<void> _pickFile() async {
     if (widget.vm.importing) return;
 
-    // 👉 1. Let the user pick the syllabus file FIRST
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'docx', 'txt'],
       withData: true,
     );
     
-    // If they cancel the file picker, just stop here
     if (res == null || res.files.isEmpty) return;
     final f = res.files.first;
     if (f.bytes == null) return;
 
-    // 👉 2. Pop up the Date Range Picker AFTER the file is selected
     final DateTimeRange? pickedDates = await showDateRangePicker(
       context: context,
       helpText: 'SELECT SEMESTER DATES (REQUIRED)',
-      saveText: 'UPLOAD & CREATE', // Changed the button text to make the action clear
+      saveText: 'UPLOAD & CREATE', 
       initialEntryMode: DatePickerEntryMode.calendarOnly,
       firstDate: DateTime.now().subtract(const Duration(days: 365)), 
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),   
@@ -211,10 +209,10 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: AppStyles.primaryPurple, // Mapped
+              primary: AppStyles.primaryPurple, 
               onPrimary: Colors.white,
-              surface: AppStyles.white, // Mapped
-              onSurface: AppStyles.textPrimary, // Mapped
+              surface: AppStyles.white, 
+              onSurface: AppStyles.textPrimary, 
             ),
           ),
           child: child!,
@@ -222,17 +220,14 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       },
     );
 
-    // 👉 3. If they cancel the dates, we safely abort the upload BEFORE hitting the database
     if (pickedDates == null) {
       _showError("Semester dates are required to create a workspace.");
       return;
     }
     
-    // 👉 4. Both file and dates are secure, send them to the server!
     await _importBytes(f.bytes!, f.name, pickedDates);
   }
 
-  // 👉 Notice we added the `dates` parameter here
   Future<void> _importBytes(Uint8List bytes, String filename, DateTimeRange dates) async {
     final startStr = dates.start.toIso8601String().split('T').first;
     final endStr = dates.end.toIso8601String().split('T').first;
@@ -334,18 +329,18 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                             color: const Color(0xFFF4F0FF),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                                color: AppStyles.primaryPurple.withOpacity(0.2)), // Mapped
+                                color: AppStyles.primaryPurple.withOpacity(0.2)), 
                           ),
                           child: Row(children: [
                             Container(
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                                color: AppStyles.primaryPurple.withOpacity(0.12), // Mapped
+                                color: AppStyles.primaryPurple.withOpacity(0.12), 
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(Icons.school_rounded,
-                                  color: AppStyles.primaryPurple, size: 20), // Mapped
+                                  color: AppStyles.primaryPurple, size: 20), 
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -371,8 +366,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                         color: ws.status == 'ready'
-                                            ? AppStyles.success // Mapped to success
-                                            : AppStyles.darkGray, // Mapped to darkGray
+                                            ? AppStyles.success 
+                                            : AppStyles.darkGray, 
                                       ),
                                     ),
                                   ],
@@ -409,7 +404,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                         flex: 2,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppStyles.primaryPurple, // Mapped
+                            backgroundColor: AppStyles.primaryPurple, 
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -446,8 +441,6 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       return;
     }
 
-    // 👉 4. THE FIX: Immediately save the required dates to the new workspace!
-    // As soon as the workspace is created on the server, we silently patch it with the dates
     if (widget.vm.current != null) {
       await widget.vm.updateFields({
         'start_date': dates.start.toIso8601String().split('T').first,
@@ -489,7 +482,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                 decoration: BoxDecoration(
-                  color: AppStyles.error.withOpacity(0.06), // Mapped
+                  color: AppStyles.error.withOpacity(0.06), 
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(20)),
                 ),
@@ -500,11 +493,11 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: AppStyles.error.withOpacity(0.12), // Mapped
+                        color: AppStyles.error.withOpacity(0.12), 
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.delete_outline_rounded,
-                          color: AppStyles.error, size: 22), // Mapped
+                          color: AppStyles.error, size: 22), 
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -526,7 +519,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: AppStyles.darkGray, // Mapped
+                              color: AppStyles.darkGray, 
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -547,7 +540,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       'This action is permanent and cannot be undone. The following will be removed:',
                       style: TextStyle(
                         fontSize: 13,
-                        color: AppStyles.darkGray, // Mapped
+                        color: AppStyles.darkGray, 
                         height: 1.5,
                       ),
                     ),
@@ -571,8 +564,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AppStyles.darkGray, // Mapped
-                        side: const BorderSide(color: AppStyles.borderLight), // Mapped
+                        foregroundColor: AppStyles.darkGray, 
+                        side: const BorderSide(color: AppStyles.borderLight), 
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -588,7 +581,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                     flex: 2,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppStyles.error, // Mapped
+                        backgroundColor: AppStyles.error, 
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 13),
@@ -636,10 +629,10 @@ class _DeleteBullet extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: AppStyles.error.withOpacity(0.08), // Mapped
+            color: AppStyles.error.withOpacity(0.08), 
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, color: AppStyles.error, size: 14), // Mapped
+          child: Icon(icon, color: AppStyles.error, size: 14), 
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -647,7 +640,7 @@ class _DeleteBullet extends StatelessWidget {
             label,
             style: const TextStyle(
               fontSize: 13,
-              color: AppStyles.textPrimary, // Mapped
+              color: AppStyles.textPrimary, 
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -698,7 +691,6 @@ class _PollingWorkspaceCardState extends State<_PollingWorkspaceCard> {
       if (!stillProcessing) {
         _timer?.cancel();
         widget.vm.updateWorkspaceSummary(fresh.toSummary());
-        // Pass the resolved title so the snackbar can show the workspace name
         widget.onReady(
           fresh.title.isNotEmpty ? fresh.title : 'workspace',
         );
@@ -745,16 +737,16 @@ class _ProcessingCardState extends State<_ProcessingCard>
       animation: _shimmer,
       builder: (_, __) {
         final shimmerColor =
-            Color.lerp(AppStyles.borderLight, AppStyles.lightGray, _shimmer.value)!; // Mapped
+            Color.lerp(AppStyles.borderLight, AppStyles.lightGray, _shimmer.value)!; 
         return Material(
-          color: AppStyles.white, // Mapped
+          color: AppStyles.white, 
           borderRadius: BorderRadius.circular(16),
           elevation: 0,
           child: Container(
             padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppStyles.borderLight), // Mapped
+              border: Border.all(color: AppStyles.borderLight), 
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -767,7 +759,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                     borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(Icons.hourglass_top_rounded,
-                      color: AppStyles.primaryPurple.withOpacity(0.4), size: 22), // Mapped
+                      color: AppStyles.primaryPurple.withOpacity(0.4), size: 22), 
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -788,7 +780,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
-                            color: AppStyles.mediumGray, // Mapped
+                            color: AppStyles.mediumGray, 
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Row(
@@ -799,7 +791,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                                 height: 8,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  color: AppStyles.primaryPurple // Mapped
+                                  color: AppStyles.primaryPurple 
                                       .withOpacity(0.6 + _shimmer.value * 0.4),
                                 ),
                               ),
@@ -808,7 +800,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                                   style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
-                                      color: AppStyles.primaryPurple, // Mapped
+                                      color: AppStyles.primaryPurple, 
                                       letterSpacing: 0.2)),
                             ],
                           ),
@@ -828,7 +820,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                 ),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_horiz_rounded,
-                      color: AppStyles.darkGray, size: 20), // Mapped
+                      color: AppStyles.darkGray, size: 20), 
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   elevation: 3,
@@ -840,11 +832,11 @@ class _ProcessingCardState extends State<_ProcessingCard>
                       value: 'delete',
                       child: Row(children: const [
                         Icon(Icons.delete_outline_rounded,
-                            color: AppStyles.error, size: 18), // Mapped
+                            color: AppStyles.error, size: 18), 
                         SizedBox(width: 10),
                         Text('Delete',
                             style: TextStyle(
-                                color: AppStyles.error, // Mapped
+                                color: AppStyles.error, 
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13)),
                       ]),
@@ -885,7 +877,7 @@ class _WorkspaceCard extends StatelessWidget {
         : null;
 
     return Material(
-      color: AppStyles.white, // Mapped
+      color: AppStyles.white, 
       borderRadius: BorderRadius.circular(16),
       elevation: 0,
       child: InkWell(
@@ -895,7 +887,7 @@ class _WorkspaceCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppStyles.borderLight), // Mapped
+            border: Border.all(color: AppStyles.borderLight), 
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -904,11 +896,11 @@ class _WorkspaceCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: AppStyles.mediumGray, // Mapped
+                  color: AppStyles.mediumGray, 
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: const Icon(Icons.school_rounded,
-                    color: AppStyles.primaryPurple, size: 24), // Mapped
+                    color: AppStyles.primaryPurple, size: 24), 
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -922,7 +914,7 @@ class _WorkspaceCard extends StatelessWidget {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14.5,
-                        color: AppStyles.textPrimary, // Mapped
+                        color: AppStyles.textPrimary, 
                         letterSpacing: -0.2,
                       ),
                       maxLines: 1,
@@ -937,7 +929,7 @@ class _WorkspaceCard extends StatelessWidget {
                           '${workspace.sectionsCount} ${workspace.sectionsCount == 1 ? "Section" : "Sections"} · ${workspace.studentsCount} ${workspace.studentsCount == 1 ? "Student" : "Students"}',
                           style: const TextStyle(
                             fontSize: 12.5,
-                            color: AppStyles.darkGray, // Mapped
+                            color: AppStyles.darkGray, 
                             fontWeight: FontWeight.w500,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -950,7 +942,7 @@ class _WorkspaceCard extends StatelessWidget {
                         'Last Updated: $timeAgo',
                         style: const TextStyle(
                           fontSize: 11.5,
-                          color: AppStyles.darkGray, // Mapped
+                          color: AppStyles.darkGray, 
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -960,7 +952,7 @@ class _WorkspaceCard extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz_rounded,
-                    color: AppStyles.darkGray, size: 20), // Mapped
+                    color: AppStyles.darkGray, size: 20), 
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 elevation: 3,
@@ -972,11 +964,11 @@ class _WorkspaceCard extends StatelessWidget {
                     value: 'delete',
                     child: Row(children: const [
                       Icon(Icons.delete_outline_rounded,
-                          color: AppStyles.error, size: 18), // Mapped
+                          color: AppStyles.error, size: 18), 
                       SizedBox(width: 10),
                       Text('Delete',
                           style: TextStyle(
-                              color: AppStyles.error, // Mapped
+                              color: AppStyles.error, 
                               fontWeight: FontWeight.w600,
                               fontSize: 13)),
                     ]),
@@ -1013,7 +1005,7 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: isReady ? AppStyles.readyBg : AppStyles.draftBg, // Mapped to team design badge colors
+        color: isReady ? AppStyles.readyBg : AppStyles.draftBg, 
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -1023,7 +1015,7 @@ class _StatusBadge extends StatelessWidget {
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-              color: isReady ? AppStyles.readyDot : AppStyles.draftDot, // Mapped
+              color: isReady ? AppStyles.readyDot : AppStyles.draftDot, 
               shape: BoxShape.circle,
             ),
           ),
@@ -1033,7 +1025,7 @@ class _StatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: isReady ? AppStyles.readyFg : AppStyles.draftFg, // Mapped
+              color: isReady ? AppStyles.readyFg : AppStyles.draftFg, 
               letterSpacing: 0.2,
             ),
           ),

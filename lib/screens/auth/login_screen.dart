@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:instructor_mate/controllers/login_controller.dart';
-import 'package:instructor_mate/screens/signup_screen.dart';
-import 'package:instructor_mate/screens/profile_screen.dart';
-import 'package:instructor_mate/app_styles.dart';
+import '../../state/auth_vm.dart';
+import 'signup_screen.dart';
+import '../profile_screen.dart'; // Adjust if profile_screen is in a different folder
+import '../../app_styles.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,7 +15,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  late final _controller = LoginController(_email, _password);
+  
+  // 👉 THE FIX: Using the unified AuthViewModel
+  final _authVM = AuthViewModel();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -31,7 +33,13 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    final userId = await _controller.login(); // now a String? (UUID)
+    
+    // 👉 THE FIX: Calling login from AuthViewModel
+    final userId = await _authVM.login(
+      email: _email.text,
+      password: _password.text,
+    );
+    
     if (!mounted) return;
     setState(() => _isLoading = false);
 
@@ -68,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _buildHeader(),
-                    SizedBox(height: AppStyles.spacingXL),
+                    const SizedBox(height: AppStyles.spacingXL),
                     _buildForm(),
                   ],
                 ),
@@ -83,13 +91,13 @@ class _LoginScreenState extends State<LoginScreen> {
           Container(
             padding: AppStyles.paddingMedium,
             decoration: AppStyles.logoDecoration,
-            child: Icon(Icons.school_rounded,
+            child: const Icon(Icons.school_rounded,
                 size: AppStyles.iconSizeLarge, color: AppStyles.primaryPurple),
           ),
-          SizedBox(height: AppStyles.spacingL),
-          Text('InstructorMate', style: AppStyles.headingLarge),
-          SizedBox(height: AppStyles.spacingS),
-          Text('Welcome back! Please login to continue',
+          const SizedBox(height: AppStyles.spacingL),
+          const Text('InstructorMate', style: AppStyles.headingLarge),
+          const SizedBox(height: AppStyles.spacingS),
+          const Text('Welcome back! Please login to continue',
               style: AppStyles.subtitleWhite),
         ],
       );
@@ -110,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       : !v.contains('@')
                           ? 'Invalid email'
                           : null),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               _field(_password, 'Password', Icons.lock_rounded,
                   AppStyles.primaryDeepPurple,
                   obscure: _obscurePassword,
@@ -129,25 +137,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       : v.length < 6
                           ? 'Min 6 chars'
                           : null),
-              SizedBox(height: AppStyles.spacingM),
+              const SizedBox(height: AppStyles.spacingM),
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {},
-                  child: Text('Forgot Password?', style: AppStyles.linkText),
+                  child: const Text('Forgot Password?', style: AppStyles.linkText),
                 ),
               ),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               _buildButton(),
-              SizedBox(height: AppStyles.spacingL),
+              const SizedBox(height: AppStyles.spacingL),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text("Don't have an account? ", style: AppStyles.bodyMedium),
+                  const Text("Don't have an account? ", style: AppStyles.bodyMedium),
                   GestureDetector(
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const SignupScreen())),
-                    child: Text('Sign Up', style: AppStyles.linkText),
+                    child: const Text('Sign Up', style: AppStyles.linkText),
                   ),
                 ],
               ),
@@ -183,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
           onPressed: _isLoading ? null : _submit,
           style: AppStyles.elevatedButtonStyle,
           child: _isLoading
-              ? SizedBox(
+              ? const SizedBox(
                   height: AppStyles.loadingIndicatorSize,
                   width: AppStyles.loadingIndicatorSize,
                   child: CircularProgressIndicator(
@@ -191,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     valueColor: AlwaysStoppedAnimation(AppStyles.white),
                   ),
                 )
-              : Text('Login', style: AppStyles.buttonText),
+              : const Text('Login', style: AppStyles.buttonText),
         ),
       );
 }

@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // --- UI Screens ---
-import 'screens/workspaces_home.dart';
-import 'screens/workspace_detail.dart';
-import 'screens/login_screen.dart';
+// 👉 THE FIX: Updated to point to the correct workspaces_home.dart file
+import 'screens/workspace/workspace_home.dart'; 
+import 'screens/workspace/workspace_detail.dart';
+import 'screens/auth/login_screen.dart';
 import 'screens/profile_screen.dart';
 
-// --- API and State Management ---
+// --- API, Services, and State Management ---
 import 'services/api_service.dart';
-import 'app/state/workspaces_vm.dart';
+import 'services/auth_service.dart'; // 👉 THE FIX: Added so we can init Google Auth
+import 'state/workspaces_vm.dart';   // 👉 THE FIX: Updated to the new state/ folder path
 
-import '/app_styles.dart';
+import 'app_styles.dart';            // 👉 THE FIX: Removed the slash
 
 // 1. The Global Navigator Key
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -19,8 +21,11 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load dotenv from backend/.env
+  // Load dotenv from assets
   await dotenv.load(fileName: ".env");
+
+  // 👉 THE FIX: Initialize Google Sign-In before the app boots!
+  await AuthService.initialize();
 
   runApp(const InstructorMateApp());
 }

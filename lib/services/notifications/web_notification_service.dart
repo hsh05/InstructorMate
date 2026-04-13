@@ -1,10 +1,11 @@
-// lib/services/web_notification_service.dart
+// lib/services/notifications/web_notification_service.dart
 
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback;
 
-import '../models/workspace_model.dart';
-import '../utils/schedule_utils.dart';
+// 👉 THE FIX: Added an extra '../' because this file is now inside a subfolder
+import '../../models/workspace_model.dart';
+import '../../utils/schedule_utils.dart';
 
 import 'web_audio_stub.dart' if (dart.library.js_interop) 'web_audio_impl.dart';
 
@@ -122,7 +123,7 @@ class WebNotificationService {
           final diff = now.difference(fireAt).inSeconds;
           // ignore: avoid_print
           print(
-            '[WebNotif] \${section.name} \$day | nextFire=\$fireAt | diff=\${diff}s',
+            '[WebNotif] ${section.name} $day | nextFire=$fireAt | diff=${diff}s',
           );
           if (diff >= 0 && diff < 60) {
             _fire(

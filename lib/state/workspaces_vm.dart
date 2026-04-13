@@ -1,18 +1,19 @@
-// lib/app/state/workspaces_vm.dart
+// lib/state/workspaces_vm.dart
 
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-
-import '../../services/api_service.dart';
-import '../../services/mobile_toast_service.dart';
-import '../../services/notification_scheduler.dart';
-import '../../services/web_notification_service.dart';
-import '../../models/workspace_model.dart';
-import '../../utils/schedule_utils.dart';
-import '../../screens/workspace_ask.dart';
 import 'package:cross_file/cross_file.dart';
+
+// 👉 THE FIX: Updated all of these paths to step out of the 'state/' folder correctly
+import '../services/api_service.dart';
+import '../services/notifications/mobile_toast_service.dart';
+import '../services/notifications/notification_scheduler.dart';
+import '../services/notifications/web_notification_service.dart';
+import '../models/workspace_model.dart';
+import '../utils/schedule_utils.dart';
+import '../screens/workspace/workspace_ask.dart'; // 👉 THE FIX: Points to the workspace subfolder
 
 class WorkspacesViewModel extends ChangeNotifier {
   WorkspacesViewModel({required this.api});

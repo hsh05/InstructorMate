@@ -1,11 +1,12 @@
-// lib/services/notification_scheduler.dart
+// lib/services/notifications/notification_scheduler.dart
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../models/workspace_model.dart';
-import '../utils/schedule_utils.dart';
-import 'notification_service.dart';
+// 👉 THE FIX: Added an extra '../' to reach out of the new subfolder
+import '../../models/workspace_model.dart';
+import '../../utils/schedule_utils.dart';
+import 'notification_service.dart'; // Stays the same since they are in the same folder now
 
 class NotificationScheduler {
   // How many future occurrences to schedule per section+day.

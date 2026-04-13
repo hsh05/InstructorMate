@@ -1,12 +1,14 @@
+// lib/services/notifications/mobile_toast_service.dart
+
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+
 import 'web_notification_service.dart';
-// Note: Ensure this path is correct relative to this file
-import '../main.dart' show navigatorKey; 
-import '../screens/widgets/notification_toast.dart';
+import '../../main.dart' show navigatorKey; 
+import '../../widgets/notification_toast.dart';
 
 class MobileToastService {
   MobileToastService._();
@@ -27,9 +29,7 @@ class MobileToastService {
 
   static void _playChime() {
     try {
-      // FIX: In version 4.x, we use FlutterRingtonePlayer.playNotification(...) 
-      // without the parentheses () if it's a static call, 
-      // or ensure the instance is handled correctly.
+      // 👉 THE FIX: Added the parentheses back! It requires an instance.
       FlutterRingtonePlayer().playNotification(
         looping: false,
         volume: 0.8,

@@ -1,9 +1,11 @@
-// lib/services/notification_service.dart
+// lib/services/notifications/notification_service.dart
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
+
+import '../../app_styles.dart'; 
 import 'mobile_toast_service.dart';
 
 // ─── REQUIRED top-level background handler ───────────────────────────────────
@@ -26,9 +28,6 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static const _channel = MethodChannel('com.instructormate/battery');
-
-  // App purple — matches AppStyles.primary
-  static const int _purple = 0xFF6747B0;
 
   bool _initialized = false;
   bool _notifGranted = false;
@@ -115,9 +114,6 @@ class NotificationService {
     await init();
     if (!_notifGranted) return;
 
-    // BigTextStyleInformation makes the notification expandable.
-    // The body is structured as "workspace Name\nSection · Location · Day Time"
-    // so when expanded, each part gets its own line for easy reading.
     final bigTextStyle = BigTextStyleInformation(
       body,
       htmlFormatBigText: false,
@@ -136,24 +132,19 @@ class NotificationService {
         priority: Priority.max,
         playSound: true,
         enableVibration: true,
-        // Purple strip on the left side of the notification
-        color: const Color(_purple),
-        // Text that scrolls in the status bar when notification first arrives
+        
+        color: AppStyles.primaryPurple, 
+        
         ticker: title,
-        // "InstructorMate" shown below the app name in the notification header
         subText: 'Class Reminder',
-        // Expandable big text view
         styleInformation: bigTextStyle,
-        // Keep notification visible on lock screen
         visibility: NotificationVisibility.public,
-        // Show notification as a heads-up (pops over other apps)
         fullScreenIntent: false,
       ),
       iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
-        // Shows subtitle on iOS lock screen / notification centre
         subtitle: 'Class Reminder',
       ),
     );
@@ -216,7 +207,9 @@ class NotificationService {
         'Class Reminders',
         importance: Importance.max,
         priority: Priority.max,
-        color: const Color(_purple),
+        
+        color: AppStyles.primaryPurple, 
+        
         subText: 'Test',
         styleInformation: bigTextStyle,
         visibility: NotificationVisibility.public,

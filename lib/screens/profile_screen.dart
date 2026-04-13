@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:instructor_mate/app_styles.dart';
-import 'package:instructor_mate/models/instructor_profile.dart';
-import 'package:instructor_mate/services/profile_service.dart';
-import 'package:instructor_mate/widgets/profile_header_card.dart';
-import 'package:instructor_mate/widgets/profile_section.dart';
+import '../app_styles.dart';
+
+// 👉 THE FIX: Pointing to the new unified files
+import '../models/instructor_model.dart';
+import '../services/auth_service.dart';
+
+// Assuming these are now in your unified widgets folder!
+import '../widgets/profile_header_card.dart';
+import '../widgets/profile_section.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userId; // UUID
@@ -14,7 +18,8 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  InstructorProfile? _profile;
+  // 👉 THE FIX: Using Instructor instead of InstructorProfile
+  Instructor? _profile;
   bool _isLoading = true;
   bool _isEditing = false;
   bool _isSaving = false;
@@ -46,19 +51,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  void _syncControllers(InstructorProfile p) {
-    _fullNameCtrl = TextEditingController(text: p.fullName);
-    _phoneCtrl = TextEditingController(text: p.phoneNumber ?? '');
+  void _syncControllers(Instructor p) {
+    // 👉 THE FIX: Mapped to the new Instructor properties
+    _fullNameCtrl = TextEditingController(text: p.name);
+    _phoneCtrl = TextEditingController(text: p.phone ?? '');
     _universityCtrl = TextEditingController(text: p.universityName ?? '');
     _collegeCtrl = TextEditingController(text: p.college ?? '');
     _departmentCtrl = TextEditingController(text: p.department ?? '');
     _jobTitleCtrl = TextEditingController(text: p.jobTitle ?? '');
-    _officeCtrl = TextEditingController(text: p.officeNumber ?? '');
+    _officeCtrl = TextEditingController(text: p.officeLocation ?? '');
   }
 
   Future<void> _loadProfile() async {
     try {
-      final profile = await ProfileService.getProfile(widget.userId);
+      // 👉 THE FIX: Using AuthService
+      final profile = await AuthService.getProfile(widget.userId);
       setState(() {
         _profile = profile;
         _syncControllers(profile);
@@ -75,7 +82,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _saveProfile() async {
     setState(() => _isSaving = true);
     try {
-      final updated = await ProfileService.updateProfile(widget.userId, {
+      // 👉 THE FIX: Using AuthService
+      final updated = await AuthService.updateProfile(widget.userId, {
         'full_name': _fullNameCtrl.text.trim(),
         'phone_number': _phoneCtrl.text.trim(),
         'university_name': _universityCtrl.text.trim(),
@@ -84,15 +92,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'job_title': _jobTitleCtrl.text.trim(),
         'office_number': _officeCtrl.text.trim(),
       });
+      
       setState(() {
         _profile = updated;
         _isEditing = false;
         _isSaving = false;
       });
-      _showSnackbar('Profile updated successfully', AppStyles.success);
+      _showSnackbar('Profile updated successfully', AppStyles.success); // Mapped
     } catch (e) {
       setState(() => _isSaving = false);
-      _showSnackbar('Failed to save: $e', AppStyles.error);
+      _showSnackbar('Failed to save: $e', AppStyles.error); // Mapped
     }
   }
 
