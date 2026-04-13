@@ -24,6 +24,11 @@ import schemas
 from db.database import engine, get_db
 from db.models import Workspace
 
+# --- Teammate's Auth & Profile Imports ---
+from routers import auth
+from routers import profileRouter
+from database import create_tables
+
 # --- External Services ---
 from openai import OpenAI
 import firebase_admin
@@ -34,6 +39,7 @@ from api.workspace_routes import router as workspace_router
 from api.section_routes import router as section_router
 from api.student_routes import router as student_router
 from api.quiz_routes import router as quiz_router
+
 
 # ==============================================================================
 # ── SETUP & INITIALIZATION ────────────────────────────────────────────────────
@@ -72,20 +78,31 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="InstructorMate API", version="1.0.0")
 
-# CORS Middleware
+# 👉 MERGED: Combined CORS Middleware using teammate's permissive settings (needed for auth)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,  
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 👉 MERGED: Teammate's database startup event
+@app.on_event("startup")
+async def startup():
+    try:
+        await create_tables()
+        print("✅ Database connected and tables ensured.")
+    except Exception as e:
+        print(f"⚠️ Failed to connect to database on startup: {e}")
 
 # Include Modular Routers
 app.include_router(workspace_router)
 app.include_router(section_router)
 app.include_router(student_router)
 app.include_router(quiz_router)
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(profileRouter.router)
 
 
 # ==============================================================================
@@ -141,6 +158,7 @@ async def generate_questions_with_ai(extracted_text: str, config_data: list):
 # ==============================================================================
 
 @app.get("/")
+@app.get("/health")
 def health():
     return {"status": "ok", "service": "InstructorMate API"}
 
@@ -158,7 +176,6 @@ def create_workspace(workspace: schemas.WorkspaceCreate, db: Session = Depends(g
 def get_workspaces_with_materials(db: Session = Depends(get_db)):
     return db.query(models.Workspace).all()
 
-# 👉 UPDATED POST ROUTE: Removed `material_type` from parameters to match Flutter
 @app.post("/workspaces/{workspace_id}/materials/", response_model=schemas.MaterialResponse)
 async def upload_material(
     workspace_id: int,
@@ -201,7 +218,6 @@ async def upload_material(
     
     return db_material
 
-# 👉 NEW DELETE ROUTE: Deletes from Firebase and Database
 @app.delete("/materials/{material_id}")
 async def delete_workspace_material(material_id: int, db: Session = Depends(get_db)):
     material = db.query(models.Material).filter(models.Material.material_id == material_id).first()
@@ -236,7 +252,6 @@ async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest,
     selected_ids = request.selected_material_ids
     configs = request.configs
     
-    # 👉 THE FIX: Updated to use models.Material and material_id to match your new schema!
     materials = db.query(models.Material).filter(
         models.Material.workspace_id == workspace_id,
         models.Material.material_id.in_(selected_ids)

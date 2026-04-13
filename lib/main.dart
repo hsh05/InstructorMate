@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-// --- Your New UI Screens ---
+// --- UI Screens ---
 import 'screens/workspaces_home.dart';
 import 'screens/workspace_detail.dart';
+import 'screens/login_screen.dart';
+import 'screens/profile_screen.dart';
 
-// --- Your API and State Management ---
+// --- API and State Management ---
 import 'services/api_service.dart';
 import 'app/state/workspaces_vm.dart';
 
-// 1. The Global Navigator Key (Kept exactly as you had it!)
+// 1. The Global Navigator Key
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Load dotenv from backend/.env
+  await dotenv.load(fileName: ".env");
+
   runApp(const InstructorMateApp());
 }
 
@@ -29,7 +37,6 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
   @override
   void initState() {
     super.initState();
-    // Use the new class name here:
     final apiService = ApiService(); 
     _workspacesVM = WorkspacesViewModel(api: apiService);
 
@@ -43,12 +50,25 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
 
-      // 3. Set WorkspacesHome as the first screen the user sees
-      home: WorkspacesHome(vm: _workspacesVM),
+      // 3. Set the Login screen as the first screen the user sees
+      initialRoute: '/login',
 
-      // 4. Define the routes for navigation
+      // 4. Define the static routes for navigation
       routes: {
+        '/login': (context) => const LoginScreen(),
+        '/home': (context) => WorkspacesHome(vm: _workspacesVM),
         '/workspace': (context) => WorkspaceDetailPage(vm: _workspacesVM),
+      },
+
+      // 5. Dynamic routes (Profile needs a userId argument)
+      onGenerateRoute: (settings) {
+        if (settings.name == '/profile') {
+          final userId = settings.arguments as String; 
+          return MaterialPageRoute(
+            builder: (_) => ProfileScreen(userId: userId),
+          );
+        }
+        return null;
       },
     );
   }

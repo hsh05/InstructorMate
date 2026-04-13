@@ -1,6 +1,7 @@
 name: instructor_mate
 description: "A new Flutter project."
 publish_to: 'none'
+
 version: 1.0.0+1
 
 environment:
@@ -9,7 +10,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.1
+  
+  # Merged Dependencies
+  http: ^1.6.0
   http_parser: ^4.0.2
   file_picker: ^8.1.2
   url_launcher: ^6.3.0
@@ -22,11 +25,15 @@ dependencies:
   path_provider: ^2.1.2
   flutter_ringtone_player: ^4.0.0
   crypto: ^3.0.3
-  cupertino_icons: ^1.0.8
   permission_handler: ^11.3.0
   pdf: ^3.10.0
   desktop_drop: ^0.7.0
   cross_file: ^0.3.5+2
+  uuid: ^4.4.0
+  flutter_dotenv: ^6.0.0
+  cupertino_icons: ^1.0.8
+  flutter_secure_storage: ^10.0.0
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
@@ -35,3 +42,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env
