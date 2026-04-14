@@ -1,6 +1,8 @@
 // lib/services/auth_service.dart
 
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -12,8 +14,15 @@ const _storage = FlutterSecureStorage();
 class AuthService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
-  static Future<void> initialize() async {
-    await _googleSignIn.initialize(serverClientId: 'YOUR_GOOGLE_CLIENT_ID');
+  Future<void> initialize() async {
+    // 👉 THE FIX: Skip Google Sign-In on Windows/Mac/Linux
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      debugPrint("⚠️ Skipping Google Sign-In initialization on Desktop.");
+      return; // Stop here, don't crash the app!
+    }
+
+    // Your existing Google initialization code goes here
+    await _googleSignIn.initialize(); 
   }
 
   // ── Tokens ──────────────────────────────────────────────────────────────────

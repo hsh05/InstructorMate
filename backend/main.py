@@ -92,7 +92,7 @@ app.include_router(workspace_router)
 app.include_router(section_router)
 app.include_router(student_router)
 app.include_router(quiz_router)
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(profile_router)
 
 

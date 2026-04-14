@@ -25,7 +25,7 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   // 👉 THE FIX: Initialize Google Sign-In before the app boots!
-  await AuthService.initialize();
+  await AuthService().initialize();
 
   runApp(const InstructorMateApp());
 }
