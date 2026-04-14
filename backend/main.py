@@ -22,22 +22,19 @@ from sqlalchemy.orm import Session
 from db import models
 import schemas
 from db.database import engine, get_db
-from db.models import Workspace
 
-# --- Teammate's Auth & Profile Imports ---
-from services import auth
-from services import profileRouter
+# 👉 THE FIX: All routers now correctly import from the unified 'api' folder!
+from api.workspace_routes import router as workspace_router
+from api.section_routes import router as section_router
+from api.student_routes import router as student_router
+from api.quiz_routes import router as quiz_router
+from api.auth_routes import router as auth_router
+from api.profile_routes import router as profile_router
 
 # --- External Services ---
 from openai import OpenAI
 import firebase_admin
 from firebase_admin import credentials, storage
-
-# --- Routers ---
-from api.workspace_routes import router as workspace_router
-from api.section_routes import router as section_router
-from api.student_routes import router as student_router
-from api.quiz_routes import router as quiz_router
 
 
 # ==============================================================================
@@ -77,7 +74,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="InstructorMate API", version="1.0.0")
 
-# 👉 MERGED: Combined CORS Middleware using teammate's permissive settings (needed for auth)
+# Combined CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -86,18 +83,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 👉 UPDATED: Removed the table creation step!
 @app.on_event("startup")
 async def startup():
     print("✅ API started. (Database table creation is disabled).")
 
-# Include Modular Routers
+# 👉 THE FIX: Including the correctly imported routers
 app.include_router(workspace_router)
 app.include_router(section_router)
 app.include_router(student_router)
 app.include_router(quiz_router)
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(profileRouter.router)
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(profile_router)
 
 
 # ==============================================================================
@@ -137,7 +133,6 @@ async def generate_questions_with_ai(extracted_text: str, config_data: list):
         
         quiz_data = json.loads(response.choices[0].message.content)
         
-        # Safety check for Flutter
         if "questions" not in quiz_data:
             return []
             
@@ -199,7 +194,6 @@ async def upload_material(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Firebase: {str(e)}")
 
-    # Dynamically extract extension for the material_type column
     ext = file.filename.split('.')[-1].lower() if '.' in file.filename else "unknown"
 
     db_material = models.Material(
@@ -220,20 +214,16 @@ async def delete_workspace_material(material_id: int, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Material not found")
 
     try:
-        # Extract the blob name from the Firebase Download URL
         blob_name_encoded = material.file_path.split('/o/')[1].split('?')[0]
         blob_name = urllib.parse.unquote(blob_name_encoded)
         
-        # Delete from Firebase Bucket
         bucket = storage.bucket()
         blob = bucket.blob(blob_name)
         if blob.exists():
             blob.delete()
     except Exception as e:
-        # If Firebase deletion fails, we still want to remove it from DB
         logger.warning(f"Failed to delete file from Firebase (might already be missing): {e}")
 
-    # Delete from Neon DB
     db.delete(material)
     db.commit()
 
@@ -258,13 +248,11 @@ async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest,
     combined_text = ""
     for m in materials:
         try:
-            # Fetch the file directly from the Firebase URL stored in your database
             response = requests.get(m.file_path)
             response.raise_for_status() 
             file_bytes = io.BytesIO(response.content)
             filename = m.file_name.lower()
             
-            # Parse the text based on file type
             if filename.endswith(".pdf"):
                 reader = pypdf.PdfReader(file_bytes)
                 for page in reader.pages:
@@ -290,7 +278,6 @@ async def generate_quiz(workspace_id: int, request: schemas.QuizGenerateRequest,
 
     configs_as_dicts = [c.dict() for c in configs]
     
-    # Send the combined textbook/slides text to OpenAI!
     questions = await generate_questions_with_ai(combined_text, configs_as_dicts)
     return {"questions": questions}
 
