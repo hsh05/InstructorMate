@@ -8,19 +8,31 @@ from firebase_admin import storage
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from typing import Optional
+from datetime import datetime
 
 from db.database import get_db
 from db.models import Workspace as DBWorkspace
-from db import models # 👉 ADDED: So we can query the new Materials table
-from repositories.pg_workspace_repository import PgWorkspaceRepository
-from repositories.pg_section_repository import PgSectionRepository
-from repositories.pg_student_repository import PgStudentRepository
-from services.file_hash_service import FileHashService
-from services.workspace_service import WorkspaceService
-from ask_syllabus import AskPipeline, EmbeddingRetriever, LightweightRetriever, SyllabusChatGPT, SyllabusCsvStore, SyllabusListStore
-from sqlalchemy.orm import joinedload
-from typing import Optional
-from datetime import datetime
+from db import models
+
+# 👉 THE FIX: Pointing all repositories to our new unified pg_repository!
+from repositories.pg_repository import (
+    PgWorkspaceRepository, 
+    PgSectionRepository, 
+    PgStudentRepository
+)
+
+# 👉 THE FIX: Pointing to the new unified service files!
+from services.file_service import FileHashService
+from services.app_service import WorkspaceService
+from services.ai_service import (
+    AskPipeline, 
+    EmbeddingRetriever, 
+    LightweightRetriever, 
+    SyllabusChatGPT, 
+    SyllabusCsvStore, 
+    SyllabusListStore
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -65,20 +77,19 @@ def get_workspace_service(
     )
 
 
-# 👉 THE FIX: Added 'db' parameter so we can manually fetch the materials!
 def _ws_dict(workspace_id, ws, section_repo, student_repo, db: Session) -> dict:
     d = ws.to_dict()
-    sections = section_repo.list_by_workspace(workspace_id)
+    
+    # 👉 THE FIX: Safely convert string ID to int for DB operations
+    ws_id_int = int(workspace_id)
+    
+    sections = section_repo.list_by_workspace(ws_id_int)
     for s in sections:
-        s["students_count"] = student_repo.count_by_section(workspace_id, s["section_id"])
+        s["students_count"] = student_repo.count_by_section(ws_id_int, s["section_id"])
     d["sections"] = sections
     d["students_count"] = sum(s["students_count"] for s in sections)
     
     try:
-        ws_id_int = int(workspace_id)
-        
-        # 👉 THE FIX: Safely grab the start and end dates directly from NeonDB!
-        # This guarantees the dates are always included, even if ws.to_dict() misses them.
         db_ws = db.query(models.Workspace).filter(models.Workspace.workspace_id == ws_id_int).first()
         if db_ws:
             d["start_date"] = str(db_ws.start_date) if db_ws.start_date else ""
@@ -119,7 +130,7 @@ def list_workspaces(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
-    db: Session = Depends(get_db), # 👉 Added DB Session
+    db: Session = Depends(get_db), 
 ):
     return {
         "workspaces": [
@@ -153,31 +164,29 @@ async def import_workspace(
     result      = workspace_service.create_from_file(filename, content)
     domain_ws   = result["workspace"]
 
-    # 2. 👉 THE FIX: Fetch the raw SQLAlchemy DB Model directly
-    db_ws = db.query(DBWorkspace).filter(DBWorkspace.workspace_id == domain_ws.workspace_id).first()
+    ws_id_int = int(domain_ws.workspace_id)
+    db_ws = db.query(DBWorkspace).filter(DBWorkspace.workspace_id == ws_id_int).first()
 
     # 3. Safely parse and assign the dates to the DB record
     if db_ws:
         try:
             if start_date and start_date.strip():
-                # Standardizes format to YYYY-MM-DD
                 db_ws.start_date = datetime.strptime(start_date.split('T')[0], "%Y-%m-%d").date()
             if end_date and end_date.strip():
                 db_ws.end_date = datetime.strptime(end_date.split('T')[0], "%Y-%m-%d").date()
             
-            # Save the dates directly to NeonDB
             db.commit() 
             db.refresh(db_ws)
         except Exception as e:
             logger.error(f"Date parsing failed: {e}")
     else:
-        logger.warning(f"Could not find DB record to update dates for workspace {domain_ws.workspace_id}")
+        logger.warning(f"Could not find DB record to update dates for workspace {ws_id_int}")
     
-    # 4. FIREBASE UPLOAD ONLY (Bridge removed)
+    # 4. FIREBASE UPLOAD ONLY 
     if not result["already_uploaded"]:
         try:
             bucket = storage.bucket()
-            blob_path = f"workspaces/{domain_ws.workspace_id}/{filename}"
+            blob_path = f"workspaces/{ws_id_int}/{filename}"
             blob = bucket.blob(blob_path)
             
             blob.upload_from_string(content, content_type=file.content_type)
@@ -191,11 +200,9 @@ async def import_workspace(
             logger.error(f"Firebase upload failed: {e}")
 
     logger.info("Workspace uploaded id=%s already_uploaded=%s ext=%s",
-                domain_ws.workspace_id, result["already_uploaded"], ext)
+                ws_id_int, result["already_uploaded"], ext)
     
-    # 5. Return the fully populated dictionary back to Flutter
     return {
-        # Note: We pass 'domain_ws' here so the helper function works exactly as your teammate wrote it
         "workspace":        _ws_dict(domain_ws.workspace_id, domain_ws, section_repo, student_repo, db), 
         "already_uploaded": result["already_uploaded"],
     }
@@ -207,12 +214,13 @@ def get_workspace(
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
-    db: Session = Depends(get_db), # 👉 Added DB Session
+    db: Session = Depends(get_db), 
 ):
-    ws = workspace_repo.get_by_id(workspace_id)
+    # 👉 THE FIX: Parse as int for repository
+    ws = workspace_repo.get_by_id(int(workspace_id))
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    d = _ws_dict(workspace_id, ws, section_repo, student_repo, db) # 👉 Passed DB Session
+    d = _ws_dict(workspace_id, ws, section_repo, student_repo, db) 
     return {"workspace": d}
 
 
@@ -225,21 +233,16 @@ def update_workspace(
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     db: Session = Depends(get_db), 
 ):
-    # 1. Fetch the domain model using your teammate's repo
-    ws = workspace_repo.get_by_id(workspace_id)
+    ws_id_int = int(workspace_id)
+    ws = workspace_repo.get_by_id(ws_id_int)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # 2. Make a mutable dictionary of the incoming fields
     incoming_fields = dict(data.fields)
-
-    # 👉 THE FIX: Intercept the dates and save them directly to the database
-    ws_id_int = int(workspace_id)
     db_ws = db.query(DBWorkspace).filter(DBWorkspace.workspace_id == ws_id_int).first()
     
     if db_ws:
         try:
-            # .pop() grabs the date AND removes it from the JSON dictionary
             if "start_date" in incoming_fields:
                 start_str = incoming_fields.pop("start_date") 
                 if start_str and start_str.strip():
@@ -254,20 +257,16 @@ def update_workspace(
                 else:
                     db_ws.end_date = None
             
-            # Save the dates securely to NeonDB
             db.commit()
             db.refresh(db_ws)
         except Exception as e:
             logger.error(f"Date parsing failed during update: {e}")
 
-    # 3. Process all remaining fields (like course_title) using your teammate's logic
     mirrored_fields = _mirror_workspace_name_fields(incoming_fields)
     ws.update_fields(mirrored_fields)
     workspace_repo.save(ws)
     
     logger.info("Updated workspace id=%s", workspace_id)
-    
-    # 4. Return the fully populated dictionary (which we fixed in the previous step!)
     return {"workspace": _ws_dict(workspace_id, ws, section_repo, student_repo, db)}
 
 
@@ -278,12 +277,11 @@ def delete_workspace(
     workspace_service: WorkspaceService       = Depends(get_workspace_service),
     db: Session = Depends(get_db), 
 ):
-    # 1. Cancel any background AI tasks running for this workspace
     workspace_service.cancel_if_in_flight(workspace_id)
 
-    # 2. Delete from NeonDB
     try:
-        deleted = workspace_repo.delete(workspace_id)
+        # 👉 THE FIX: Parse as int
+        deleted = workspace_repo.delete(int(workspace_id))
     except Exception as exc:
         logger.error("Delete failed for workspace=%s: %s", workspace_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
@@ -291,10 +289,8 @@ def delete_workspace(
     if not deleted:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # 3. 👉 NEW: Delete all associated files in Firebase
     try:
         bucket = storage.bucket()
-        # Find all files that sit inside this workspace's "folder"
         blobs = bucket.list_blobs(prefix=f"workspaces/{workspace_id}/")
         
         deleted_count = 0
@@ -317,17 +313,18 @@ async def ask_workspace_question(
     req: AskRequest,
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
 ):
-    ws = workspace_repo.get_by_id(workspace_id)
+    ws_id_int = int(workspace_id)
+    ws = workspace_repo.get_by_id(ws_id_int)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    chunks_from_db = workspace_repo.get_chunks_for_ask(workspace_id)
+    chunks_from_db = workspace_repo.get_chunks_for_ask(ws_id_int)
 
     if chunks_from_db:
         store = SyllabusListStore(chunks_from_db)
         retriever = EmbeddingRetriever(top_k=15)
     else:
-        chunks_csv = workspace_repo.get_chunks_csv_path(workspace_id)
+        chunks_csv = workspace_repo.get_chunks_csv_path(ws_id_int)
         if not chunks_csv.exists():
             raise HTTPException(
                 status_code=422,
