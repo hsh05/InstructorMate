@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from db.database import get_db
 from repositories.pg_repository import PgWorkspaceRepository
 from repositories.pg_repository import PgStudentRepository
-from services.student_service import StudentService
+from services.app_service import StudentService
 from repositories.pg_repository import PgSectionRepository
 from sqlalchemy.dialects.postgresql import insert
 from db import models
