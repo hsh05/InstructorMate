@@ -6,8 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from database import get_pool
-from auth_utils import (
+# 👉 THE FIX: Pointing to the new 'db' folder for the database pool
+from db.database import get_pool
+
+# 👉 THE FIX: Pointing to the unified 'services' folder for your auth utilities
+from services.auth_service import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_access_token,
     REFRESH_TOKEN_EXPIRE_DAYS
