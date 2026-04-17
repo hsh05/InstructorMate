@@ -51,7 +51,6 @@ class Workspace(Base):
     __tablename__ = "workspace"
 
     workspace_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    instructor_id = Column(String, index=True)
     instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
     
     course_code = Column(String(20), nullable=True) 
