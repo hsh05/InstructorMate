@@ -356,6 +356,14 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
       setState(() => _error = 'Section name is required.');
       return;
     }
+
+    // Enforce 3 character rule (Digit Digit Letter)
+    final RegExp regex = RegExp(r'^\d{2}[a-zA-Z]$');
+    if (!regex.hasMatch(name)) {
+      setState(() => _error = 'Section name must be 2 numbers and 1 letter (e.g., 61D).');
+      return;
+    }
+
     if (_selDays.isEmpty) {
       setState(() => _error = 'Please select at least one day.');
       return;
@@ -430,10 +438,12 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
           _label('SECTION NAME'),
           TextField(
             controller: _nameCtrl,
+            maxLength: 3,
             onChanged: (_) => setState(() => _error = null),
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             decoration: InputDecoration(
-              hintText: 'e.g. Section A',
+              hintText: 'e.g. 61D',
+              counterText: '',
               hintStyle: const TextStyle(color: AppStyles.darkGray, fontSize: 13),
               filled: true,
               fillColor: AppStyles.lightGray,

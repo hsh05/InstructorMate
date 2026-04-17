@@ -31,7 +31,11 @@ class ScheduleRequest(BaseModel):
 
 
 class SectionCreateUpdateRequest(BaseModel):
-    name: str = Field(..., min_length=1)
+    name: str = Field(
+        ..., 
+        pattern=r"^\d{2}[a-zA-Z]$",
+        description="Must be exactly 3 characters: 2 digits followed by 1 letter (e.g., 12A)"
+    )
     location: str = ""
     schedule: ScheduleRequest = Field(default_factory=ScheduleRequest)
 
