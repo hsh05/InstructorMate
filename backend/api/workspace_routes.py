@@ -133,14 +133,23 @@ def list_workspaces(
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     db: Session = Depends(get_db), 
 ):
-    user_workspaces = db.query(models.Workspace).filter(
+    # 👉 1. Ask the database ONLY for the workspace IDs belonging to this instructor
+    db_workspaces = db.query(models.Workspace.workspace_id).filter(
         models.Workspace.instructor_id == instructor_id
     ).all()
+    
+    # 👉 2. Use your repository to fetch the proper domain objects (which DO have .to_dict!)
+    valid_workspaces = []
+    for (wid,) in db_workspaces:
+        domain_ws = workspace_repo.get_by_id(wid)
+        if domain_ws:
+            valid_workspaces.append(domain_ws)
 
+    # 👉 3. Return them safely without crashing!
     return {
         "workspaces": [
             _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db)
-            for ws in user_workspaces
+            for ws in valid_workspaces
         ]
     }
 
