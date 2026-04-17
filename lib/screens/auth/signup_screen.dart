@@ -22,7 +22,6 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
-  final String _role = 'Instructor'; // always instructor
 
   @override
   void dispose() {
@@ -38,21 +37,19 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() => _isLoading = true);
     
-    // 👉 THE FIX: Calling signup from AuthViewModel
-    final success = await _authVM.signup(
-      name: _name.text,
-      email: _email.text,
-      password: _password.text,
-      role: _role,
+    // 👉 THE FIX: Capital 'U', removed labels, correct order!
+    final success = await _authVM.signUp(
+      _email.text,
+      _password.text,
+      _name.text,
     );
     
     if (!mounted) return;
-
     setState(() => _isLoading = false);
 
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(
-        success ? 'Account Created!' : 'Signup Failed!',
+        success ? 'Account Created!' : (_authVM.error ?? 'Signup Failed!'),
         style: AppStyles.bodyMedium.copyWith(color: AppStyles.white),
       ),
       backgroundColor: success ? AppStyles.success : AppStyles.error,

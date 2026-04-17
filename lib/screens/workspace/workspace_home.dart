@@ -10,6 +10,8 @@ import '../../state/workspaces_vm.dart';
 import '../../models/workspace_model.dart';
 import '../../app_styles.dart';
 import '../../widgets/notification_bell.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../profile_screen.dart';
 
 class WorkspacesHome extends StatefulWidget {
   const WorkspacesHome({super.key, required this.vm});
@@ -84,9 +86,37 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             ),
           ),
           centerTitle: true,
-          actions: const [
-            NotificationBell(),
-            SizedBox(width: 8), 
+          actions: [
+            const NotificationBell(),
+            const SizedBox(width: 8), 
+            // 👉 ADD THE PROFILE BUTTON HERE
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: GestureDetector(
+                onTap: () async {
+                  const storage = FlutterSecureStorage();
+                  final realUserId = await storage.read(key: 'user_id') ?? '';
+                  
+                  if (context.mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ProfileScreen(userId: realUserId),
+                      ),
+                    );
+                  }
+                },
+                child: const CircleAvatar(
+                  radius: 15,
+                  backgroundColor: AppStyles.white, // White border effect
+                  child: CircleAvatar(
+                    radius: 14,
+                    backgroundColor: AppStyles.primaryPurple, 
+                    child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
         

@@ -4,7 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AppConfig {
   // Base URLs
-  static String get baseUrl => dotenv.env['BACKEND_URL'] ?? 'https://instructormate1.onrender.com';
+  static String get baseUrl => dotenv.env['API_URL'] ?? 'https://instructormate.onrender.com';
   static String get databaseUrl => dotenv.env['DATABASE_URL'] ?? '';
 
   // Timeouts

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../state/auth_vm.dart';
 import 'signup_screen.dart';
-import '../profile_screen.dart'; // Adjust if profile_screen is in a different folder
 import '../../app_styles.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -34,26 +34,28 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     
-    // 👉 THE FIX: Calling login from AuthViewModel
-    final userId = await _authVM.login(
-      email: _email.text,
-      password: _password.text,
+    // 👉 THE FIX: Removed labels, passed directly, and returns a bool!
+    final success = await _authVM.login(
+      _email.text,
+      _password.text,
     );
     
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (userId != null) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProfileScreen(userId: userId),
-        ),
-      );
+    if (success) {
+      // Grab the user_id (if you need it globally later, it's safe in storage)
+      const storage = FlutterSecureStorage();
+      await storage.read(key: 'user_id');
+
+      // 👉 THE FIX: Use your named route to go home so main.dart handles the ViewModel!
+      if (context.mounted) {
+        Navigator.pushReplacementNamed(context, '/home'); // Or whatever your home route is named!
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          'Login Failed! Please check your credentials.',
+          _authVM.error ?? 'Login Failed! Please check your credentials.',
           style: AppStyles.bodyMedium.copyWith(color: AppStyles.white),
         ),
         backgroundColor: AppStyles.error,
@@ -135,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   validator: (v) => v!.isEmpty
                       ? 'Enter password'
                       : v.length < 6
-                          ? 'Min 6 chars'
+                          ? '6 Characters Minimum'
                           : null),
               const SizedBox(height: AppStyles.spacingM),
               Align(

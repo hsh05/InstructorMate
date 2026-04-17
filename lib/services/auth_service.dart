@@ -111,4 +111,63 @@ class AuthService {
     await clearTokens();
     await _googleSignIn.signOut();
   }
+
+  // ─── SIGNUP ─────────────────────────────────────────────────────────────────
+  static Future<bool> signUp(String email, String password, String name) async {
+    try {
+      debugPrint("🔍 Trying to hit EXACT URL: ${AppConfig.signupUri.toString()}");
+
+      final res = await http.post(
+        AppConfig.signupUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email.trim(),
+          'password': password.trim(),
+          'full_name': name.trim(),
+          'role': 'Instructor' // 👉 THE FIX: We must send the role!
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return true;
+      } else {
+        // This prints the EXACT reason FastAPI rejected it!
+        debugPrint("Signup failed: ${res.body}"); 
+        return false;
+      }
+    } catch (e) {
+      debugPrint("Service Signup Error: $e");
+      return false;
+    }
+  }
+
+  // ─── LOGIN ──────────────────────────────────────────────────────────────────
+  static Future<bool> login(String email, String password) async {
+    try {
+      final res = await http.post(
+        AppConfig.loginUri,
+        // 👉 THE FIX: Changed back to JSON format to match your backend!
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email.trim(), 
+          'password': password.trim()
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        // Save the tokens and user ID
+        await _storage.write(key: 'user_id', value: data['user_id'].toString()); 
+        await _saveTokens(data['access_token'], data['refresh_token']);
+        return true;
+      } else {
+        // This will print to your terminal if it fails again!
+        debugPrint("Login failed: Status ${res.statusCode} - ${res.body}");
+        return false;
+      }
+    } catch (e) {
+      debugPrint("Service Login Error: $e");
+      return false;
+    }
+  }
 }

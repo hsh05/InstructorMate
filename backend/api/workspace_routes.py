@@ -127,15 +127,20 @@ def _mirror_workspace_name_fields(fields: dict) -> dict:
 
 @router.get("/workspaces")
 def list_workspaces(
+    instructor_id: str,
     workspace_repo: PgWorkspaceRepository = Depends(get_workspace_repo),
     section_repo:   PgSectionRepository   = Depends(get_section_repo),
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     db: Session = Depends(get_db), 
 ):
+    user_workspaces = db.query(models.Workspace).filter(
+        models.Workspace.instructor_id == instructor_id
+    ).all()
+
     return {
         "workspaces": [
             _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db)
-            for ws in workspace_repo.list_all()
+            for ws in user_workspaces
         ]
     }
 
@@ -143,6 +148,7 @@ def list_workspaces(
 @router.post("/workspaces/upload")
 async def import_workspace(
     file: UploadFile = File(...),
+    instructor_id: str = Form(...),
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
@@ -170,6 +176,8 @@ async def import_workspace(
     # 3. Safely parse and assign the dates to the DB record
     if db_ws:
         try:
+            db_ws.instructor_id = instructor_id
+
             if start_date and start_date.strip():
                 db_ws.start_date = datetime.strptime(start_date.split('T')[0], "%Y-%m-%d").date()
             if end_date and end_date.strip():

@@ -1,74 +1,82 @@
 // lib/state/auth_vm.dart
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
-import '../config/app_config.dart';
+import '../services/auth_service.dart';
 
-class AuthViewModel {
-  static const _storage = FlutterSecureStorage();
+class AuthViewModel extends ChangeNotifier {
+  bool isLoading = false;
+  String? error;
 
-  // ── Login ────────────────────────────────────────────────────────────
-  Future<String?> login({required String email, required String password}) async {
+  // ─── SIGNUP ─────────────────────────────────────────────────────────────────
+  Future<bool> signUp(String email, String password, String name) async {
+    isLoading = true;
+    error = null;
+    notifyListeners(); // Tells the UI to START the spinner
+
     try {
-      final response = await http.post(
-        AppConfig.loginUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email.trim(),
-          'password': password.trim(),
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        debugPrint('✅ Login successful');
-
-        await _storage.write(key: 'access_token', value: data['access_token']);
-        await _storage.write(key: 'refresh_token', value: data['refresh_token']);
-        await _storage.write(key: 'user_id', value: data['user_id']);
-
-        return data['user_id'] as String?;
-      } else {
-        debugPrint('❌ Login failed: ${response.body}');
-        return null;
+      // Calls the kitchen (AuthService)
+      final success = await AuthService.signUp(email, password, name);
+      if (!success) {
+        error = "Signup failed. Please check your details or try a different email.";
       }
+      return success;
     } catch (e) {
-      debugPrint('❌ Login error: $e');
-      return null;
+      debugPrint("AuthVM Signup Exception: $e");
+      error = "A network error occurred. Please try again.";
+      return false;
+    } finally {
+      isLoading = false;
+      notifyListeners(); // 👉 Tells the UI to STOP the spinner, no matter what!
     }
   }
 
-  // ── Signup ───────────────────────────────────────────────────────────
-  Future<bool> signup({
-    required String name, 
-    required String email, 
-    required String password, 
-    String role = 'Instructor'
-  }) async {
-    try {
-      final response = await http.post(
-        AppConfig.signupUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email.trim(),
-          'password': password.trim(),
-          'full_name': name.trim(),
-          'role': role,
-        }),
-      );
+  // ─── LOGIN ──────────────────────────────────────────────────────────────────
+  Future<bool> login(String email, String password) async {
+    isLoading = true;
+    error = null;
+    notifyListeners(); // Tells the UI to START the spinner
 
-      if (response.statusCode == 200) {
-        debugPrint('✅ Signup successful');
-        return true;
-      } else {
-        debugPrint('❌ Signup failed: ${response.body}');
-        return false;
+    try {
+      // Calls the kitchen (AuthService)
+      final success = await AuthService.login(email, password);
+      if (!success) {
+        error = "Invalid email or password.";
       }
+      return success;
     } catch (e) {
-      debugPrint('❌ Signup error: $e');
+      debugPrint("AuthVM Login Exception: $e");
+      error = "A network error occurred. Please try again.";
       return false;
+    } finally {
+      isLoading = false;
+      notifyListeners(); // 👉 Tells the UI to STOP the spinner, no matter what!
+    }
+  }
+
+  // ─── LOGOUT ─────────────────────────────────────────────────────────────────
+  Future<void> logout() async {
+    isLoading = true;
+    error = null;
+    notifyListeners(); 
+
+    try {
+      await AuthService.logout();
+    } catch (e) {
+      debugPrint("AuthVM Logout Exception: $e");
+    } finally {
+      isLoading = false;
+      notifyListeners(); 
+    }
+  }
+
+  // ─── UTILITIES ──────────────────────────────────────────────────────────────
+  
+  /// Call this to manually clear any error messages from the UI 
+  /// (for example, when the user starts typing a new password)
+  void clearError() {
+    if (error != null) {
+      error = null;
+      notifyListeners();
     }
   }
 }

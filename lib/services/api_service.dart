@@ -5,14 +5,11 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-
-// --- Teammate's Models & Config ---
 import '../config/app_config.dart';
 import '../models/workspace_model.dart';
-
-// --- Your Models ---
 import '../models/question_model.dart';
 import '../models/config_model.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ImportResult {
   final int imported; 
@@ -50,9 +47,13 @@ class ApiService {
   // =========================================================================
 
   Future<List<Workspace>> fetchWorkspaces() async {
-    var response = await http.get(_u('/workspaces/')).timeout(AppConfig.shortTimeout);
+    const storage = FlutterSecureStorage();
+    final userId = await storage.read(key: 'user_id') ?? '';
+    var response = await http.get(_u('/workspaces/?user_id=$userId')).timeout(AppConfig.shortTimeout);
+    
     if (response.statusCode == 200) {
-      List<dynamic> jsonList = jsonDecode(response.body);
+      var decoded = jsonDecode(response.body);
+      List<dynamic> jsonList = decoded is Map ? decoded['workspaces'] : decoded;
       return jsonList.map((j) => Workspace.fromJson(j)).toList();
     } else {
       throw Exception("Failed to load workspaces");
@@ -172,8 +173,12 @@ class ApiService {
     String? startDate,
     String? endDate,
   }) async {
+    const storage = FlutterSecureStorage();
+    final userId = await storage.read(key: 'user_id') ?? '';
+
     final req = http.MultipartRequest('POST', _u('/workspaces/upload'))
       ..fields['preferred_id'] = preferredId
+      ..fields['instructor_id'] = userId
       ..files.add(
         http.MultipartFile.fromBytes(
           'file', bytes, filename: filename, contentType: _contentTypeFor(filename),
@@ -207,7 +212,10 @@ class ApiService {
   }
 
   Future<List<WorkspaceSummary>> listWorkspaces() async {
-    final resp = await http.get(_u('/workspaces')).timeout(AppConfig.shortTimeout);
+    const storage = FlutterSecureStorage();
+    final userId = await storage.read(key: 'user_id') ?? '';
+    final resp = await http.get(_u('/workspaces?instructor_id=$userId')).timeout(AppConfig.shortTimeout);
+    
     if (resp.statusCode != 200) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     return (map['workspaces'] as List)
