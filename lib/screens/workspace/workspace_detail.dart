@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 
-// 👉 THE FIX: Stepping out twice (../../) to reach the unified architecture folders!
 import '../../state/workspaces_vm.dart';
 import '../../models/workspace_model.dart';
 import '../../app_styles.dart';
@@ -12,7 +11,6 @@ import '../../widgets/notification_bell.dart';
 import '../../models/config_model.dart';
 import '../../models/question_model.dart';
 
-// 👉 THE FIX: These screens are siblings inside the 'workspace' folder, so no slashes needed
 import 'workspace_sections.dart';
 import 'workspace_ask.dart';
 import 'review_screen.dart'; 
@@ -54,10 +52,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   final _askScroll = ScrollController();
   bool _asking = false;
 
-  // Make sure start_date and end_date are in this list, otherwise the UI will hide them!
+  // 👉 The Global Edit Mode Tracker
+  bool _isEditingDetails = false;
+
   static const _editableKeys = ['course_title', 'course_code', 'semester', 'start_date', 'end_date'];
 
-  // Quiz Generation Variables
   bool _isGenerating = false;
   final Map<String, QuestionTypeConfig> _configs = {
     'MCQ': QuestionTypeConfig(name: 'Multiple Choice', isSelected: true, count: 10),
@@ -65,8 +64,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     'True/False': QuestionTypeConfig(name: 'True/False', isSelected: false, count: 5),
   };
 
-  /// Chat history lives in the VM keyed by workspace id so it survives
-  /// navigation. Falls back to an empty list (auto-created on first write).
   List<ChatMsg> get _chat =>
       widget.vm.chatHistory[widget.vm.current?.id ?? 0] ??= [];
 
@@ -79,6 +76,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       if (_tabs.index != _currentTabIndex) {
         setState(() {
           _currentTabIndex = _tabs.index;
+          // Turn off edit mode if they navigate away from the info tab
+          if (_currentTabIndex != 0) _isEditingDetails = false; 
         });
       }
     });
@@ -92,7 +91,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     final ws = widget.vm.current;
     if (ws != null && _needsPolling(ws)) {
       if (_pollingTimer == null || !_pollingTimer!.isActive) {
-        debugPrint("🔄 Detected Draft Workspace. Starting Polling Timer...");
         _startSmartPolling();
       }
     }
@@ -104,13 +102,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     final ws = widget.vm.current;
     if (ws != null && _needsPolling(ws)) {
       _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
-        debugPrint("⏳ Polling backend for AI updates..."); 
-        
         await widget.vm.refreshCurrentQuietly(); 
         
         final updatedWs = widget.vm.current;
         if (updatedWs != null && !_needsPolling(updatedWs)) {
-          debugPrint("✅ AI Finished! Killing Timer.");
           timer.cancel(); 
           if (mounted) {
             setState(() {
@@ -188,7 +183,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
 
-  // Generate Quiz Method
   void _generateQuiz() async {
     final selectedIds = widget.vm.selectedMaterialIdsForQuiz.toList();
     if (selectedIds.isEmpty || widget.vm.current == null) return;
@@ -205,9 +199,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       );
 
       if (mounted && questions.isNotEmpty) {
-        // Clear selection after successful generation
         widget.vm.clearMaterialSelection(); 
-        
         Navigator.push(context, MaterialPageRoute(
           builder: (context) => ReviewScreen(questions: questions.cast<QuizQuestion>()),
         ));
@@ -223,7 +215,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     }
   }
 
-  // Settings Popup
   void _showSettings() {
     showDialog(
       context: context,
@@ -350,8 +341,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
         return Scaffold(
           backgroundColor: AppStyles.lightGray,
-
-          // Dynamic Floating Action Button
           floatingActionButton: (ready && _currentTabIndex == 3) ? FloatingActionButton.extended(
             onPressed: widget.vm.selectedMaterialIdsForQuiz.isEmpty || _isGenerating 
                 ? null 
@@ -374,7 +363,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
               headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
               body: Column(
                 children: [
-                  // ── Tab bar ──────────────────────────────────────────
                   Container(
                     color: AppStyles.white,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -416,7 +404,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                   ),
                   if (!ready && missing.isNotEmpty && !widget.vm.loadingDetail)
                     _MissingBanner(fields: missing),
-                  // ── Tab content ──────────────────────────────────────
                   Expanded(
                     child: widget.vm.loadingDetail
                         ? const _DetailSkeleton()
@@ -455,6 +442,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                     editableKeys: _editableKeys,
                                     ctrl: _ctrl,
                                     onSave: _onSave,
+                                    isGlobalEditing: _isEditingDetails, // Pass the global state
                                   ),
                                   SectionsTab(
                                     ws: ws,
@@ -518,7 +506,28 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       pinned: true,
       backgroundColor: AppStyles.primaryDeepPurple,
       foregroundColor: Colors.white,
-      actions: const [NotificationBell(), SizedBox(width: 4)],
+      actions: [
+        // 👉 The Global Edit Toggle
+        if (_currentTabIndex == 0)
+          IconButton(
+            icon: Icon(
+              _isEditingDetails ? Icons.check_rounded : Icons.edit_rounded, 
+              color: Colors.white,
+            ),
+            tooltip: _isEditingDetails ? 'Save Changes' : 'Edit Details',
+            onPressed: () {
+              if (_isEditingDetails) {
+                // If they click the checkmark, save it!
+                _onSave(); 
+              }
+              setState(() {
+                _isEditingDetails = !_isEditingDetails;
+              });
+            },
+          ),
+        const NotificationBell(), 
+        const SizedBox(width: 4)
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(
@@ -563,7 +572,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppStyles.warning.withOpacity(0.2), // Mapped properly based on ready state in logic
+                          color: AppStyles.warning.withOpacity(0.2), 
                           borderRadius: AppStyles.borderRadiusXL,
                           border: Border.all(
                             color: ready ? AppStyles.accent : AppStyles.warning,
@@ -699,20 +708,16 @@ class _InfoTab extends StatefulWidget {
     required this.editableKeys,
     required this.ctrl,
     required this.onSave,
+    required this.isGlobalEditing,
   });
   final Workspace ws;
   final List<String> editableKeys;
   final TextEditingController Function(String, String) ctrl;
   final Future<void> Function() onSave;
+  final bool isGlobalEditing;
 
   @override
   State<_InfoTab> createState() => _InfoTabState();
-}
-
-String? _validateField(String key, String value) {
-  final v = value.trim();
-  if (v.isEmpty) return '${_fieldLabels[key] ?? key} is required';
-  return null;
 }
 
 const _numericKeys = {'allow_validation', 'capacity', 'max_students'};
@@ -722,48 +727,13 @@ class _InfoTabState extends State<_InfoTab>
   @override
   bool get wantKeepAlive => true;
 
-  final Set<String> _editing = {};
   final Map<String, String?> _errors = {};
-  bool _saving = false;
-  bool _triedSave = false;
-  bool _dirty = false;
-
-  bool _validateAll() {
-    _errors.clear();
-    for (final key in widget.editableKeys) {
-      final val = widget.ctrl(key, widget.ws.fields[key] ?? '').text;
-      final err = _validateField(key, val);
-      if (err != null) _errors[key] = err;
-    }
-    return _errors.isEmpty;
-  }
-
-  Future<void> _save() async {
-    setState(() => _triedSave = true);
-    if (!_validateAll()) {
-      setState(() {});
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _editing.clear();
-    });
-    await widget.onSave();
-    if (mounted) {
-      setState(() {
-        _saving = false;
-        _triedSave = false;
-        _dirty = false;
-      });
-    }
-  }
 
   TextInputType _keyboardType(String key) {
     if (_numericKeys.contains(key)) return TextInputType.number;
     return TextInputType.text;
   }
 
-  // The dedicated Prompt Screen for Dates
   Future<void> _promptForDates() async {
     DateTime? currentStart = DateTime.tryParse(widget.ctrl('start_date', '').text);
     DateTime? currentEnd = DateTime.tryParse(widget.ctrl('end_date', '').text);
@@ -797,12 +767,10 @@ class _InfoTabState extends State<_InfoTab>
       setState(() {
         widget.ctrl('start_date', '').text = picked.start.toIso8601String().split('T').first;
         widget.ctrl('end_date', '').text = picked.end.toIso8601String().split('T').first;
-        _dirty = true;
       });
     }
   }
 
-  // Calculates the current week assuming Monday start
   String _calculateCurrentWeek() {
     final startStr = widget.ws.fields['start_date'];
     final endStr = widget.ws.fields['end_date'];
@@ -813,7 +781,6 @@ class _InfoTabState extends State<_InfoTab>
 
     final now = DateTime.now();
 
-    // If the semester is over
     if (endStr != null && endStr.isNotEmpty) {
       final end = DateTime.tryParse(endStr);
       if (end != null && now.isAfter(end.add(const Duration(days: 1)))) {
@@ -821,14 +788,11 @@ class _InfoTabState extends State<_InfoTab>
       }
     }
 
-    // Strip time to avoid edge-case daylight savings / time bugs
     final startOnly = DateTime(start.year, start.month, start.day);
     final nowOnly = DateTime(now.year, now.month, now.day);
 
     if (nowOnly.isBefore(startOnly)) return 'Starts Soon';
 
-    // In Dart, DateTime.weekday is 1 for Monday and 7 for Sunday.
-    // Subtracting (weekday - 1) shifts any day back to its respective Monday.
     final startMonday = startOnly.subtract(Duration(days: startOnly.weekday - 1));
     final nowMonday = nowOnly.subtract(Duration(days: nowOnly.weekday - 1));
 
@@ -841,13 +805,11 @@ class _InfoTabState extends State<_InfoTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final hasEdits = _editing.isNotEmpty;
     final List<_FieldGroup> groups = [];
     for (final key in widget.editableKeys) {
       groups.add(_FieldGroup.single(key));
     }
 
-    // Generate the week string to display
     final weekText = _calculateCurrentWeek();
 
     return ListView(
@@ -858,20 +820,18 @@ class _InfoTabState extends State<_InfoTab>
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const _SectionHeader(title: 'Workspace Details', icon: Icons.info_outline_rounded),
-            
-            // The dynamic Week Badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: AppStyles.primaryPurple.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10), // Slightly rounder edges to match the larger size
+                borderRadius: BorderRadius.circular(10), 
                 border: Border.all(color: AppStyles.primaryPurple.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.date_range_rounded, size: 16, color: AppStyles.primaryPurple),
-                  const SizedBox(width: 6), // Slightly wider gap
+                  const SizedBox(width: 6), 
                   Text(
                     weekText,
                     style: const TextStyle(
@@ -887,9 +847,6 @@ class _InfoTabState extends State<_InfoTab>
           ],
         ),
         
-        const SizedBox(height: 4),
-        const Text('Tap any field to edit. All fields are required.',
-            style: TextStyle(fontSize: 12, color: AppStyles.darkGray)),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -909,91 +866,22 @@ class _InfoTabState extends State<_InfoTab>
                     fieldKey: group.key,
                     value: widget.ws.fields[group.key] ?? '',
                     ctrl: widget.ctrl,
-                    isEditing: _editing.contains(group.key),
+                    isEditing: widget.isGlobalEditing, // Drive layout from global state
                     error: _errors[group.key],
                     keyboardType: _keyboardType(group.key),
-                    onTap: () {
-                      if (group.key == 'start_date' || group.key == 'end_date') {
+                    onDateTap: () {
+                      if (widget.isGlobalEditing && (group.key == 'start_date' || group.key == 'end_date')) {
                         _promptForDates();
-                      } else {
-                        setState(() {
-                          _editing.add(group.key);
-                          _dirty = true;
-                        });
                       }
                     },
-                    onDone: () => setState(() {
-                      _editing.remove(group.key);
-                      if (_triedSave) {
-                        _errors[group.key] = _validateField(group.key, widget.ctrl(group.key, '').text);
-                      }
-                    }),
                   ),
                   if (!isLast)
                     const Divider(height: 1, indent: 16, endIndent: 16, color: AppStyles.borderLight),
                 ]);
               }),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                child: (hasEdits || _dirty || _saving || _triedSave)
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppStyles.primaryPurple,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
-                            ),
-                            onPressed: _saving ? null : _save,
-                            icon: _saving
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  )
-                                : const Icon(Icons.save_rounded, size: 17),
-                            label: Text(_saving ? 'Saving…' : 'Save Changes',
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
             ],
           ),
         ),
-        if (_triedSave && _errors.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppStyles.warning.withOpacity(0.1),
-              borderRadius: AppStyles.borderRadiusM,
-              border: Border.all(color: AppStyles.warning.withOpacity(0.4)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: const [
-                  Icon(Icons.warning_amber_rounded, color: AppStyles.warning, size: 15),
-                  SizedBox(width: 6),
-                  Text('Please fix the following:',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppStyles.warning)),
-                ]),
-                const SizedBox(height: 6),
-                ..._errors.entries.map((e) => Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text('• ${e.value}', style: const TextStyle(fontSize: 12, color: AppStyles.warning)),
-                    )),
-              ],
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -1014,165 +902,147 @@ class _InfoFieldRow extends StatelessWidget {
     required this.isEditing,
     required this.error,
     required this.keyboardType,
-    required this.onTap,
-    required this.onDone,
+    required this.onDateTap,
   });
+  
   final String fieldKey;
   final String value;
   final TextEditingController Function(String, String) ctrl;
   final bool isEditing;
   final String? error;
   final TextInputType keyboardType;
-  final VoidCallback onTap;
-  final VoidCallback onDone;
+  final VoidCallback onDateTap;
 
   @override
   Widget build(BuildContext context) {
+    // If we are actively editing, render the input form fields
+    if (isEditing) {
+      return _buildEditableForm(context);
+    } 
+    // If not, render the clean, read-only list with NO pens
+    else {
+      return _buildReadOnlyDisplay(context);
+    }
+  }
+
+  // ─── The Active Editing State ───────────────────────────────────────────
+  Widget _buildEditableForm(BuildContext context) {
     final label = _fieldLabels[fieldKey] ?? fieldKey;
     final icon = _fieldIcons[fieldKey] ?? Icons.edit_rounded;
     final liveValue = ctrl(fieldKey, value).text;
-    final isEmpty = liveValue.trim().isEmpty;
     final hasError = error != null;
 
-    if (isEditing) {
-      Widget inputWidget;
-      if (fieldKey == 'semester') {
-        const semesterOptions = ['Spring', 'Fall', 'Summer 1', 'Summer 2', 'TBD'];
-        String currentDropVal = semesterOptions.contains(liveValue) ? liveValue : 'TBD';
-        
-        if (liveValue != currentDropVal) {
-          ctrl(fieldKey, value).text = currentDropVal;
-        }
+    Widget inputWidget;
 
-        inputWidget = DropdownButtonFormField<String>(
-          value: currentDropVal,
-          items: semesterOptions.map((String option) {
-            return DropdownMenuItem<String>(
-              value: option,
-              child: Text(option),
-            );
-          }).toList(),
-          onChanged: (String? newValue) {
-            if (newValue != null) {
-              ctrl(fieldKey, value).text = newValue; 
-            }
-          },
-          icon: const SizedBox.shrink(),
-          dropdownColor: AppStyles.white, 
-          style: const TextStyle(color: AppStyles.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
-          decoration: InputDecoration(
-            prefixIcon: Icon(icon, color: hasError ? AppStyles.warning : AppStyles.primaryPurple, size: 17),
-            suffixIcon: IconButton(
-              icon: Icon(Icons.check_circle_rounded, color: hasError ? AppStyles.warning : AppStyles.accent),
-              onPressed: onDone,
-            ),
-            filled: true,
-            fillColor: hasError ? AppStyles.warning.withOpacity(0.1) : AppStyles.mediumGray,
-            border: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: AppStyles.borderRadiusM,
-              borderSide: BorderSide(color: hasError ? AppStyles.warning : AppStyles.primaryPurple, width: 2),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            errorText: error,
-            errorStyle: const TextStyle(fontSize: 11),
-          ),
-        );
-      } else {
-        inputWidget = TextField(
-          controller: ctrl(fieldKey, value),
-          autofocus: true,
-          keyboardType: keyboardType,
-          style: const TextStyle(color: AppStyles.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
-          decoration: InputDecoration(
-            prefixIcon: Icon(icon, color: hasError ? AppStyles.warning : AppStyles.primaryPurple, size: 17),
-            suffixIcon: IconButton(
-              icon: Icon(Icons.check_circle_rounded, color: hasError ? AppStyles.warning : AppStyles.accent),
-              onPressed: onDone,
-            ),
-            hintText: _hintFor(fieldKey),
-            hintStyle: const TextStyle(color: AppStyles.darkGray, fontSize: 13),
-            filled: true,
-            fillColor: hasError ? AppStyles.warning.withOpacity(0.1) : AppStyles.mediumGray,
-            border: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: AppStyles.borderRadiusM,
-              borderSide: BorderSide(color: hasError ? AppStyles.warning : AppStyles.primaryPurple, width: 2),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            errorText: error,
-            errorStyle: const TextStyle(fontSize: 11),
-          ),
-          onSubmitted: (_) => onDone(),
-        );
-      }
+    if (fieldKey == 'semester') {
+      const semesterOptions = ['Spring', 'Fall', 'Summer 1', 'Summer 2', 'TBD'];
+      String currentDropVal = semesterOptions.contains(liveValue) ? liveValue : 'TBD';
+      if (liveValue != currentDropVal) ctrl(fieldKey, value).text = currentDropVal;
 
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: hasError ? AppStyles.warning : AppStyles.primaryPurple,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            inputWidget,
-          ],
+      inputWidget = DropdownButtonFormField<String>(
+        value: currentDropVal,
+        items: semesterOptions.map((String option) => DropdownMenuItem(value: option, child: Text(option))).toList(),
+        onChanged: (String? newValue) {
+          if (newValue != null) ctrl(fieldKey, value).text = newValue; 
+        },
+        icon: const Icon(Icons.arrow_drop_down_rounded),
+        dropdownColor: AppStyles.white, 
+        style: const TextStyle(color: AppStyles.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+        decoration: _buildInputDeco(icon, hasError),
+      );
+    } else if (fieldKey == 'start_date' || fieldKey == 'end_date') {
+      inputWidget = GestureDetector(
+        onTap: onDateTap,
+        child: AbsorbPointer( // Prevents keyboard opening, forces tap to go to GestureDetector
+          child: TextFormField(
+            controller: ctrl(fieldKey, value),
+            readOnly: true,
+            style: const TextStyle(color: AppStyles.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: _buildInputDeco(icon, hasError).copyWith(
+              suffixIcon: const Icon(Icons.calendar_month_rounded, color: AppStyles.primaryPurple, size: 18),
+            ),
+          ),
         ),
+      );
+    } else {
+      inputWidget = TextField(
+        controller: ctrl(fieldKey, value),
+        keyboardType: keyboardType,
+        style: const TextStyle(color: AppStyles.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+        decoration: _buildInputDeco(icon, hasError),
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        hoverColor: AppStyles.mediumGray.withOpacity(0.5),
-        splashColor: AppStyles.primaryPurple.withOpacity(0.06),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-          child: Row(children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: hasError ? AppStyles.warning.withOpacity(0.1) : (isEmpty ? AppStyles.warning.withOpacity(0.1) : AppStyles.mediumGray),
-                borderRadius: AppStyles.borderRadiusM,
-              ),
-              child: Icon(icon, color: hasError ? AppStyles.warning : (isEmpty ? AppStyles.warning : AppStyles.primaryPurple), size: 17),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(color: AppStyles.darkGray, fontSize: 11, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(
-                    liveValue.isEmpty ? 'Tap to add…' : liveValue,
-                    style: TextStyle(
-                      color: liveValue.isEmpty ? AppStyles.darkGray : AppStyles.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      fontStyle: liveValue.isEmpty ? FontStyle.italic : FontStyle.normal,
-                    ),
-                  ),
-                  if (hasError) ...[
-                    const SizedBox(height: 3),
-                    Text(error!, style: const TextStyle(color: AppStyles.warning, fontSize: 11, fontWeight: FontWeight.w600)),
-                  ],
-                ],
-              ),
-            ),
-            Icon(
-              isEmpty || hasError ? Icons.error_outline_rounded : Icons.edit_outlined,
-              size: 15,
-              color: hasError ? AppStyles.warning : (isEmpty ? AppStyles.warning : AppStyles.darkGray),
-            ),
-          ]),
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: hasError ? AppStyles.warning : AppStyles.primaryPurple, fontSize: 11, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          inputWidget,
+        ],
       ),
+    );
+  }
+
+  InputDecoration _buildInputDeco(IconData icon, bool hasError) {
+    return InputDecoration(
+      prefixIcon: Icon(icon, color: hasError ? AppStyles.warning : AppStyles.primaryPurple, size: 17),
+      hintText: _hintFor(fieldKey),
+      hintStyle: const TextStyle(color: AppStyles.darkGray, fontSize: 13),
+      filled: true,
+      fillColor: hasError ? AppStyles.warning.withOpacity(0.1) : AppStyles.mediumGray,
+      border: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: AppStyles.borderRadiusM,
+        borderSide: BorderSide(color: hasError ? AppStyles.warning : AppStyles.primaryPurple, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      errorText: error,
+      errorStyle: const TextStyle(fontSize: 11),
+    );
+  }
+
+  // ─── The Clean Read-Only State ──────────────────────────────────────────
+  Widget _buildReadOnlyDisplay(BuildContext context) {
+    final label = _fieldLabels[fieldKey] ?? fieldKey;
+    final icon = _fieldIcons[fieldKey] ?? Icons.info_outline_rounded;
+    final liveValue = ctrl(fieldKey, value).text;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      child: Row(children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: liveValue.isEmpty ? AppStyles.warning.withOpacity(0.1) : AppStyles.mediumGray,
+            borderRadius: AppStyles.borderRadiusM,
+          ),
+          child: Icon(icon, color: liveValue.isEmpty ? AppStyles.warning : AppStyles.primaryPurple, size: 17),
+        ),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(color: AppStyles.darkGray, fontSize: 11, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(
+                liveValue.isEmpty ? 'Not set' : liveValue,
+                style: TextStyle(
+                  color: liveValue.isEmpty ? AppStyles.darkGray : AppStyles.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  fontStyle: liveValue.isEmpty ? FontStyle.italic : FontStyle.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // NOTE: No suffix icon here anymore! Clean design!
+      ]),
     );
   }
 }
@@ -1471,8 +1341,6 @@ class _MaterialsTabState extends State<MaterialsTab> {
     return DropTarget(
       onDragDone: (detail) {
         setState(() => _isDragging = false);
-        debugPrint("🟢 DRAG EVENT FIRED! Files dropped: ${detail.files.length}");
-        
         widget.vm.uploadMaterial(droppedFiles: detail.files);
       },
       onDragEntered: (detail) {
@@ -1488,7 +1356,6 @@ class _MaterialsTabState extends State<MaterialsTab> {
         color: _isDragging ? AppStyles.primaryPurple.withOpacity(0.08) : Colors.transparent,
         child: Column(
           children: [
-            // Upload Button Header
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: InkWell(
@@ -1535,8 +1402,6 @@ class _MaterialsTabState extends State<MaterialsTab> {
                 ),
               ),
             ),
-
-            // Materials List
             Expanded(
               child: materials.isEmpty
                   ? const Center(
@@ -1552,7 +1417,6 @@ class _MaterialsTabState extends State<MaterialsTab> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final material = materials[index]; 
-                        
                         final isSelected = widget.vm.selectedMaterialIdsForQuiz.contains(material.id);
                         
                         return Container(
