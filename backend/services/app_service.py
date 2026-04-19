@@ -160,7 +160,10 @@ class WorkspaceService:
         workspace = Workspace(
             instructor_id = instructor_id, 
             file_hash     = file_hash,
-            content       = "Processing..." # Setting this makes 'status' not 'draft'
+            content       = "Processing...",
+            course_code   = "TBD",
+            semester      = "TBD",
+            course_title  = "Untitled Workspace"
         )
         
         self.repo.save(workspace)
