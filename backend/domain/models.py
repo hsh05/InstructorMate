@@ -30,7 +30,7 @@ class Instructor(Base):
     job_title = Column(String(100), nullable=True)
     university_name = Column(String(100), nullable=True)
 
-    # 👉 THE FIX: Using lambdas hands SQLAlchemy the exact class object, bypassing the broken string registry entirely!
+    # 👉 THE FIX: Using lambda to provide direct class references
     refresh_tokens = relationship(lambda: RefreshToken, back_populates="instructor", cascade="all, delete-orphan")
     workspaces = relationship(lambda: Workspace, back_populates="instructor", cascade="all, delete-orphan")
 
