@@ -817,6 +817,12 @@ class _InfoTabState extends State<_InfoTab>
     String assessmentsDue = 'None';
 
     final scheduleString = widget.ws.fields['weekly_schedule'];
+
+    print('\n=== X-RAY ===');
+    print('Week Text: $weekText');
+    print('Schedule String: $scheduleString');
+    print('All Fields: ${widget.ws.fields}');
+    print('=============\n');
     
     if (scheduleString != null && scheduleString.isNotEmpty) {
       try {
