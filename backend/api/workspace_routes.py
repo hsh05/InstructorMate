@@ -157,7 +157,7 @@ def list_workspaces(
 @router.post("/workspaces/upload")
 async def import_workspace(
     file: UploadFile = File(...),
-    instructor_id: str = Form(...),
+    instructor_id: int = Form(...),
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
     workspace_repo:    PgWorkspaceRepository = Depends(get_workspace_repo),
@@ -176,7 +176,7 @@ async def import_workspace(
 
     # 1. Read the file and let the service do the initial creation
     content     = await file.read()
-    result      = workspace_service.create_from_file(filename, content)
+    result      = workspace_service.create_from_file(filename, content, instructor_id)
     domain_ws   = result["workspace"]
 
     ws_id_int = int(domain_ws.workspace_id)

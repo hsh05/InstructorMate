@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 # 👉 UPDATED IMPORTS: Pointing to the consolidated files!
-from domain.models import Workspace
+from db.models import Workspace
 from domain.enums import WorkspaceStatus
 from domain.workspace_fields import WORKSPACE_FIELD_NAMES
 from repositories.pg_repository import PgWorkspaceRepository
@@ -146,23 +146,24 @@ class WorkspaceService:
         self.hash_service = hash_service
         self.converter    = SyllabusConverterService(model=converter_model)
 
-    def create_from_file(self, filename: str, content: bytes) -> dict:
+    def create_from_file(self, filename: str, content: bytes, instructor_id: int) -> dict:
         file_hash = self.hash_service.compute(content)
 
+        # 1. Check for duplicates
         existing = next(
             (ws for ws in self.repo.list_all() if ws.file_hash == file_hash),
             None,
         )
         if existing:
-            logger.info("Duplicate upload detected, returning existing workspace id=%s", existing.workspace_id)
             return {"already_uploaded": True, "workspace": existing}
 
+        # 2. Create the workspace using the REAL instructor_id passed from the UI
         workspace = Workspace(
-            workspace_id = "",
+            instructor_id = instructor_id, 
             file_hash     = file_hash,
-            fields       = {name: "" for name in WORKSPACE_FIELD_NAMES},
-            status       = WorkspaceStatus.DRAFT,
+            content       = None 
         )
+        
         self.repo.save(workspace)
         logger.info("Created workspace id=%s — LLM extraction queued in background", workspace.workspace_id)
 

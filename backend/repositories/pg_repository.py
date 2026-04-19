@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from domain.models import Workspace, Student
+from db.models import Workspace, Student
 from domain.enums import WorkspaceStatus
 from db.models import Workspace as WorkspaceModel, Section as SectionModel, Instructor as InstructorModel, Enrollment
 

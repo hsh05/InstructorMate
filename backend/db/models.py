@@ -1,21 +1,22 @@
 # backend/db/models.py
 
+import uuid
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, ForeignKey, 
     TIMESTAMP, Time, Float, ForeignKeyConstraint, Date
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, registry
-import uuid
-from datetime import datetime, timezone
 from db.database import Base 
 
-# 👉 THE REGISTRY FIX: Tells SQLAlchemy to merge duplicate class definitions in memory
-# This resolves the "Multiple classes found" error on Render.
+# Registry configuration to handle Render's dual-import behavior
 Base.registry.configure(cascade=True)
 
 # ==============================================================================
-# ── INSTRUCTOR & AUTHENTICATION ───────────────────────────────────────────────
+# ── MODELS ────────────────────────────────────────────────────────────────────
 # ==============================================================================
 
 class Instructor(Base):
@@ -34,7 +35,6 @@ class Instructor(Base):
     job_title = Column(String(100), nullable=True)
     university_name = Column(String(100), nullable=True)
 
-    # Use lambdas for direct class reference - avoids string-based lookup errors
     refresh_tokens = relationship(lambda: RefreshToken, back_populates="instructor", cascade="all, delete-orphan")
     workspaces = relationship(lambda: Workspace, back_populates="instructor", cascade="all, delete-orphan")
 
@@ -49,11 +49,6 @@ class RefreshToken(Base):
 
     instructor = relationship(lambda: Instructor, back_populates="refresh_tokens")
 
-
-# ==============================================================================
-# ── WORKSPACES ──────────────────────────────────────────────────────
-# ==============================================================================
-
 class Workspace(Base):
     __tablename__ = "workspace"
     __table_args__ = {'extend_existing': True}
@@ -64,6 +59,7 @@ class Workspace(Base):
     course_code = Column(String(20), nullable=True) 
     semester = Column(String(50), nullable=True)
     course_title = Column(String(255), nullable=True)
+    file_hash = Column(String(255), nullable=True)
     
     chunk_index = Column(Integer, nullable=True)
     embedding = Column(JSONB, nullable=True)
@@ -72,7 +68,6 @@ class Workspace(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     
-    # 👉 ADDED BACK: Python needs these to read the columns you added to NeonDB
     weekly_schedule = Column(Text, nullable=True)
     assessments_schedule = Column(Text, nullable=True)
 
@@ -80,9 +75,32 @@ class Workspace(Base):
     sections = relationship(lambda: Section, back_populates="workspace", cascade="all, delete-orphan")
     materials = relationship(lambda: Material, back_populates="workspace", cascade="all, delete-orphan")
 
-# ==============================================================================
-# ── SECTIONS & SCHEDULING ─────────────────────────────────────────────────────
-# ==============================================================================
+    # ── MERGED LOGIC FROM DOMAIN ──────────────────────────────────────────────
+    
+    @property
+    def fields(self) -> dict:
+        """Mimics the old fields dictionary for Flutter compatibility."""
+        return {
+            "course_code": self.course_code,
+            "workspace_code": self.course_code,
+            "semester": self.semester,
+            "course_title": self.course_title,
+            "workspace_title": self.course_title,
+            "weekly_schedule": self.weekly_schedule,
+            "assessments_schedule": self.assessments_schedule,
+            "start_date": str(self.start_date) if self.start_date else "",
+            "end_date": str(self.end_date) if self.end_date else ""
+        }
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.workspace_id),
+            "file_hash": self.file_hash or "",
+            "fields": self.fields,
+            "status": "ready" if self.content else "draft",
+            "sections": [],
+            "students_count": 0,
+        }
 
 class Section(Base):
     __tablename__ = "sections"
@@ -100,11 +118,6 @@ class Section(Base):
     workspace = relationship(lambda: Workspace, back_populates="sections")
     enrollments = relationship(lambda: Enrollment, back_populates="section", cascade="all, delete-orphan")
 
-
-# ==============================================================================
-# ── STUDENTS & ROSTERS ────────────────────────────────────────────────────────
-# ==============================================================================
-
 class Student(Base):
     __tablename__ = "students"
     __table_args__ = {'extend_existing': True}
@@ -121,10 +134,8 @@ class Student(Base):
 
     enrollments = relationship(lambda: Enrollment, back_populates="student", cascade="all, delete-orphan")
 
-
 class Enrollment(Base):
     __tablename__ = "enrollment"
-
     student_id = Column(String(9), ForeignKey("students.student_id", ondelete="CASCADE"), primary_key=True)
     section_id = Column(String(10), primary_key=True)
     workspace_id = Column(Integer, primary_key=True)
@@ -142,14 +153,8 @@ class Enrollment(Base):
     section = relationship(lambda: Section, back_populates="enrollments")
     attendances = relationship(lambda: Attendance, back_populates="enrollment", cascade="all, delete-orphan")
 
-
-# ==============================================================================
-# ── TRACKING ──────────────────────────────────────────────────────────────────
-# ==============================================================================
-
 class Attendance(Base):
     __tablename__ = "attendance"
-
     student_id = Column(String(9), primary_key=True)
     section_id = Column(String(10), primary_key=True)
     workspace_id = Column(Integer, primary_key=True)
@@ -168,10 +173,6 @@ class Attendance(Base):
     )
 
     enrollment = relationship(lambda: Enrollment, back_populates="attendances")
-
-# ==============================================================================
-# ── MATERIALS ──────────────────────────────────────────────────────
-# ==============================================================================
 
 class Material(Base):
     __tablename__ = "materials"
