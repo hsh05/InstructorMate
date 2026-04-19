@@ -30,9 +30,9 @@ class Instructor(Base):
     job_title = Column(String(100), nullable=True)
     university_name = Column(String(100), nullable=True)
 
-    # 👉 THE FIX: Dynamically injects the exact module path to stop registry collisions!
-    refresh_tokens = relationship(f"{__name__}.RefreshToken", back_populates="instructor", cascade="all, delete-orphan")
-    workspaces = relationship(f"{__name__}.Workspace", back_populates="instructor", cascade="all, delete-orphan")
+    # 👉 THE FIX: Using lambdas hands SQLAlchemy the exact class object, bypassing the broken string registry entirely!
+    refresh_tokens = relationship(lambda: RefreshToken, back_populates="instructor", cascade="all, delete-orphan")
+    workspaces = relationship(lambda: Workspace, back_populates="instructor", cascade="all, delete-orphan")
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
@@ -43,7 +43,7 @@ class RefreshToken(Base):
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    instructor = relationship(f"{__name__}.Instructor", back_populates="refresh_tokens")
+    instructor = relationship(lambda: Instructor, back_populates="refresh_tokens")
 
 
 # ==============================================================================
@@ -71,9 +71,9 @@ class Workspace(Base):
     weekly_schedule = Column(Text, nullable=True)
     assessments_schedule = Column(Text, nullable=True)
 
-    instructor = relationship(f"{__name__}.Instructor", back_populates="workspaces")
-    sections = relationship(f"{__name__}.Section", back_populates="workspace", cascade="all, delete-orphan")
-    materials = relationship(f"{__name__}.Material", back_populates="workspace", cascade="all, delete-orphan")
+    instructor = relationship(lambda: Instructor, back_populates="workspaces")
+    sections = relationship(lambda: Section, back_populates="workspace", cascade="all, delete-orphan")
+    materials = relationship(lambda: Material, back_populates="workspace", cascade="all, delete-orphan")
 
 # ==============================================================================
 # ── SECTIONS & SCHEDULING ─────────────────────────────────────────────────────
@@ -92,8 +92,8 @@ class Section(Base):
     day = Column(String(21), nullable=True) 
     location = Column(String(50), nullable=True)
 
-    workspace = relationship(f"{__name__}.Workspace", back_populates="sections")
-    enrollments = relationship(f"{__name__}.Enrollment", back_populates="section", cascade="all, delete-orphan")
+    workspace = relationship(lambda: Workspace, back_populates="sections")
+    enrollments = relationship(lambda: Enrollment, back_populates="section", cascade="all, delete-orphan")
 
 
 # ==============================================================================
@@ -114,7 +114,7 @@ class Student(Base):
     major_desc = Column(String(100), nullable=True)
     campus_desc = Column(String(50), nullable=True)
 
-    enrollments = relationship(f"{__name__}.Enrollment", back_populates="student", cascade="all, delete-orphan")
+    enrollments = relationship(lambda: Enrollment, back_populates="student", cascade="all, delete-orphan")
 
 
 class Enrollment(Base):
@@ -133,9 +133,9 @@ class Enrollment(Base):
         {'extend_existing': True}
     )
 
-    student = relationship(f"{__name__}.Student", back_populates="enrollments")
-    section = relationship(f"{__name__}.Section", back_populates="enrollments")
-    attendances = relationship(f"{__name__}.Attendance", back_populates="enrollment", cascade="all, delete-orphan")
+    student = relationship(lambda: Student, back_populates="enrollments")
+    section = relationship(lambda: Section, back_populates="enrollments")
+    attendances = relationship(lambda: Attendance, back_populates="enrollment", cascade="all, delete-orphan")
 
 
 # ==============================================================================
@@ -162,7 +162,7 @@ class Attendance(Base):
         {'extend_existing': True}
     )
 
-    enrollment = relationship(f"{__name__}.Enrollment", back_populates="attendances")
+    enrollment = relationship(lambda: Enrollment, back_populates="attendances")
 
 
 # ==============================================================================
@@ -179,4 +179,4 @@ class Material(Base):
     file_path = Column(String(500))
     material_type = Column(String(50))
 
-    workspace = relationship(f"{__name__}.Workspace", back_populates="materials")
+    workspace = relationship(lambda: Workspace, back_populates="materials")
