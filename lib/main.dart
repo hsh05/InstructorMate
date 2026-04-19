@@ -46,8 +46,6 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
     super.initState();
     final apiService = ApiService(); 
     _workspacesVM = WorkspacesViewModel(api: apiService);
-
-    _workspacesVM.load();
   }
 
   @override

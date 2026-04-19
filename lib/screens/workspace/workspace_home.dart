@@ -22,6 +22,13 @@ class WorkspacesHome extends StatefulWidget {
 }
 
 class _WorkspacesHomeState extends State<WorkspacesHome> {
+
+  @override
+  void initState() {
+    super.initState();
+    widget.vm.load(); 
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   void _showSuccess(String message) {
     if (!mounted) return;
