@@ -101,6 +101,27 @@ class Workspace(Base):
             "sections": [],
             "students_count": 0,
         }
+    
+    def update_fields(self, updates: dict) -> None:
+        """Helper method to update database columns from a dictionary."""
+        if "course_code" in updates: 
+            self.course_code = updates["course_code"]
+        elif "workspace_code" in updates: 
+            self.course_code = updates["workspace_code"]
+            
+        if "semester" in updates: 
+            self.semester = updates["semester"]
+            
+        if "course_title" in updates: 
+            self.course_title = updates["course_title"]
+        elif "workspace_title" in updates:
+            self.course_title = updates["workspace_title"]
+            
+        if "weekly_schedule" in updates: 
+            self.weekly_schedule = updates["weekly_schedule"]
+            
+        if "assessments_schedule" in updates: 
+            self.assessments_schedule = updates["assessments_schedule"]
 
 class Section(Base):
     __tablename__ = "sections"
