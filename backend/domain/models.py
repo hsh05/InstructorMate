@@ -1,106 +1,174 @@
-# backend/domain/models.py
+# backend/db/models.py
 
-from dataclasses import dataclass
-from typing import Dict, List
-from .enums import WorkspaceStatus
-from .workspace_fields import REQUIRED_FIELD_NAMES
+from sqlalchemy import (
+    Column, Integer, String, Text, Boolean, ForeignKey, 
+    TIMESTAMP, Time, Float, ForeignKeyConstraint, Date
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+import uuid
+from datetime import datetime, timezone
+from db.database import Base 
 
-# ── STUDENT ───────────────────────────────────────────────────────────────────
-@dataclass
-class Student:
-    student_id:   str
-    workspace_id: str
-    name:         str
-    email:        str  
-    student_no:   str = ""
+# ==============================================================================
+# ── INSTRUCTOR & AUTHENTICATION ───────────────────────────────────────────────
+# ==============================================================================
 
-# ── SCHEDULE & SECTION ────────────────────────────────────────────────────────
-class Schedule:
-    def __init__(self, days: List[str], start_time: str, end_time: str, timezone: str, reminder_minutes: int):
-        self.days = days
-        self.start_time = start_time
-        self.end_time = end_time
-        self.timezone = timezone
-        self.reminder_minutes = reminder_minutes
+class Instructor(Base):
+    __tablename__ = "instructor"
 
-class Section:
-    def __init__(self, section_id: str, workspace_id: str, name: str, location: str, schedule: Schedule):
-        self.section_id = section_id
-        self.workspace_id = workspace_id
-        self.name = name
-        self.location = location
-        self.schedule = schedule
+    instructor_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    hashed_password = Column(Text, nullable=False)
+    full_name = Column(String(100), nullable=False)
+    google_id = Column(Text, unique=True, nullable=True)
+    is_verified = Column(Boolean, default=False)
+    phone_number = Column(String(20), nullable=True)
+    college = Column(String(100), nullable=True)
+    department = Column(String(100), nullable=True)
+    job_title = Column(String(100), nullable=True)
+    university_name = Column(String(100), nullable=True)
 
-    def to_dict(self):
-        return {
-            "section_id": self.section_id,
-            "name": self.name,
-            "location": self.location,
-            "schedule": {
-                "days": self.schedule.days,
-                "start_time": self.schedule.start_time,
-                "end_time": self.schedule.end_time,
-                "timezone": self.schedule.timezone,
-                "reminder_minutes": self.schedule.reminder_minutes,
-            }
-        }
+    refresh_tokens = relationship("RefreshToken", back_populates="instructor", cascade="all, delete-orphan")
+    workspaces = relationship("Workspace", back_populates="instructor", cascade="all, delete-orphan")
 
-# ── WORKSPACE ─────────────────────────────────────────────────────────────────
-class Workspace:
-    def __init__(self, workspace_id: str, file_hash: str, fields: Dict[str, str], status: WorkspaceStatus):
-        self._workspace_id = str(workspace_id)
-        self._file_hash = file_hash
-        self._fields = fields
-        self._status = status
-        self._created_at: str = ""
-        self._updated_at: str = ""
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
 
-    @property
-    def workspace_id(self) -> str:
-        return self._workspace_id
+    token = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    @workspace_id.setter
-    def workspace_id(self, value: str) -> None:
-        self._workspace_id = str(value)
+    instructor = relationship("Instructor", back_populates="refresh_tokens")
 
-    @property
-    def file_hash(self) -> str:
-        return self._file_hash
 
-    @property
-    def fields(self) -> Dict[str, str]:
-        return self._fields
+# ==============================================================================
+# ── WORKSPACES ──────────────────────────────────────────────────────
+# ==============================================================================
 
-    @property
-    def status(self) -> WorkspaceStatus:
-        return self._status
+class Workspace(Base):
+    __tablename__ = "workspace"
 
-    @status.setter
-    def status(self, value: WorkspaceStatus) -> None:
-        self._status = value
+    workspace_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
+    
+    course_code = Column(String(20), nullable=True) 
+    semester = Column(String(50), nullable=True)
+    course_title = Column(String(255), nullable=True)
+    
+    chunk_index = Column(Integer, nullable=True)
+    embedding = Column(JSONB, nullable=True)
+    content = Column(Text, nullable=True)
 
-    def update_fields(self, updates: Dict[str, str]) -> None:
-        self._fields.update(updates)
-        self._recalculate_status()
+    instructor = relationship("Instructor", back_populates="workspaces")
+    sections = relationship("Section", back_populates="workspace", cascade="all, delete-orphan")
+    materials = relationship("Material", back_populates="workspace", cascade="all, delete-orphan")
 
-    def get_missing_fields(self) -> List[str]:
-        return [f for f in REQUIRED_FIELD_NAMES if not self._fields.get(f)]
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    
+    # 👉 THE FIX: Added the new AI fields here!
+    weekly_schedule = Column(Text, nullable=True)
+    assessments_schedule = Column(Text, nullable=True)
 
-    def _recalculate_status(self) -> None:
-        self._status = (
-            WorkspaceStatus.READY if not self.get_missing_fields()
-            else WorkspaceStatus.DRAFT
-        )
+# ==============================================================================
+# ── SECTIONS & SCHEDULING ─────────────────────────────────────────────────────
+# ==============================================================================
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.workspace_id,
-            "created_at": self._created_at,
-            "updated_at": self._updated_at,
-            "original_filename": "",
-            "file_hash": self.file_hash,
-            "fields": self.fields,
-            "status": self.status.value,
-            "sections": [],
-            "students_count": 0,
-        }
+class Section(Base):
+    __tablename__ = "sections"
+
+    workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True)
+    section_id = Column(String(10), primary_key=True)
+    
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    reminder_minutes = Column(Integer, nullable=True)
+    day = Column(String(21), nullable=True) 
+    location = Column(String(50), nullable=True)
+
+    workspace = relationship("Workspace", back_populates="sections")
+    enrollments = relationship("Enrollment", back_populates="section", cascade="all, delete-orphan")
+
+
+# ==============================================================================
+# ── STUDENTS & ROSTERS ────────────────────────────────────────────────────────
+# ==============================================================================
+
+class Student(Base):
+    __tablename__ = "students"
+
+    student_id = Column(String(9), primary_key=True)
+    student_name = Column(String(100), nullable=False)
+    facial_encoding = Column(JSONB, nullable=True)
+    campus_code = Column(String(2), nullable=False)
+    college_code = Column(Integer, nullable=True)
+    college_desc = Column(String(100), nullable=True)
+    major_code = Column(String(10), nullable=True)
+    major_desc = Column(String(100), nullable=True)
+    campus_desc = Column(String(50), nullable=True)
+
+    enrollments = relationship("Enrollment", back_populates="student", cascade="all, delete-orphan")
+
+
+class Enrollment(Base):
+    __tablename__ = "enrollment"
+
+    student_id = Column(String(9), ForeignKey("students.student_id", ondelete="CASCADE"), primary_key=True)
+    section_id = Column(String(10), primary_key=True)
+    workspace_id = Column(Integer, primary_key=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ['section_id', 'workspace_id'],
+            ['sections.section_id', 'sections.workspace_id'],
+            ondelete="CASCADE"
+        ),
+    )
+
+    student = relationship("Student", back_populates="enrollments")
+    section = relationship("Section", back_populates="enrollments")
+    attendances = relationship("Attendance", back_populates="enrollment", cascade="all, delete-orphan")
+
+
+# ==============================================================================
+# ── TRACKING ──────────────────────────────────────────────────────────────────
+# ==============================================================================
+
+class Attendance(Base):
+    __tablename__ = "attendance"
+
+    student_id = Column(String(9), primary_key=True)
+    section_id = Column(String(10), primary_key=True)
+    workspace_id = Column(Integer, primary_key=True)
+    lecture_no = Column(Integer, primary_key=True)
+    
+    confidence = Column(String(20), nullable=True)
+    status = Column(String(20), nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ['student_id', 'section_id', 'workspace_id'],
+            ['enrollment.student_id', 'enrollment.section_id', 'enrollment.workspace_id'],
+            ondelete="CASCADE"
+        ),
+    )
+
+    enrollment = relationship("Enrollment", back_populates="attendances")
+
+
+# ==============================================================================
+# ── MATERIALS ──────────────────────────────────────────────────────
+# ==============================================================================
+
+class Material(Base):
+    __tablename__ = "materials"
+
+    material_id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), nullable=False)
+    file_name = Column(String(255))
+    file_path = Column(String(500))
+    material_type = Column(String(50))
+
+    workspace = relationship("Workspace", back_populates="materials")

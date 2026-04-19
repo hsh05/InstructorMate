@@ -47,6 +47,9 @@ class PgWorkspaceRepository:
         semester = workspace.fields.get('semester') or "TBD"
         c_title = workspace.fields.get('course_title') or workspace.fields.get('workspace_title') or "Untitled Workspace"
 
+        w_sched = workspace.fields.get('weekly_schedule')
+        a_sched = workspace.fields.get('assessments_schedule')
+
         if workspace.workspace_id:
             w_id = int(workspace.workspace_id)
             row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == w_id).first()
@@ -54,6 +57,8 @@ class PgWorkspaceRepository:
                 row.course_code = c_code
                 row.semester = semester
                 row.course_title = c_title
+                row.weekly_schedule = w_sched
+                row.assessments_schedule = a_sched
                 if hasattr(workspace, 'content') and workspace.content:
                     row.content = workspace.content
                 self.db.commit()
@@ -64,6 +69,8 @@ class PgWorkspaceRepository:
             course_code   = c_code,
             semester      = semester, 
             course_title  = c_title,
+            weekly_schedule = w_sched,
+            assessments_schedule = a_sched,
             chunk_index   = 0,
             content       = getattr(workspace, 'content', None) or "Processing..."
         )
@@ -122,7 +129,9 @@ class PgWorkspaceRepository:
             "workspace_code":  row.course_code,  
             "semester":        row.semester,
             "course_title":    row.course_title,
-            "workspace_title": row.course_title  
+            "workspace_title": row.course_title,
+            "weekly_schedule": row.weekly_schedule,
+            "assessments_schedule": row.assessments_schedule
         }
         ws = Workspace(
             workspace_id = str(row.workspace_id),
