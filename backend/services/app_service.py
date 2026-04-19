@@ -10,7 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-# 👉 UPDATED IMPORTS: Pointing to the consolidated files!
+# 👉 THE FIX: Pointing only to the consolidated DB models
 from db.models import Workspace
 from domain.enums import WorkspaceStatus
 from domain.workspace_fields import WORKSPACE_FIELD_NAMES
@@ -102,7 +102,7 @@ class StudentService:
         return students_imported
 
     def create_section(self, workspace_id: str, data: dict): 
-        if not self.workspace_repo.get_by_id(workspace_id):
+        if not self.workspace_repo.get_by_id(int(workspace_id)):
             raise FileNotFoundError(f"Workspace '{workspace_id}' not found")
 
         schedule_data = data.get("schedule", {})
@@ -123,7 +123,7 @@ class StudentService:
             },
         }
 
-        self.repo.save(workspace_id, section_data)
+        self.repo.save(int(workspace_id), section_data)
         logger.info("Section created id=%s workspace=%s", section_data["section_id"], workspace_id)
         return section_data
 
@@ -157,17 +157,18 @@ class WorkspaceService:
         if existing:
             return {"already_uploaded": True, "workspace": existing}
 
-        # 2. Create the workspace using the REAL instructor_id passed from the UI
+        # 2. 👉 THE FIX: Only pass actual Database Columns to the constructor.
+        # 'status' and 'fields' are now properties, so they aren't passed here.
         workspace = Workspace(
             instructor_id = instructor_id, 
             file_hash     = file_hash,
-            content       = None 
+            content       = "Processing..." # Setting this makes 'status' not 'draft'
         )
         
         self.repo.save(workspace)
         logger.info("Created workspace id=%s — LLM extraction queued in background", workspace.workspace_id)
 
-        workspace_id = workspace.workspace_id
+        workspace_id = str(workspace.workspace_id)
 
         if workspace_id not in _in_flight:
             _in_flight.add(workspace_id)
@@ -181,10 +182,17 @@ class WorkspaceService:
             logger.info("Marked workspace=%s for cancellation", workspace_id)
 
     def update_workspace(self, workspace_id: str, updates: dict) -> Workspace:
-        ws = self.repo.get_by_id(workspace_id)
+        ws = self.repo.get_by_id(int(workspace_id))
         if ws is None:
             raise FileNotFoundError(f"Workspace '{workspace_id}' not found")
-        ws.update_fields(updates)
+        
+        # Manually update the columns since they are no longer in a 'fields' dict
+        if "course_code" in updates: ws.course_code = updates["course_code"]
+        if "semester" in updates: ws.semester = updates["semester"]
+        if "course_title" in updates: ws.course_title = updates["course_title"]
+        if "weekly_schedule" in updates: ws.weekly_schedule = updates["weekly_schedule"]
+        if "assessments_schedule" in updates: ws.assessments_schedule = updates["assessments_schedule"]
+        
         self.repo.save(ws)
         return ws
 
@@ -193,33 +201,20 @@ class WorkspaceService:
             _cancelled.discard(workspace_id)
             return
             
-        logger.info("🚀 Background AI Extraction STARTED for workspace=%s. This takes ~30 seconds...", workspace_id)
+        logger.info("🚀 Background AI Extraction STARTED for workspace=%s", workspace_id)
         
-        # 👉 UPDATED IMPORT: Points to the new db/database.py location
         from db.database import SessionLocal
         db = SessionLocal()
         try:
             repo = PgWorkspaceRepository(db)
-            ws   = repo.get_by_id(workspace_id)
+            ws   = repo.get_by_id(int(workspace_id))
             if ws is None or workspace_id in _cancelled:
                 _cancelled.discard(workspace_id)
                 return
             self._run_converter(workspace_id, content, filename, ws, repo)
         except Exception as e:
             logger.error("❌ Background converter failed for workspace=%s: %s", workspace_id, e, exc_info=True)
-            try:
-                from db.database import SessionLocal as SL
-                db2 = SL()
-                try:
-                    repo2 = PgWorkspaceRepository(db2)
-                    ws2 = repo2.get_by_id(workspace_id)
-                    if ws2:
-                        ws2.status = WorkspaceStatus.ERROR
-                        repo2.save(ws2)
-                finally:
-                    db2.close()
-            except Exception:
-                pass
+            # You could set ws.content = "Error" here if you wanted an Error status
         finally:
             _in_flight.discard(workspace_id)
             db.close()
@@ -232,7 +227,7 @@ class WorkspaceService:
         workspace: Workspace,
         repo: PgWorkspaceRepository,
     ) -> None:
-        ws_dir = repo.workspace_dir(workspace_id)
+        ws_dir = repo.workspace_dir(int(workspace_id))
         ws_dir.mkdir(parents=True, exist_ok=True)
 
         ext = Path(filename).suffix.lower() or ".pdf"
@@ -250,32 +245,28 @@ class WorkspaceService:
             # ── Save chunks ──────────────────────────────────────────────────
             chunks_src = Path(result.chunks_csv)
             if chunks_src.exists():
-                repo.save_chunks(workspace_id, chunks_src)
-                chunks_dst = repo.get_chunks_csv_path(workspace_id)
+                repo.save_chunks(int(workspace_id), chunks_src)
+                chunks_dst = repo.get_chunks_csv_path(int(workspace_id))
                 if chunks_src != chunks_dst:
                     shutil.copy2(str(chunks_src), str(chunks_dst))
-                repo.generate_and_save_embeddings(workspace_id)
+                repo.generate_and_save_embeddings(int(workspace_id))
 
-            # ── Auto-fill workspace fields ───────────────────────────────────
+            # ── Auto-fill workspace columns ──────────────────────────────────
             single_row_src = Path(result.single_row_csv)
             if single_row_src.exists():
                 with open(single_row_src, newline="", encoding="utf-8") as f:
                     row = next(csv.DictReader(f), None)
                 if row:
-                    updates = {
-                        k: v.strip() for k, v in row.items() if v and v.strip()
-                    }
+                    # Update the specific columns directly
+                    if row.get("course_code"): workspace.course_code = row["course_code"].strip()
+                    if row.get("semester"): workspace.semester = row["semester"].strip()
+                    if row.get("course_title"): workspace.course_title = row["course_title"].strip()
+                    if row.get("weekly_schedule"): workspace.weekly_schedule = row["weekly_schedule"].strip()
+                    if row.get("assessments_schedule"): workspace.assessments_schedule = row["assessments_schedule"].strip()
                     
-                    if updates:
-                        for key, val in updates.items():
-                            workspace.fields[key] = val
-                            
-                        repo.save(workspace) 
-                        logger.info("✅ Extracted & Saved to DB: %s for workspace=%s", list(updates.keys()), workspace_id)
+                    repo.save(workspace) 
+                    logger.info("✅ AI extraction saved to columns for workspace=%s", workspace_id)
 
-            # Mark ready
-            workspace.status = WorkspaceStatus.READY
-            repo.save(workspace)
             logger.info("🎯 Extraction COMPLETE for workspace=%s", workspace_id)
 
         except Exception as e:
