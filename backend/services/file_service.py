@@ -183,8 +183,7 @@ class SyllabusFieldExtractor:
         self.model = model
 
     def extract_single_row(self, chunks: List[PdfChunk], columns: List[str]) -> Dict[str, str]:
-        # 👉 THE FIX: Increased max_chars to 8000 so the AI sees the full schedule table!
-        syllabus_text = self._compact_text(chunks, max_chars=8000)
+        syllabus_text = self._compact_text(chunks, max_chars=15000)
         if len(syllabus_text.strip()) < 250:
             return {col: "" for col in columns}
 
@@ -238,7 +237,7 @@ class SyllabusFieldExtractor:
         raise RuntimeError(f"OpenAI call failed after retries: {last_err}")
 
     def _compact_text(self, chunks: List[PdfChunk], max_chars: int) -> str:
-        first_pages = [c for c in chunks if c.page <= 3]
+        first_pages = [c for c in chunks if c.page <= 5] 
         keywords = (
             "assessment", "grading", "grade", "rubric", "evaluation",
             "office hour", "instructor", "email", "contact",
@@ -259,8 +258,7 @@ class SyllabusFieldExtractor:
                 selected.append(c)
                 seen_pages.add(c.page)
 
-        per_page_cap = 1200
-        joined = "\n\n".join((c.text or "")[:per_page_cap] for c in selected)
+        joined = "\n\n".join((c.text or "") for c in selected)
         return joined[:max_chars]
 
 
