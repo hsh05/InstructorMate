@@ -163,7 +163,8 @@ class WorkspaceService:
             content       = "Processing...",
             course_code   = "TBD",
             semester      = "TBD",
-            course_title  = "Untitled Workspace"
+            course_title  = "Untitled Workspace",
+            chunk_index   = 0
         )
         
         self.repo.save(workspace)
