@@ -16,6 +16,7 @@ from db.database import Base
 
 class Instructor(Base):
     __tablename__ = "instructor"
+    __table_args__ = {'extend_existing': True} # 👉 THE FIX: Prevents hot-reload crashes
 
     instructor_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     email = Column(String(100), unique=True, index=True, nullable=False)
@@ -34,6 +35,7 @@ class Instructor(Base):
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
+    __table_args__ = {'extend_existing': True}
 
     token = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
@@ -49,6 +51,7 @@ class RefreshToken(Base):
 
 class Workspace(Base):
     __tablename__ = "workspace"
+    __table_args__ = {'extend_existing': True}
 
     workspace_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     instructor_id = Column(Integer, ForeignKey("instructor.instructor_id", ondelete="CASCADE"), nullable=False)
@@ -68,7 +71,6 @@ class Workspace(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     
-    # 👉 THE FIX: Added the new AI fields here!
     weekly_schedule = Column(Text, nullable=True)
     assessments_schedule = Column(Text, nullable=True)
 
@@ -78,6 +80,7 @@ class Workspace(Base):
 
 class Section(Base):
     __tablename__ = "sections"
+    __table_args__ = {'extend_existing': True}
 
     workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True)
     section_id = Column(String(10), primary_key=True)
@@ -98,6 +101,7 @@ class Section(Base):
 
 class Student(Base):
     __tablename__ = "students"
+    __table_args__ = {'extend_existing': True}
 
     student_id = Column(String(9), primary_key=True)
     student_name = Column(String(100), nullable=False)
@@ -119,12 +123,14 @@ class Enrollment(Base):
     section_id = Column(String(10), primary_key=True)
     workspace_id = Column(Integer, primary_key=True)
 
+    # 👉 THE FIX: Added to the tuple constraint
     __table_args__ = (
         ForeignKeyConstraint(
             ['section_id', 'workspace_id'],
             ['sections.section_id', 'sections.workspace_id'],
             ondelete="CASCADE"
         ),
+        {'extend_existing': True}
     )
 
     student = relationship("Student", back_populates="enrollments")
@@ -147,12 +153,14 @@ class Attendance(Base):
     confidence = Column(String(20), nullable=True)
     status = Column(String(20), nullable=True)
 
+    # 👉 THE FIX: Added to the tuple constraint
     __table_args__ = (
         ForeignKeyConstraint(
             ['student_id', 'section_id', 'workspace_id'],
             ['enrollment.student_id', 'enrollment.section_id', 'enrollment.workspace_id'],
             ondelete="CASCADE"
         ),
+        {'extend_existing': True}
     )
 
     enrollment = relationship("Enrollment", back_populates="attendances")
@@ -164,6 +172,7 @@ class Attendance(Base):
 
 class Material(Base):
     __tablename__ = "materials"
+    __table_args__ = {'extend_existing': True}
 
     material_id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, ForeignKey("workspace.workspace_id", ondelete="CASCADE"), nullable=False)
