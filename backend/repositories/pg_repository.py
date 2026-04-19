@@ -9,9 +9,8 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from db.models import Workspace, Student
-from domain.enums import WorkspaceStatus
-from db.models import Workspace as WorkspaceModel, Section as SectionModel, Instructor as InstructorModel, Enrollment
+# 👉 THE FIX: We only import the SQLAlchemy models now. No aliases needed!
+from db.models import Workspace, Section, Instructor, Enrollment, Student
 
 logger = logging.getLogger(__name__)
 
@@ -31,56 +30,20 @@ class PgWorkspaceRepository:
         return self.workspace_dir(workspace_id) / "chunks.csv"
 
     def list_all(self) -> List[Workspace]:
-        rows = self.db.query(WorkspaceModel).all()
-        return [self._to_domain(row) for row in rows]
+        return self.db.query(Workspace).all()
 
     def get_by_id(self, workspace_id: int) -> Optional[Workspace]:
-        row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == workspace_id).first()
-        return self._to_domain(row) if row else None
+        return self.db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
 
     def save(self, workspace: Workspace) -> None:
-        instructor = self.db.query(InstructorModel).first()
-        if not instructor:
-            raise Exception("No instructor found! Please create an instructor first.")
-
-        c_code  = workspace.fields.get('course_code') or workspace.fields.get('workspace_code') or "TBD"
-        semester = workspace.fields.get('semester') or "TBD"
-        c_title = workspace.fields.get('course_title') or workspace.fields.get('workspace_title') or "Untitled Workspace"
-
-        w_sched = workspace.fields.get('weekly_schedule')
-        a_sched = workspace.fields.get('assessments_schedule')
-
-        if workspace.workspace_id:
-            w_id = int(workspace.workspace_id)
-            row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == w_id).first()
-            if row:
-                row.course_code = c_code
-                row.semester = semester
-                row.course_title = c_title
-                row.weekly_schedule = w_sched
-                row.assessments_schedule = a_sched
-                if hasattr(workspace, 'content') and workspace.content:
-                    row.content = workspace.content
-                self.db.commit()
-                return
-
-        row = WorkspaceModel(
-            instructor_id = instructor.instructor_id,
-            course_code   = c_code,
-            semester      = semester, 
-            course_title  = c_title,
-            weekly_schedule = w_sched,
-            assessments_schedule = a_sched,
-            chunk_index   = 0,
-            content       = getattr(workspace, 'content', None) or "Processing..."
-        )
-        self.db.add(row)
-        self.db.flush() 
-        workspace.workspace_id = str(row.workspace_id) 
+        # 👉 THE FIX: Since 'workspace' is already a SQLAlchemy model, 
+        # we don't need to manually map columns anymore!
+        self.db.add(workspace)
         self.db.commit()
+        self.db.refresh(workspace)
 
     def delete(self, workspace_id: int) -> bool:
-        row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == workspace_id).first()
+        row = self.get_by_id(workspace_id)
         if not row: return False
         self.db.delete(row)
         self.db.commit()
@@ -99,18 +62,18 @@ class PgWorkspaceRepository:
         except FileNotFoundError:
             return
 
-        workspace = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == workspace_id).first()
+        workspace = self.get_by_id(workspace_id)
         if workspace:
             workspace.content = combined_content.strip()
             self.db.commit()
 
     def get_chunks_for_ask(self, workspace_id: int) -> List[Dict[str, Any]]:
-        row = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == workspace_id).first()
+        row = self.get_by_id(workspace_id)
         if not row or not row.content: return []
         return [{"chunk_id": 1, "page": 1, "content": row.content, "embedding": row.embedding}]
 
     def generate_and_save_embeddings(self, workspace_id: int) -> int:
-        workspace = self.db.query(WorkspaceModel).filter(WorkspaceModel.workspace_id == workspace_id).first()
+        workspace = self.get_by_id(workspace_id)
         if not workspace or not workspace.content or workspace.embedding: return 0
 
         client = OpenAI()
@@ -123,25 +86,6 @@ class PgWorkspaceRepository:
             logger.error("Embedding failed for workspace=%s: %s", workspace_id, exc)
             return 0
 
-    def _to_domain(self, row: WorkspaceModel) -> Workspace:
-        fields = {
-            "course_code":     row.course_code,
-            "workspace_code":  row.course_code,  
-            "semester":        row.semester,
-            "course_title":    row.course_title,
-            "workspace_title": row.course_title,
-            "weekly_schedule": row.weekly_schedule,
-            "assessments_schedule": row.assessments_schedule
-        }
-        ws = Workspace(
-            workspace_id = str(row.workspace_id),
-            file_hash    = row.file_hash if hasattr(row, 'file_hash') and row.file_hash else "",
-            status       = WorkspaceStatus("ready" if getattr(row, 'content', None) else "draft"),
-            fields       = fields,
-        )
-        ws._created_at = ws._updated_at = ""
-        return ws
-
 
 # ==============================================================================
 # ── SECTION REPOSITORY ────────────────────────────────────────────────────────
@@ -152,14 +96,14 @@ class PgSectionRepository:
         self.ws_repo = ws_repo
 
     def list_by_workspace(self, workspace_id: int) -> List[Dict]:
-        rows = self.db.query(SectionModel).filter(SectionModel.workspace_id == workspace_id).all()
+        rows = self.db.query(Section).filter(Section.workspace_id == workspace_id).all()
         return [self._to_dict(row) for row in rows]
 
     def save(self, workspace_id: int, section_data: Dict) -> None:
         schedule = section_data.get("schedule", {})
         days_string = ", ".join([d.strip() for d in schedule.get("days", []) if d.strip()])
 
-        row = SectionModel(
+        row = Section(
             section_id       = section_data["section_id"],
             workspace_id     = workspace_id,
             location         = section_data.get("location", ""),
@@ -172,8 +116,8 @@ class PgSectionRepository:
         self.db.commit()
 
     def update(self, workspace_id: int, section_id: str, section_data: Dict) -> bool:
-        row = self.db.query(SectionModel).filter(
-            SectionModel.workspace_id == workspace_id, SectionModel.section_id == section_id
+        row = self.db.query(Section).filter(
+            Section.workspace_id == workspace_id, Section.section_id == section_id
         ).first()
         if not row: return False
 
@@ -188,15 +132,15 @@ class PgSectionRepository:
         return True
 
     def delete(self, workspace_id: int, section_id: str) -> bool:
-        row = self.db.query(SectionModel).filter(
-            SectionModel.workspace_id == workspace_id, SectionModel.section_id == section_id
+        row = self.db.query(Section).filter(
+            Section.workspace_id == workspace_id, Section.section_id == section_id
         ).first()
         if not row: return False
         self.db.delete(row)  
         self.db.commit()
         return True
 
-    def _to_dict(self, row: SectionModel) -> Dict:
+    def _to_dict(self, row: Section) -> Dict:
         days = [d.strip() for d in row.day.split(",")] if row.day else []
         try: reminder = int(row.reminder_minutes or 10)
         except (ValueError, TypeError): reminder = 10
@@ -226,12 +170,11 @@ class PgStudentRepository:
         self.ws_repo = ws_repo
 
     def list_by_workspace(self, workspace_id: int) -> List[dict]:
-        rows = self.db.query(Student.__module__).join(Enrollment, Enrollment.student_id == Student.__module__.student_id).filter(Enrollment.workspace_id == workspace_id).distinct().all()
+        rows = self.db.query(Student).join(Enrollment, Enrollment.student_id == Student.student_id).filter(Enrollment.workspace_id == workspace_id).distinct().all()
         return [self._to_dict(row, workspace_id=workspace_id) for row in rows]
 
     def list_by_section(self, workspace_id: int, section_id: str) -> List[dict]:
-        from db.models import Student as DBStudent
-        rows = self.db.query(DBStudent).join(Enrollment, Enrollment.student_id == DBStudent.student_id).filter(
+        rows = self.db.query(Student).join(Enrollment, Enrollment.student_id == Student.student_id).filter(
             Enrollment.workspace_id == workspace_id, Enrollment.section_id == section_id
         ).all()
         return [self._to_dict(row, workspace_id=workspace_id, section_id=section_id) for row in rows]
@@ -242,16 +185,15 @@ class PgStudentRepository:
         ).count()
 
     def save(self, student, section_id: str = "") -> None:
-        from db.models import Student as DBStudent
         actual_id = (student.student_no or student.student_id).strip()
         workspace_id = int(student.workspace_id)
         section_id = (section_id or "").strip()
 
-        db_student = self.db.query(DBStudent).filter(DBStudent.student_id == actual_id).first()
+        db_student = self.db.query(Student).filter(Student.student_id == actual_id).first()
         if db_student:
             db_student.student_name = student.name or db_student.student_name
         else:
-            db_student = DBStudent(student_id=actual_id, student_name=student.name)
+            db_student = Student(student_id=actual_id, student_name=student.name)
             self.db.add(db_student)
             
         self.db.flush() 
@@ -279,7 +221,7 @@ class PgStudentRepository:
         self.db.commit()
         return deleted > 0
 
-    def _to_dict(self, row, workspace_id: int = 0, section_id: str = "") -> dict:
+    def _to_dict(self, row: Student, workspace_id: int = 0, section_id: str = "") -> dict:
         return {
             "student_id":   row.student_id,
             "workspace_id": str(workspace_id), 

@@ -12,8 +12,6 @@ from sqlalchemy import text
 
 # 👉 THE FIX: Pointing only to the consolidated DB models
 from db.models import Workspace
-from domain.enums import WorkspaceStatus
-from domain.workspace_fields import WORKSPACE_FIELD_NAMES
 from repositories.pg_repository import PgWorkspaceRepository
 from services.file_service import FileHashService, SyllabusConverterService
 
