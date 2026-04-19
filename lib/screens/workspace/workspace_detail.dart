@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'dart:convert';
 
 import '../../state/workspaces_vm.dart';
 import '../../models/workspace_model.dart';
@@ -812,6 +813,41 @@ class _InfoTabState extends State<_InfoTab>
 
     final weekText = _calculateCurrentWeek();
 
+    String topicsToCover = 'Check syllabus for this week\'s topics.';
+    String assessmentsDue = 'None';
+
+    final scheduleString = widget.ws.fields['weekly_schedule'];
+    
+    if (scheduleString != null && scheduleString.isNotEmpty) {
+      try {
+        // Decode the JSON dictionary the AI extracted from the PDF
+        final Map<String, dynamic> schedule = jsonDecode(scheduleString);
+        
+        // Extract the raw number from our "Week X" string
+        final match = RegExp(r'Week (\d+)').firstMatch(weekText);
+        
+        if (match != null) {
+          final weekNumber = match.group(1)!; // e.g., "3"
+          
+          // Grab the exact text for this week from the AI's dictionary!
+          if (schedule.containsKey(weekNumber)) {
+            topicsToCover = schedule[weekNumber].toString();
+          }
+          
+          // (Optional) If you have the AI extract assessments too:
+          final assessmentsString = widget.ws.fields['assessments_schedule'];
+          if (assessmentsString != null) {
+            final Map<String, dynamic> assessments = jsonDecode(assessmentsString);
+            if (assessments.containsKey(weekNumber)) {
+              assessmentsDue = assessments[weekNumber].toString();
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Could not parse weekly schedule: $e');
+      }
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -847,7 +883,23 @@ class _InfoTabState extends State<_InfoTab>
           ],
         ),
         
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        
+        // Insert the new Weekly Overview Card here!
+        _WeeklyOverviewCard(
+          weekText: weekText,
+          topics: topicsToCover,
+          assessments: assessmentsDue,
+        ),
+        
+        const SizedBox(height: 16),
+        
+        if (widget.isGlobalEditing) 
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12.0),
+            child: Text('Tap the checkmark in the top right to save changes.',
+                style: TextStyle(fontSize: 12, color: AppStyles.primaryPurple, fontWeight: FontWeight.bold)),
+          ),
         Container(
           decoration: BoxDecoration(
             color: AppStyles.white,
@@ -1458,6 +1510,88 @@ class _MaterialsTabState extends State<MaterialsTab> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _WeeklyOverviewCard extends StatelessWidget {
+  const _WeeklyOverviewCard({
+    required this.weekText,
+    required this.topics,
+    required this.assessments,
+  });
+
+  final String weekText;
+  final String topics;
+  final String assessments;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppStyles.primaryPurple.withOpacity(0.08), AppStyles.primaryPurple.withOpacity(0.02)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: AppStyles.borderRadiusL,
+        border: Border.all(color: AppStyles.primaryPurple.withOpacity(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_rounded, color: AppStyles.primaryPurple, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                '$weekText Overview',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppStyles.primaryPurple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildRow(Icons.menu_book_rounded, 'To Cover:', topics),
+          const SizedBox(height: 8),
+          _buildRow(Icons.assignment_late_rounded, 'Assessments:', assessments, isAlert: assessments.toLowerCase() != 'none'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRow(IconData icon, String label, String content, {bool isAlert = false}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: isAlert ? AppStyles.warning : AppStyles.darkGray),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 13, color: AppStyles.textPrimary, height: 1.4),
+              children: [
+                TextSpan(
+                  text: '$label ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700, 
+                    color: isAlert ? AppStyles.warning : AppStyles.darkGray
+                  ),
+                ),
+                TextSpan(
+                  text: content,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

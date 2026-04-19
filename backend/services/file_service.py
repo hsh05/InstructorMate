@@ -183,11 +183,13 @@ class SyllabusFieldExtractor:
         self.model = model
 
     def extract_single_row(self, chunks: List[PdfChunk], columns: List[str]) -> Dict[str, str]:
-        syllabus_text = self._compact_text(chunks, max_chars=3500)
+        # 👉 THE FIX: Increased max_chars to 8000 so the AI sees the full schedule table!
+        syllabus_text = self._compact_text(chunks, max_chars=8000)
         if len(syllabus_text.strip()) < 250:
             return {col: "" for col in columns}
 
         cols_json = json.dumps(columns, ensure_ascii=True)
+        # 👉 THE FIX: Updated prompt to teach the AI how to extract the weekly and assessment schedules
         prompt = (
             "You extract structured fields from university syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
@@ -198,7 +200,9 @@ class SyllabusFieldExtractor:
             "- Keys MUST match the given columns EXACTLY.\n"
             "Definitions:\n"
             "- 'course_title': The actual name of the class. DO NOT put the instructor's name here.\n"
-            "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n\n"
+            "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n"
+            "- 'weekly_schedule': A JSON dictionary mapping the week number (e.g., '1', '2') to the course topic exactly as written in the syllabus table.\n"
+            "- 'assessments_schedule': A JSON dictionary mapping the week number to any assessments/exams due that week. If none, omit the week.\n\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
@@ -212,7 +216,11 @@ class SyllabusFieldExtractor:
         normalized: Dict[str, str] = {}
         for name in columns:
             value = data.get(name, "")
-            normalized[name] = str(value) if value is not None else ""
+            # 👉 THE FIX: Safely stringify dictionaries/lists before saving to the DB
+            if isinstance(value, (dict, list)):
+                normalized[name] = json.dumps(value)
+            else:
+                normalized[name] = str(value) if value is not None else ""
         return normalized
 
     def _call_with_retries(self, prompt: str) -> str:
@@ -308,7 +316,8 @@ class SyllabusConverterService:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        columns = ["course_title", "course_code"]
+        # 👉 THE FIX: Tell the field extractor to look for the new schedule columns!
+        columns = ["course_title", "course_code", "weekly_schedule", "assessments_schedule"]
 
         doc_bytes  = doc_path.read_bytes()
         doc_hash   = hashlib.sha256(doc_bytes).hexdigest()[:10]
