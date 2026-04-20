@@ -1,3 +1,5 @@
+// lib/screens/auth/login_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../state/auth_vm.dart';
 import 'signup_screen.dart';
@@ -15,8 +17,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  
-  // 👉 THE FIX: Using the unified AuthViewModel
   final _authVM = AuthViewModel();
 
   bool _isLoading = false;
@@ -34,7 +34,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     
-    // 👉 THE FIX: Removed labels, passed directly, and returns a bool!
     final success = await _authVM.login(
       _email.text,
       _password.text,
@@ -44,13 +43,12 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (success) {
-      // Grab the user_id (if you need it globally later, it's safe in storage)
+      // Grab the user_id
       const storage = FlutterSecureStorage();
       await storage.read(key: 'user_id');
 
-      // 👉 THE FIX: Use your named route to go home so main.dart handles the ViewModel!
       if (context.mounted) {
-        Navigator.pushReplacementNamed(context, '/home'); // Or whatever your home route is named!
+        Navigator.pushReplacementNamed(context, '/home');
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
