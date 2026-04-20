@@ -190,26 +190,21 @@ class SyllabusFieldExtractor:
         cols_json = json.dumps(columns, ensure_ascii=True)
         
         prompt = (
-            "You are an expert data extractor. Extract structured fields from the syllabus text below.\n"
-            "Return ONLY a valid JSON object matching the exact structure below. Do not add markdown formatting.\n\n"
-            "EXPECTED JSON STRUCTURE:\n"
+            "You are an expert data extractor. Extract structured fields from the syllabus text.\n"
+            "Return ONLY a valid JSON object. No markdown, no commentary.\n\n"
+            "CRITICAL EXTRACTION RULES FOR 'assessments_schedule':\n"
+            "You must combine multiple tables into a SINGLE JSON dictionary where the key is the Week Number (as a string) and the value is a comma-separated list of assessments.\n"
+            "1. Find the 'OUT-OF-CLASS ASSIGNMENTS' table (contains Assignments).\n"
+            "2. Find the detached table rows immediately following the 'ASSESSMENT METHODS & STUDENT EVALUATION' section (contains Quiz 1, Quiz 2, Quiz 3, Midterm, Final Exam).\n"
+            "3. Merge them. If Week 4 has an Assignment and a Quiz, combine them: {\"4\": \"Assignment 1, Quiz 1\"}.\n\n"
+            "EXPECTED JSON FORMAT:\n"
             "{\n"
-            "  \"_scratchpad\": \"1. I will locate the OUT-OF-CLASS ASSIGNMENTS table and list them here. 2. I will locate the ASSESSMENT METHODS table (which may be split across pages, e.g. headers on one page, data on the next) and list ALL Quizzes and Exams here. 3. I will map them to the array.\",\n"
-            "  \"course_title\": \"Name of the course\",\n"
-            "  \"course_code\": \"Course code (e.g., PHYS-101)\",\n"
-            "  \"weekly_schedule\": {\n"
-            "    \"1\": \"Topic for week 1\"\n"
-            "  },\n"
-            "  \"assessments_schedule\": [\n"
-            "    {\"week\": \"(integer week)\", \"assessment\": \"(assessment name)\"}\n"
-            "  ]\n"
+            "  \"course_title\": \"...\",\n"
+            "  \"course_code\": \"...\",\n"
+            "  \"weekly_schedule\": {\"1\": \"...\"},\n"
+            "  \"assessments_schedule\": {\"4\": \"Assignment 1, Quiz 1\", \"7\": \"Assignment 2\", \"8\": \"Quiz 2\", \"9\": \"Midterm Exam\", \"13\": \"Assignment 3\", \"14\": \"Quiz 3\", \"16\": \"Final Exam\"}\n"
             "}\n\n"
-            "CRITICAL INSTRUCTIONS:\n"
-            "1. 'assessments_schedule' MUST be a JSON Array of objects. Do not use a dictionary.\n"
-            "2. DO NOT MAKE UP DATA OR COPY EXAMPLES. Extract the REAL assessments from the syllabus text.\n"
-            "3. ORPHANED TABLE WARNING: The 'Assessment Methods' table often breaks across pages! You will see floating text rows like 'Quiz 1', '4', '12.5%' at the top of a page. You MUST extract EVERY SINGLE Quiz, Midterm, and Final Exam from these rows!\n"
-            "4. If a week has multiple items (like an Assignment and a Quiz), create TWO separate objects in the array for that same week.\n\n"
-            f"COLUMNS(JSON array of strings): {cols_json}\n\n"
+            f"COLUMNS: {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
 
@@ -223,19 +218,7 @@ class SyllabusFieldExtractor:
         for name in columns:
             value = data.get(name, "")
             
-            if name == "assessments_schedule" and isinstance(value, list):
-                combined = {}
-                for item in value:
-                    if isinstance(item, dict):
-                        w = str(item.get("week", "")).strip()
-                        a = str(item.get("assessment", "")).strip()
-                        if w and a:
-                            if w in combined and a not in combined[w]:
-                                combined[w] = f"{combined[w]}, {a}"
-                            else:
-                                combined[w] = a
-                normalized[name] = json.dumps(combined)
-            elif isinstance(value, (dict, list)):
+            if isinstance(value, (dict, list)):
                 normalized[name] = json.dumps(value)
             else:
                 normalized[name] = str(value) if value is not None else ""
