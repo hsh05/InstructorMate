@@ -188,7 +188,7 @@ class SyllabusFieldExtractor:
             return {col: "" for col in columns}
 
         cols_json = json.dumps(columns, ensure_ascii=True)
-        # 👉 THE FIX: Added explicit instructions for handling page breaks and combining multiple items for the same week!
+        # 👉 THE FIX: Hyper-specific rules to stop key overwriting and handle page breaks
         prompt = (
             "You extract structured fields from university syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
@@ -201,10 +201,11 @@ class SyllabusFieldExtractor:
             "- 'course_title': The actual name of the class. DO NOT put the instructor's name here.\n"
             "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n"
             "- 'weekly_schedule': A JSON dictionary mapping the week number (e.g., '1', '2') to the course topic exactly as written in the syllabus table.\n"
-            "- 'assessments_schedule': A JSON dictionary mapping the week number (e.g. '4', '9') to ANY assessments, quizzes, assignments, midterms, or exams. \n"
-            "   CRITICAL RULES FOR ASSESSMENTS:\n"
-            "   1. Look at ALL tables. Tables are sometimes split across page breaks so the data rows (like 'Quiz 1', '4', '12.5%') might appear on a new page without headers. Do not ignore them!\n"
-            "   2. If a week has multiple items (e.g. Week 4 has both an Assignment and a Quiz), YOU MUST COMBINE THEM into a single string separated by a comma (e.g., 'Assignment 1, Quiz 1'). DO NOT overwrite the dictionary key!\n\n"
+            "- 'assessments_schedule': A JSON dictionary mapping the week number (e.g. '4', '9') to ANY assessments, quizzes, assignments, midterms, or exams.\n"
+            "   CRITICAL EXTRACTION RULES\n"
+            "   1. You MUST extract data from BOTH the 'Assignments' table AND the 'Assessment Methods/Grading' table.\n"
+            "   2. Tables are often split across page breaks. Data rows (like quizzes and exams) might appear on a new page without headers. Scan carefully!\n"
+            "   3. If multiple items fall on the same week (e.g. Week 4 has 'Assignment 1' and 'Quiz 1'), you MUST combine them into a single comma-separated string: 'Assignment 1, Quiz 1'. NEVER overwrite a dictionary key!\n\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
@@ -322,7 +323,8 @@ class SyllabusConverterService:
 
         doc_bytes  = doc_path.read_bytes()
         doc_hash   = hashlib.sha256(doc_bytes).hexdigest()[:10]
-        header_hash = hashlib.sha256(("|".join(columns)).encode("utf-8")).hexdigest()[:10]
+        cache_buster = "v1_force_quizzes"
+        header_hash = hashlib.sha256(("|".join(columns) + cache_buster).encode("utf-8")).hexdigest()[:10]
 
         base = output_base_name.strip() if output_base_name and output_base_name.strip() else doc_path.stem
         base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._-") or "syllabus"
