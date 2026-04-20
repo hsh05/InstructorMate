@@ -74,12 +74,9 @@ class Workspace(Base):
     instructor = relationship(lambda: Instructor, back_populates="workspaces")
     sections = relationship(lambda: Section, back_populates="workspace", cascade="all, delete-orphan")
     materials = relationship(lambda: Material, back_populates="workspace", cascade="all, delete-orphan")
-
-    # ── MERGED LOGIC FROM DOMAIN ──────────────────────────────────────────────
     
     @property
     def fields(self) -> dict:
-        """Mimics the old fields dictionary for Flutter compatibility."""
         return {
             "course_code": self.course_code,
             "workspace_code": self.course_code,
@@ -103,7 +100,6 @@ class Workspace(Base):
         }
     
     def update_fields(self, updates: dict) -> None:
-        """Helper method to update database columns from a dictionary."""
         if "course_code" in updates: 
             self.course_code = updates["course_code"]
         elif "workspace_code" in updates: 
