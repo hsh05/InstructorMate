@@ -479,6 +479,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                   ),
                                   AssessmentsTab(
                                     ws: ws,
+                                    vm: widget.vm,
                                     onGenerateRequested: _initiateGenerationFromAssessment,
                                   ),
                                   AskTab(
@@ -1691,30 +1692,41 @@ class _AssessmentItem {
 }
 
 // =============================================================================
-// ── TAB 5 — Assessments (With Bidirectional & Regex Parsing) ─────────────────
+// ── TAB 5 — Assessments (With CRUD Functionality) ────────────────────────────
 // =============================================================================
 
-class AssessmentsTab extends StatelessWidget {
-  const AssessmentsTab({super.key, required this.ws, required this.onGenerateRequested});
+class AssessmentsTab extends StatefulWidget {
+  const AssessmentsTab({
+    super.key, 
+    required this.ws, 
+    required this.vm, // 👉 Now accepts the ViewModel
+    required this.onGenerateRequested
+  });
+  
   final Workspace ws;
+  final WorkspacesViewModel vm;
   final void Function(List<int> materialIds, String assessmentName) onGenerateRequested;
 
+  @override
+  State<AssessmentsTab> createState() => _AssessmentsTabState();
+}
+
+class _AssessmentsTabState extends State<AssessmentsTab> {
+
+  // ─── 1. The Parser (JSON -> List) ───
   List<_AssessmentItem> _getAssessments() {
     final List<_AssessmentItem> list = [];
     final Set<String> foundKeys = {};
 
-    // Helper to safely add items and prevent duplicates
     void addSafely(String name, String weekRaw) {
       String cleanName = name.trim();
       String cleanWeek = weekRaw.trim();
 
-      // Standardize the week text to "Week X"
       final weekMatch = RegExp(r'\d+').firstMatch(cleanWeek);
       String finalWeek = weekMatch != null ? 'Week ${weekMatch.group(0)}' : 'Scheduled';
 
       if (cleanName.isEmpty || cleanName.toLowerCase() == 'none' || cleanName.toLowerCase() == 'n/a') return;
 
-      // Unique ID prevents adding "Quiz 1" to "Week 4" twice!
       final uniqueId = '${cleanName.toLowerCase()}_$finalWeek';
       if (foundKeys.contains(uniqueId)) return;
       foundKeys.add(uniqueId);
@@ -1722,8 +1734,7 @@ class AssessmentsTab extends StatelessWidget {
       list.add(_AssessmentItem(cleanName, finalWeek));
     }
 
-    // 1. Process Official Assessments (Handles BOTH flipped AI formats safely)
-    final assessStr = ws.fields['assessments_schedule'] ?? '';
+    final assessStr = widget.ws.fields['assessments_schedule'] ?? '';
     if (assessStr.isNotEmpty) {
       try {
         final decoded = jsonDecode(assessStr);
@@ -1738,14 +1749,11 @@ class AssessmentsTab extends StatelessWidget {
             final valHasWeek = valStr.toLowerCase().startsWith('week');
 
             if (keyIsNum || keyHasWeek) {
-              // Format A: {"9": "Midterm Exam"}
               final parts = valStr.split(',');
               for (var p in parts) addSafely(p, keyStr);
             } else if (valIsNum || valHasWeek) {
-              // Format B: {"Midterm Exam": "9"} -> This is what broke your old code!
               addSafely(keyStr, valStr);
             } else {
-              // Fallback
               addSafely(valStr, keyStr);
             }
           });
@@ -1753,43 +1761,6 @@ class AssessmentsTab extends StatelessWidget {
       } catch (_) {}
     }
 
-    // 2. 🕵️‍♂️ Aggressively Scan Weekly Schedule as a Safety Net
-    final weeklyStr = ws.fields['weekly_schedule'] ?? '';
-    if (weeklyStr.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(weeklyStr);
-        if (decoded is Map) {
-          decoded.forEach((k, v) {
-            final valStr = v.toString();
-            
-            // This Regex hunts for ANY assessment hiding in the text
-            final matches = RegExp(r'\b(Quiz\s*\d+|Quiz|Test\s*\d+|Test|Midterm\s*Exam|Midterm|Final\s*Exam|Final|Assignment\s*\d+|Project)\b', caseSensitive: false).allMatches(valStr);
-
-            for (final m in matches) {
-              final raw = m.group(0)!;
-              // Cleanly capitalize (e.g. "midterm exam" -> "Midterm Exam")
-              final clean = raw.split(' ').map((w) => w.isNotEmpty ? w[0].toUpperCase() + w.substring(1).toLowerCase() : '').join(' ');
-
-              final weekMatch = RegExp(r'\d+').firstMatch(k.toString());
-              final weekStr = weekMatch != null ? 'Week ${weekMatch.group(0)}' : 'Scheduled';
-
-              // Smart check: If "Midterm Exam" is already in the list from Step 1, 
-              // we don't want to add "Midterm" again here.
-              bool hasSpecific = list.any((item) =>
-                  item.subtitle == weekStr &&
-                  item.name.toLowerCase().contains(clean.toLowerCase()) &&
-                  item.name.length >= clean.length);
-
-              if (!hasSpecific) {
-                addSafely(clean, k.toString());
-              }
-            }
-          });
-        }
-      } catch (_) {}
-    }
-
-    // 3. Sort chronologically by Week Number
     list.sort((a, b) {
       final aMatch = RegExp(r'\d+').firstMatch(a.subtitle);
       final bMatch = RegExp(r'\d+').firstMatch(b.subtitle);
@@ -1801,8 +1772,135 @@ class AssessmentsTab extends StatelessWidget {
     return list;
   }
 
+  // ─── 2. The Reverse Parser (List -> JSON -> Database) ───
+  Future<void> _saveAssessments(List<_AssessmentItem> currentList) async {
+    final Map<String, String> updatedSchedule = {};
+    
+    for (final item in currentList) {
+      // Extract just the number from "Week 4" or default to "0"
+      final match = RegExp(r'\d+').firstMatch(item.subtitle);
+      final weekKey = match != null ? match.group(0)! : '0';
+      
+      // Combine items on the same week using a comma
+      if (updatedSchedule.containsKey(weekKey)) {
+        updatedSchedule[weekKey] = '${updatedSchedule[weekKey]}, ${item.name}';
+      } else {
+        updatedSchedule[weekKey] = item.name;
+      }
+    }
+
+    final jsonStr = jsonEncode(updatedSchedule);
+    
+    // Send it directly to the database!
+    await widget.vm.updateFields({'assessments_schedule': jsonStr});
+  }
+
+  // ─── 3. The Edit / Add Dialog ───
+  void _showAssessmentDialog({_AssessmentItem? existingItem, int? index}) {
+    final bool isEditing = existingItem != null;
+    
+    // Extract the raw number for the week input field
+    String initialWeek = '';
+    if (isEditing) {
+      final match = RegExp(r'\d+').firstMatch(existingItem.subtitle);
+      if (match != null) initialWeek = match.group(0)!;
+    }
+
+    final nameCtrl = TextEditingController(text: existingItem?.name ?? '');
+    final weekCtrl = TextEditingController(text: initialWeek);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(isEditing ? Icons.edit_rounded : Icons.add_circle_outline_rounded, color: AppStyles.primary),
+            const SizedBox(width: 10),
+            Text(isEditing ? "Edit Assessment" : "Add Assessment", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: "Assessment Name",
+                hintText: "e.g. Quiz 4",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: weekCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: "Week Number",
+                hintText: "e.g. 10",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx), 
+            child: const Text("Cancel", style: TextStyle(color: AppStyles.darkGray))
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppStyles.primary, foregroundColor: Colors.white),
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              final week = weekCtrl.text.trim();
+              
+              if (name.isEmpty || week.isEmpty) return;
+
+              final currentList = _getAssessments();
+              final newItem = _AssessmentItem(name, 'Week $week');
+
+              if (isEditing && index != null) {
+                currentList[index] = newItem;
+              } else {
+                currentList.add(newItem);
+              }
+
+              Navigator.pop(ctx);
+              await _saveAssessments(currentList);
+            },
+            child: const Text("Save"),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(int index, _AssessmentItem item) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Assessment?"),
+        content: Text("Are you sure you want to remove '${item.name}' from the schedule?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppStyles.error, foregroundColor: Colors.white),
+            onPressed: () async {
+              final currentList = _getAssessments();
+              currentList.removeAt(index);
+              Navigator.pop(ctx);
+              await _saveAssessments(currentList);
+            },
+            child: const Text("Delete"),
+          )
+        ],
+      )
+    );
+  }
+
   void _openLinkingSheet(BuildContext context, String assessmentName) async {
-    if (ws.materials.isEmpty) {
+    if (widget.ws.materials.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please upload materials to the workspace first!')),
       );
@@ -1815,12 +1913,12 @@ class AssessmentsTab extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) => _AssessmentLinkSheet(
         assessmentName: assessmentName,
-        materials: ws.materials,
+        materials: widget.ws.materials,
       ),
     );
 
     if (confirmedIds != null && confirmedIds.isNotEmpty) {
-      onGenerateRequested(confirmedIds, assessmentName);
+      widget.onGenerateRequested(confirmedIds, assessmentName);
     }
   }
 
@@ -1828,67 +1926,104 @@ class AssessmentsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final assessments = _getAssessments();
 
-    if (assessments.isEmpty) {
-      return const Center(
-        child: Text(
-          'No assessments found in syllabus.',
-          style: TextStyle(color: AppStyles.darkGray, fontSize: 14),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      itemCount: assessments.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final item = assessments[index]; 
-
-        return InkWell(
-          onTap: () => _openLinkingSheet(context, item.name),
-          borderRadius: AppStyles.borderRadiusM,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: AppStyles.borderRadiusM,
-              boxShadow: AppStyles.shadowMedium,
-              border: Border.all(color: AppStyles.borderLight),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppStyles.primary.withOpacity(0.1),
-                    borderRadius: AppStyles.borderRadiusM,
-                  ),
-                  child: const Icon(Icons.assignment_rounded, color: AppStyles.primary, size: 20),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.name,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppStyles.textPrimary),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.subtitle, 
-                        style: const TextStyle(fontSize: 12, color: AppStyles.darkGray, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.auto_awesome_rounded, color: AppStyles.primary, size: 18),
-              ],
+    return Column(
+      children: [
+        // 👉 NEW: Add Assessment Button
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: const BorderSide(color: AppStyles.primary, width: 1.5),
+                shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
+              ),
+              icon: const Icon(Icons.add_rounded, color: AppStyles.primary),
+              label: const Text('Add Assessment manually', style: TextStyle(color: AppStyles.primary, fontWeight: FontWeight.w700)),
+              onPressed: () => _showAssessmentDialog(),
             ),
           ),
-        );
-      },
+        ),
+        
+        Expanded(
+          child: assessments.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No assessments found in syllabus.',
+                    style: TextStyle(color: AppStyles.darkGray, fontSize: 14),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  itemCount: assessments.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final item = assessments[index]; 
+
+                    return InkWell(
+                      onTap: () => _openLinkingSheet(context, item.name),
+                      borderRadius: AppStyles.borderRadiusM,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: AppStyles.borderRadiusM,
+                          boxShadow: AppStyles.shadowMedium,
+                          border: Border.all(color: AppStyles.borderLight),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: AppStyles.primary.withOpacity(0.1),
+                                borderRadius: AppStyles.borderRadiusM,
+                              ),
+                              child: const Icon(Icons.assignment_rounded, color: AppStyles.primary, size: 20),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.name,
+                                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppStyles.textPrimary),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.subtitle, 
+                                    style: const TextStyle(fontSize: 12, color: AppStyles.darkGray, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // 👉 NEW: Edit & Delete Action Buttons
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, color: AppStyles.darkGray, size: 20),
+                                  tooltip: 'Edit Assessment',
+                                  onPressed: () => _showAssessmentDialog(existingItem: item, index: index),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline_rounded, color: AppStyles.warning, size: 20),
+                                  tooltip: 'Delete Assessment',
+                                  onPressed: () => _confirmDelete(index, item),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }
