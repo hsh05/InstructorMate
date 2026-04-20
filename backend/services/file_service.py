@@ -188,24 +188,16 @@ class SyllabusFieldExtractor:
             return {col: "" for col in columns}
 
         cols_json = json.dumps(columns, ensure_ascii=True)
-        # 👉 THE FIX: Hyper-specific rules to stop key overwriting and handle page breaks
         prompt = (
             "You extract structured fields from university syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
             "Output must be a single JSON object mapping column names to values.\n"
-            "Rules:\n"
-            "- Use ONLY the provided syllabus text.\n"
-            "- If a value is not found, use an empty string.\n"
-            "- Keys MUST match the given columns EXACTLY.\n"
             "Definitions:\n"
-            "- 'course_title': The actual name of the class. DO NOT put the instructor's name here.\n"
-            "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n"
-            "- 'weekly_schedule': A JSON dictionary mapping the week number (e.g., '1', '2') to the course topic exactly as written in the syllabus table.\n"
-            "- 'assessments_schedule': A JSON dictionary mapping the week number (e.g. '4', '9') to ANY assessments, quizzes, assignments, midterms, or exams.\n"
-            "   CRITICAL EXTRACTION RULES\n"
-            "   1. You MUST extract data from BOTH the 'Assignments' table AND the 'Assessment Methods/Grading' table.\n"
-            "   2. Tables are often split across page breaks. Data rows (like quizzes and exams) might appear on a new page without headers. Scan carefully!\n"
-            "   3. If multiple items fall on the same week (e.g. Week 4 has 'Assignment 1' and 'Quiz 1'), you MUST combine them into a single comma-separated string: 'Assignment 1, Quiz 1'. NEVER overwrite a dictionary key!\n\n"
+            "- 'course_title': The actual name of the class.\n"
+            "- 'course_code': The short alphanumeric code (e.g. 'PHYS-101').\n"
+            "- 'weekly_schedule': A JSON dictionary mapping week number to topics.\n"
+            "- 'assessments_schedule': Output a JSON ARRAY of objects representing EVERY single assessment, quiz, exam, midterm, and assignment. "
+            "Scan ALL tables across ALL pages. Example format: [{\"week\": 4, \"assessment\": \"Quiz 1\"}, {\"week\": 4, \"assessment\": \"Assignment 1\"}]. Do not group them yourself; list each item separately!\n\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
@@ -219,11 +211,24 @@ class SyllabusFieldExtractor:
         normalized: Dict[str, str] = {}
         for name in columns:
             value = data.get(name, "")
-            # 👉 THE FIX: Safely stringify dictionaries/lists before saving to the DB
-            if isinstance(value, (dict, list)):
+            
+            if name == "assessments_schedule" and isinstance(value, list):
+                combined = {}
+                for item in value:
+                    if isinstance(item, dict):
+                        w = str(item.get("week", "")).strip()
+                        a = str(item.get("assessment", "")).strip()
+                        if w and a:
+                            if w in combined and a not in combined[w]:
+                                combined[w] = f"{combined[w]}, {a}"
+                            else:
+                                combined[w] = a
+                normalized[name] = json.dumps(combined)
+            elif isinstance(value, (dict, list)):
                 normalized[name] = json.dumps(value)
             else:
                 normalized[name] = str(value) if value is not None else ""
+                
         return normalized
 
     def _call_with_retries(self, prompt: str) -> str:
@@ -323,7 +328,7 @@ class SyllabusConverterService:
 
         doc_bytes  = doc_path.read_bytes()
         doc_hash   = hashlib.sha256(doc_bytes).hexdigest()[:10]
-        cache_buster = "v1_force_quizzes"
+        cache_buster = str(time.time())
         header_hash = hashlib.sha256(("|".join(columns) + cache_buster).encode("utf-8")).hexdigest()[:10]
 
         base = output_base_name.strip() if output_base_name and output_base_name.strip() else doc_path.stem
