@@ -187,27 +187,29 @@ class SyllabusFieldExtractor:
         if len(syllabus_text.strip()) < 250:
             return {col: "" for col in columns}
 
+        cols_json = json.dumps(columns, ensure_ascii=True)
+        
         prompt = (
             "You are an expert data extractor. Extract structured fields from the syllabus text below.\n"
-            "You MUST return ONLY a valid JSON object matching the exact structure below. Do not add markdown formatting (like ```json).\n\n"
+            "Return ONLY a valid JSON object matching the exact structure below. Do not add markdown formatting.\n\n"
             "EXPECTED JSON STRUCTURE:\n"
             "{\n"
             "  \"course_title\": \"Name of the course\",\n"
             "  \"course_code\": \"Course code (e.g., PHYS-101)\",\n"
             "  \"weekly_schedule\": {\n"
-            "    \"1\": \"Topic for week 1\",\n"
-            "    \"2\": \"Topic for week 2\"\n"
+            "    \"1\": \"Topic for week 1\"\n"
             "  },\n"
             "  \"assessments_schedule\": [\n"
             "    {\"week\": \"4\", \"assessment\": \"Assignment 1\"},\n"
             "    {\"week\": \"4\", \"assessment\": \"Quiz 1\"},\n"
-            "    {\"week\": \"9\", \"assessment\": \"Midterm Exam\"}\n"
+            "    {\"week\": \"16\", \"assessment\": \"Final Exam\"}\n"
             "  ]\n"
             "}\n\n"
             "CRITICAL INSTRUCTIONS:\n"
-            "1. 'assessments_schedule' MUST be a JSON Array of objects, NOT a dictionary.\n"
-            "2. You MUST extract EVERY assignment, quiz, midterm, project, and exam from ALL tables. Check both 'OUT-OF-CLASS ASSIGNMENTS' and 'ASSESSMENT METHODS' tables. Do NOT skip any!\n"
-            "3. If a week has multiple items, you must create a separate object in the array for each item.\n\n"
+            "1. 'assessments_schedule' MUST be a JSON Array of objects.\n"
+            "2. PAGE BREAK WARNING: Tables in PDFs are often split across pages. An 'Assessments' or 'Grading' header might be at the bottom of one page, with the actual Quizzes and Exams listed at the top of the NEXT page. You MUST scan the tops of pages for orphaned rows (e.g., 'Quiz 1 | 4 | 10%') and include them!\n"
+            "3. You must extract EVERY Assignment, EVERY Quiz, the Midterm, and the Final Exam from ALL tables in the document.\n\n"
+            f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
 
@@ -221,7 +223,6 @@ class SyllabusFieldExtractor:
         for name in columns:
             value = data.get(name, "")
             
-            # Python intercepts the array and safely combines items occurring on the same week
             if name == "assessments_schedule" and isinstance(value, list):
                 combined = {}
                 for item in value:
