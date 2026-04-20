@@ -23,7 +23,6 @@ from db import models
 import schemas
 from db.database import engine, get_db
 
-# 👉 THE FIX: All routers now correctly import from the unified 'api' folder!
 from api.workspace_routes import router as workspace_router
 from api.section_routes import router as section_router
 from api.student_routes import router as student_router
@@ -87,7 +86,6 @@ app.add_middleware(
 async def startup():
     print("✅ API started. (Database table creation is disabled).")
 
-# 👉 THE FIX: Including the correctly imported routers
 app.include_router(workspace_router)
 app.include_router(section_router)
 app.include_router(student_router)
