@@ -71,7 +71,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 6, vsync: this);
+    _tabs = TabController(length: 7, vsync: this);
 
     _tabs.addListener(() {
       if (_tabs.index != _currentTabIndex) {
@@ -183,6 +183,22 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   List<String> _missingFields(Workspace ws) =>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
+
+  void _initiateGenerationFromAssessment(List<int> materialIds, String assessmentName) {
+    // 1. Set the materials
+    widget.vm.clearMaterialSelection();
+    for (final id in materialIds) {
+      widget.vm.toggleMaterialSelection(id);
+    }
+
+    // 2. Pre-fill the AI instructions to focus on this assessment!
+    for (var config in _configs.values) {
+      config.topicController.text = "Focus entirely on generating questions for: $assessmentName";
+    }
+
+    // 3. Pop the config dialog
+    _showSettings();
+  }
 
   void _generateQuiz() async {
     final selectedIds = widget.vm.selectedMaterialIdsForQuiz.toList();
@@ -397,6 +413,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                           Tab(icon: Icon(Icons.groups_2_rounded, size: 16), text: 'Sections'),
                           Tab(icon: Icon(Icons.people_alt_rounded, size: 16), text: 'Students'),
                           Tab(icon: Icon(Icons.folder_zip_rounded, size: 16), text: 'Materials'),
+                          Tab(icon: Icon(Icons.assignment_rounded, size: 16), text: 'Assessments'),
                           Tab(icon: Icon(Icons.auto_awesome_rounded, size: 16), text: 'Ask AI'),
                           Tab(icon: Icon(Icons.fact_check_outlined, size: 16), text: 'Attendance'),
                         ],
@@ -459,6 +476,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                   MaterialsTab(
                                     ws: ws,
                                     vm: widget.vm,
+                                  ),
+                                  AssessmentsTab(
+                                    ws: ws,
+                                    onGenerateRequested: _initiateGenerationFromAssessment,
                                   ),
                                   AskTab(
                                     chat: _chat,
@@ -1658,6 +1679,355 @@ class _WeeklyOverviewCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Helper Class for Smart Parsing ───────────────────────────────────────────
+class _AssessmentItem {
+  final String name;
+  final String subtitle;
+  _AssessmentItem(this.name, this.subtitle);
+}
+
+// =============================================================================
+// ── TAB 5 — Assessments (With Bidirectional & Regex Parsing) ─────────────────
+// =============================================================================
+
+class AssessmentsTab extends StatelessWidget {
+  const AssessmentsTab({super.key, required this.ws, required this.onGenerateRequested});
+  final Workspace ws;
+  final void Function(List<int> materialIds, String assessmentName) onGenerateRequested;
+
+  List<_AssessmentItem> _getAssessments() {
+    final List<_AssessmentItem> list = [];
+    final Set<String> foundKeys = {};
+
+    // Helper to safely add items and prevent duplicates
+    void addSafely(String name, String weekRaw) {
+      String cleanName = name.trim();
+      String cleanWeek = weekRaw.trim();
+
+      // Standardize the week text to "Week X"
+      final weekMatch = RegExp(r'\d+').firstMatch(cleanWeek);
+      String finalWeek = weekMatch != null ? 'Week ${weekMatch.group(0)}' : 'Scheduled';
+
+      if (cleanName.isEmpty || cleanName.toLowerCase() == 'none' || cleanName.toLowerCase() == 'n/a') return;
+
+      // Unique ID prevents adding "Quiz 1" to "Week 4" twice!
+      final uniqueId = '${cleanName.toLowerCase()}_$finalWeek';
+      if (foundKeys.contains(uniqueId)) return;
+      foundKeys.add(uniqueId);
+
+      list.add(_AssessmentItem(cleanName, finalWeek));
+    }
+
+    // 1. Process Official Assessments (Handles BOTH flipped AI formats safely)
+    final assessStr = ws.fields['assessments_schedule'] ?? '';
+    if (assessStr.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(assessStr);
+        if (decoded is Map) {
+          decoded.forEach((k, v) {
+            final keyStr = k.toString().trim();
+            final valStr = v.toString().trim();
+
+            final keyIsNum = int.tryParse(keyStr) != null;
+            final keyHasWeek = keyStr.toLowerCase().startsWith('week');
+            final valIsNum = int.tryParse(valStr) != null;
+            final valHasWeek = valStr.toLowerCase().startsWith('week');
+
+            if (keyIsNum || keyHasWeek) {
+              // Format A: {"9": "Midterm Exam"}
+              final parts = valStr.split(',');
+              for (var p in parts) addSafely(p, keyStr);
+            } else if (valIsNum || valHasWeek) {
+              // Format B: {"Midterm Exam": "9"} -> This is what broke your old code!
+              addSafely(keyStr, valStr);
+            } else {
+              // Fallback
+              addSafely(valStr, keyStr);
+            }
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 2. 🕵️‍♂️ Aggressively Scan Weekly Schedule as a Safety Net
+    final weeklyStr = ws.fields['weekly_schedule'] ?? '';
+    if (weeklyStr.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(weeklyStr);
+        if (decoded is Map) {
+          decoded.forEach((k, v) {
+            final valStr = v.toString();
+            
+            // This Regex hunts for ANY assessment hiding in the text
+            final matches = RegExp(r'\b(Quiz\s*\d+|Quiz|Test\s*\d+|Test|Midterm\s*Exam|Midterm|Final\s*Exam|Final|Assignment\s*\d+|Project)\b', caseSensitive: false).allMatches(valStr);
+
+            for (final m in matches) {
+              final raw = m.group(0)!;
+              // Cleanly capitalize (e.g. "midterm exam" -> "Midterm Exam")
+              final clean = raw.split(' ').map((w) => w.isNotEmpty ? w[0].toUpperCase() + w.substring(1).toLowerCase() : '').join(' ');
+
+              final weekMatch = RegExp(r'\d+').firstMatch(k.toString());
+              final weekStr = weekMatch != null ? 'Week ${weekMatch.group(0)}' : 'Scheduled';
+
+              // Smart check: If "Midterm Exam" is already in the list from Step 1, 
+              // we don't want to add "Midterm" again here.
+              bool hasSpecific = list.any((item) =>
+                  item.subtitle == weekStr &&
+                  item.name.toLowerCase().contains(clean.toLowerCase()) &&
+                  item.name.length >= clean.length);
+
+              if (!hasSpecific) {
+                addSafely(clean, k.toString());
+              }
+            }
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 3. Sort chronologically by Week Number
+    list.sort((a, b) {
+      final aMatch = RegExp(r'\d+').firstMatch(a.subtitle);
+      final bMatch = RegExp(r'\d+').firstMatch(b.subtitle);
+      final aNum = aMatch != null ? int.parse(aMatch.group(0)!) : 99;
+      final bNum = bMatch != null ? int.parse(bMatch.group(0)!) : 99;
+      return aNum.compareTo(bNum);
+    });
+
+    return list;
+  }
+
+  void _openLinkingSheet(BuildContext context, String assessmentName) async {
+    if (ws.materials.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload materials to the workspace first!')),
+      );
+      return;
+    }
+
+    final confirmedIds = await showModalBottomSheet<List<int>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AssessmentLinkSheet(
+        assessmentName: assessmentName,
+        materials: ws.materials,
+      ),
+    );
+
+    if (confirmedIds != null && confirmedIds.isNotEmpty) {
+      onGenerateRequested(confirmedIds, assessmentName);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final assessments = _getAssessments();
+
+    if (assessments.isEmpty) {
+      return const Center(
+        child: Text(
+          'No assessments found in syllabus.',
+          style: TextStyle(color: AppStyles.darkGray, fontSize: 14),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      itemCount: assessments.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final item = assessments[index]; 
+
+        return InkWell(
+          onTap: () => _openLinkingSheet(context, item.name),
+          borderRadius: AppStyles.borderRadiusM,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: AppStyles.borderRadiusM,
+              boxShadow: AppStyles.shadowMedium,
+              border: Border.all(color: AppStyles.borderLight),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppStyles.primary.withOpacity(0.1),
+                    borderRadius: AppStyles.borderRadiusM,
+                  ),
+                  child: const Icon(Icons.assignment_rounded, color: AppStyles.primary, size: 20),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppStyles.textPrimary),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.subtitle, 
+                        style: const TextStyle(fontSize: 12, color: AppStyles.darkGray, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.auto_awesome_rounded, color: AppStyles.primary, size: 18),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Smart Bottom Sheet ───────────────────────────────────────────────────────
+class _AssessmentLinkSheet extends StatefulWidget {
+  const _AssessmentLinkSheet({required this.assessmentName, required this.materials});
+  final String assessmentName;
+  final List<WorkspaceMaterial> materials;
+
+  @override
+  State<_AssessmentLinkSheet> createState() => _AssessmentLinkSheetState();
+}
+
+class _AssessmentLinkSheetState extends State<_AssessmentLinkSheet> {
+  final Set<int> _selectedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _runAutoMatcher();
+  }
+
+  // 👉 Option B: AI/Regex Auto-Matcher
+  void _runAutoMatcher() {
+    final a = widget.assessmentName.toLowerCase();
+    
+    for (final m in widget.materials) {
+      final f = m.fileName.toLowerCase();
+      
+      // 1. Direct overlap (e.g. "Midterm" matches "midterm_review.pdf")
+      if (f.contains(a)) {
+        _selectedIds.add(m.id);
+        continue;
+      }
+      
+      // 2. Semantic & Abbreviation matching
+      if (a.contains('quiz')) {
+        // Matches "quiz" OR "q1", "q2", "q12", etc.
+        if (f.contains('quiz') || RegExp(r'\bq\d+\b').hasMatch(f)) { 
+          _selectedIds.add(m.id); continue; 
+        }
+      }
+      if (a.contains('test') && (f.contains('test') || RegExp(r'\bt\d+\b').hasMatch(f))) { 
+        _selectedIds.add(m.id); continue; 
+      }
+      if (a.contains('midterm') && f.contains('midterm')) { _selectedIds.add(m.id); continue; }
+      if (a.contains('exam') && f.contains('exam')) { _selectedIds.add(m.id); continue; }
+      if (a.contains('assignment') && f.contains('assignment')) { _selectedIds.add(m.id); continue; }
+      if (a.contains('project') && f.contains('project')) { _selectedIds.add(m.id); continue; }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppStyles.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.only(top: 12),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppStyles.borderLight, borderRadius: BorderRadius.circular(2))),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('AI Quiz Generator', style: TextStyle(color: AppStyles.primary, fontWeight: FontWeight.w700, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text('Link Materials to ${widget.assessmentName}', style: const TextStyle(color: AppStyles.textPrimary, fontWeight: FontWeight.w800, fontSize: 20)),
+                  const SizedBox(height: 6),
+                  const Text('We auto-selected materials based on the filename. Review and confirm below:', style: TextStyle(color: AppStyles.darkGray, fontSize: 13, height: 1.4)),
+                ],
+              ),
+            ),
+            const Divider(color: AppStyles.borderLight),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                itemCount: widget.materials.length,
+                itemBuilder: (context, index) {
+                  final mat = widget.materials[index];
+                  final isSelected = _selectedIds.contains(mat.id);
+                  
+                  return CheckboxListTile(
+                    activeColor: AppStyles.primary,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    title: Row(
+                      children: [
+                        Icon(Icons.insert_drive_file_rounded, color: isSelected ? AppStyles.primary : AppStyles.darkGray, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(mat.fileName, style: TextStyle(
+                            color: isSelected ? AppStyles.textPrimary : AppStyles.darkGray, 
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, 
+                            fontSize: 14,
+                          )),
+                        ),
+                      ],
+                    ),
+                    value: isSelected,
+                    onChanged: (val) {
+                      setState(() {
+                        val == true ? _selectedIds.add(mat.id) : _selectedIds.remove(mat.id);
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppStyles.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
+                    elevation: 0,
+                  ),
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  label: Text('Confirm ${_selectedIds.length} Files & Generate', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                  onPressed: _selectedIds.isEmpty ? null : () => Navigator.pop(context, _selectedIds.toList()),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

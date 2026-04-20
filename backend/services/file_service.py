@@ -188,7 +188,6 @@ class SyllabusFieldExtractor:
             return {col: "" for col in columns}
 
         cols_json = json.dumps(columns, ensure_ascii=True)
-        # 👉 THE FIX: Updated prompt to teach the AI how to extract the weekly and assessment schedules
         prompt = (
             "You extract structured fields from university syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
@@ -201,7 +200,7 @@ class SyllabusFieldExtractor:
             "- 'course_title': The actual name of the class. DO NOT put the instructor's name here.\n"
             "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n"
             "- 'weekly_schedule': A JSON dictionary mapping the week number (e.g., '1', '2') to the course topic exactly as written in the syllabus table.\n"
-            "- 'assessments_schedule': A JSON dictionary mapping the week number to any assessments/exams due that week. If none, omit the week.\n\n"
+            "- 'assessments_schedule': A JSON dictionary mapping the week number (e.g. '4', '9') to ANY assessments, quizzes, assignments, midterms, or exams due that week. You MUST extract this by cross-referencing BOTH the weekly timeline AND the 'Assessment Methods & Student Evaluation' (or Grading) tables. Merge all quizzes and exams you find into this dictionary!\n\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
