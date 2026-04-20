@@ -272,7 +272,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
             filled: true,
             fillColor: AppStyles.lightGray,
             border: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: const BorderSide(color: AppStyles.primaryPurple, width: 1.5)),
+            focusedBorder: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: const BorderSide(color: AppStyles.primary, width: 1.5)),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v)),
         ),
@@ -283,7 +283,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppStyles.primaryPurple,
+              backgroundColor: AppStyles.primary,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
@@ -322,7 +322,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
             filled: true,
             fillColor: AppStyles.lightGray,
             border: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: const BorderSide(color: AppStyles.primaryPurple, width: 1.5)),
+            focusedBorder: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: const BorderSide(color: AppStyles.primary, width: 1.5)),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v)),
         ),
@@ -333,7 +333,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppStyles.primaryPurple,
+              backgroundColor: AppStyles.primary,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
@@ -455,7 +455,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                   borderSide: const BorderSide(color: AppStyles.borderLight)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: AppStyles.borderRadiusM,
-                  borderSide: const BorderSide(color: AppStyles.primaryPurple, width: 1.5)),
+                  borderSide: const BorderSide(color: AppStyles.primary, width: 1.5)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
@@ -477,7 +477,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                   borderSide: const BorderSide(color: AppStyles.borderLight)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: AppStyles.borderRadiusM,
-                  borderSide: const BorderSide(color: AppStyles.primaryPurple, width: 1.5)),
+                  borderSide: const BorderSide(color: AppStyles.primary, width: 1.5)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
@@ -497,9 +497,9 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                   duration: const Duration(milliseconds: 110),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
-                    color: sel ? AppStyles.primaryPurple : AppStyles.lightGray,
+                    color: sel ? AppStyles.primary : AppStyles.lightGray,
                     borderRadius: AppStyles.borderRadiusM,
-                    border: Border.all(color: sel ? AppStyles.primaryPurple : AppStyles.borderLight),
+                    border: Border.all(color: sel ? AppStyles.primary : AppStyles.borderLight),
                   ),
                   child: Text(d,
                       style: TextStyle(
@@ -523,7 +523,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                   initialTime: _startTime,
                   builder: (context, child) => Theme(
                     data: ThemeData.light().copyWith(
-                      colorScheme: const ColorScheme.light(primary: AppStyles.primaryPurple),
+                      colorScheme: const ColorScheme.light(primary: AppStyles.primary),
                     ),
                     child: child!,
                   ),
@@ -540,7 +540,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.schedule_rounded, color: AppStyles.primaryPurple, size: 20),
+                    const Icon(Icons.schedule_rounded, color: AppStyles.primary, size: 20),
                     const SizedBox(width: 10),
                     Text(
                       _formatTimeOfDay(_startTime),
@@ -568,9 +568,9 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                       margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: sel ? AppStyles.primaryPurple : AppStyles.lightGray,
+                        color: sel ? AppStyles.primary : AppStyles.lightGray,
                         borderRadius: AppStyles.borderRadiusM,
-                        border: Border.all(color: sel ? AppStyles.primaryPurple : AppStyles.borderLight),
+                        border: Border.all(color: sel ? AppStyles.primary : AppStyles.borderLight),
                       ),
                       child: Text('$mins min',
                           style: TextStyle(
@@ -590,10 +590,10 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                         margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isCustom ? AppStyles.primaryPurple : AppStyles.lightGray,
+                          color: isCustom ? AppStyles.primary : AppStyles.lightGray,
                           borderRadius: AppStyles.borderRadiusM,
                           border: Border.all(
-                            color: isCustom ? AppStyles.primaryPurple : AppStyles.borderLight,
+                            color: isCustom ? AppStyles.primary : AppStyles.borderLight,
                             strokeAlign: BorderSide.strokeAlignInside,
                           ),
                         ),
@@ -632,9 +632,9 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                       margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: sel ? AppStyles.primaryPurple : AppStyles.lightGray,
+                        color: sel ? AppStyles.primary : AppStyles.lightGray,
                         borderRadius: AppStyles.borderRadiusM,
-                        border: Border.all(color: sel ? AppStyles.primaryPurple : AppStyles.borderLight),
+                        border: Border.all(color: sel ? AppStyles.primary : AppStyles.borderLight),
                       ),
                       child: Text('${mins}min',
                           style: TextStyle(
@@ -654,10 +654,10 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
                         margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isCustom ? AppStyles.primaryPurple : AppStyles.lightGray,
+                          color: isCustom ? AppStyles.primary : AppStyles.lightGray,
                           borderRadius: AppStyles.borderRadiusM,
                           border: Border.all(
-                            color: isCustom ? AppStyles.primaryPurple : AppStyles.borderLight,
+                            color: isCustom ? AppStyles.primary : AppStyles.borderLight,
                             strokeAlign: BorderSide.strokeAlignInside,
                           ),
                         ),
@@ -690,13 +690,13 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
               decoration: BoxDecoration(
                 color: AppStyles.mediumGray,
                 borderRadius: AppStyles.borderRadiusXL,
-                border: Border.all(color: AppStyles.primaryPurple.withOpacity(0.3)),
+                border: Border.all(color: AppStyles.primary.withOpacity(0.3)),
               ),
               child: Text(
                 '${_selDays.isEmpty ? "No days" : _selDays.join(", ")}  ·  '
                 '${_formatTimeOfDay(_startTime)} → ${_formatTimeOfDay(endT)}',
                 style: const TextStyle(
-                    color: AppStyles.primaryPurple,
+                    color: AppStyles.primary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12),
               ),
@@ -731,7 +731,7 @@ class _SectionSheetContentState extends State<SectionSheetContent> {
             height: 50,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppStyles.primaryPurple,
+                backgroundColor: AppStyles.primary,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
@@ -813,7 +813,7 @@ class SectionCard extends StatelessWidget {
                 height: 42,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [AppStyles.primaryPurple, Color(0xFF9B78E0)],
+                    colors: [AppStyles.primary, Color(0xFF9B78E0)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -841,7 +841,7 @@ class SectionCard extends StatelessWidget {
                     Row(children: [
                       const _Badge(
                           label: 'Section',
-                          color: AppStyles.primaryPurple,
+                          color: AppStyles.primary,
                           bgColor: AppStyles.mediumGray),
                       if (section.location.isNotEmpty) ...[
                         const SizedBox(width: 6),
@@ -870,7 +870,7 @@ class SectionCard extends StatelessWidget {
                     value: 'edit',
                     child: Row(children: const [
                       Icon(Icons.edit_rounded,
-                          color: AppStyles.primaryPurple, size: 17),
+                          color: AppStyles.primary, size: 17),
                       SizedBox(width: 10),
                       Text('Edit Section',
                           style: TextStyle(
@@ -919,10 +919,10 @@ class SectionCard extends StatelessWidget {
                       width: 32,
                       height: 28,
                       decoration: BoxDecoration(
-                        color: active ? AppStyles.primaryPurple : AppStyles.white,
+                        color: active ? AppStyles.primary : AppStyles.white,
                         borderRadius: BorderRadius.circular(7),
                         border: Border.all(
-                          color: active ? AppStyles.primaryPurple : AppStyles.borderLight,
+                          color: active ? AppStyles.primary : AppStyles.borderLight,
                           width: active ? 0 : 1,
                         ),
                       ),
@@ -948,14 +948,14 @@ class SectionCard extends StatelessWidget {
                     Icon(Icons.schedule_rounded,
                         size: 11,
                         color:
-                            hasTime ? AppStyles.primaryPurple : AppStyles.darkGray),
+                            hasTime ? AppStyles.primary : AppStyles.darkGray),
                     const SizedBox(width: 4),
                     Text('TIME',
                         style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
                             color: hasTime
-                                ? AppStyles.primaryPurple
+                                ? AppStyles.primary
                                 : AppStyles.darkGray,
                             letterSpacing: 0.9)),
                   ]),
@@ -1219,7 +1219,7 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
         boxShadow: AppStyles.shadowLight,
         border: Border.all(
           color:
-              _expanded ? AppStyles.primaryPurple.withOpacity(0.4) : AppStyles.borderLight,
+              _expanded ? AppStyles.primary.withOpacity(0.4) : AppStyles.borderLight,
           width: _expanded ? 1.5 : 1,
         ),
       ),
@@ -1248,14 +1248,14 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                         border: Border.all(
                           color: (hasStudents
                                   ? AppStyles.accent
-                                  : AppStyles.primaryPurple)
+                                  : AppStyles.primary)
                               .withOpacity(0.18),
                         ),
                       ),
                       child: Icon(Icons.groups_2_rounded,
                           color: hasStudents
                               ? AppStyles.accent
-                              : AppStyles.primaryPurple,
+                              : AppStyles.primary,
                           size: 20),
                     ),
                     const SizedBox(width: 12),
@@ -1365,7 +1365,7 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                         ),
                         child: Icon(Icons.keyboard_arrow_down_rounded,
                             color: _expanded
-                                ? AppStyles.primaryPurple
+                                ? AppStyles.primary
                                 : AppStyles.darkGray,
                             size: 18),
                       ),
@@ -1403,7 +1403,7 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                                   border: Border.all(
                                     color: _importing
                                         ? AppStyles.borderLight
-                                        : AppStyles.primaryPurple.withOpacity(0.3),
+                                        : AppStyles.primary.withOpacity(0.3),
                                   ),
                                 ),
                                 child: Row(
@@ -1415,10 +1415,10 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                                             height: 13,
                                             child: CircularProgressIndicator(
                                                 strokeWidth: 2,
-                                                color: AppStyles.primaryPurple),
+                                                color: AppStyles.primary),
                                           )
                                         : const Icon(Icons.upload_file_rounded,
-                                            size: 14, color: AppStyles.primaryPurple),
+                                            size: 14, color: AppStyles.primary),
                                     const SizedBox(width: 5),
                                     Flexible(
                                       child: Text(
@@ -1429,7 +1429,7 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                                           fontWeight: FontWeight.w600,
                                           color: _importing
                                               ? AppStyles.darkGray
-                                              : AppStyles.primaryPurple,
+                                              : AppStyles.primary,
                                         ),
                                       ),
                                     ),
@@ -1445,7 +1445,7 @@ class _SectionRosterCardState extends State<SectionRosterCard> {
                           padding: EdgeInsets.symmetric(vertical: 24),
                           child: Center(
                               child: CircularProgressIndicator(
-                                  color: AppStyles.primaryPurple, strokeWidth: 2)),
+                                  color: AppStyles.primary, strokeWidth: 2)),
                         )
                       else if (_students.isEmpty)
                         Padding(
@@ -1772,7 +1772,7 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-        Icon(icon, color: AppStyles.primaryPurple, size: 17),
+        Icon(icon, color: AppStyles.primary, size: 17),
         const SizedBox(width: 7),
         Text(title,
             style: const TextStyle(
@@ -1791,7 +1791,7 @@ class _PillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: AppStyles.primaryPurple,
+        color: AppStyles.primary,
         borderRadius: AppStyles.borderRadiusXL,
         child: InkWell(
           onTap: onTap,
@@ -1825,7 +1825,7 @@ class _EmptyState extends StatelessWidget {
               height: 72,
               decoration: BoxDecoration(
                   color: AppStyles.mediumGray, borderRadius: AppStyles.borderRadiusXL),
-              child: Icon(icon, color: AppStyles.primaryPurple, size: 34),
+              child: Icon(icon, color: AppStyles.primary, size: 34),
             ),
             const SizedBox(height: 16),
             Text(title,

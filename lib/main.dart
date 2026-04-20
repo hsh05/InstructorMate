@@ -57,10 +57,10 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       
       // 👉 Inject AppStyles globally here!
       theme: ThemeData(
-        primaryColor: AppStyles.primaryPurple,
+        primaryColor: AppStyles.primary,
         scaffoldBackgroundColor: AppStyles.lightGray,
         colorScheme: const ColorScheme.light(
-          primary: AppStyles.primaryPurple,
+          primary: AppStyles.primary,
           secondary: AppStyles.accent,
           error: AppStyles.error,
           surface: AppStyles.white,

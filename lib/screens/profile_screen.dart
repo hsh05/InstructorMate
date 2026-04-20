@@ -128,7 +128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('My Profile'),
         titleTextStyle: AppStyles.headingSmall,
         backgroundColor: AppStyles.white,
-        foregroundColor: AppStyles.primaryPurple,
+        foregroundColor: AppStyles.primary,
         elevation: 0,
         actions: [
           if (!_isLoading && _error == null)
@@ -137,7 +137,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: AppStyles.primaryPurple))
+              child: CircularProgressIndicator(color: AppStyles.primary))
           : _error != null
               ? _buildError()
               : _buildBody(),
@@ -146,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildEditButton() => IconButton(
         icon: const Icon(Icons.edit_outlined),
-        color: AppStyles.primaryPurple,
+        color: AppStyles.primary,
         onPressed: () => setState(() => _isEditing = true),
       );
 
@@ -164,12 +164,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   height: AppStyles.loadingIndicatorSize,
                   child: CircularProgressIndicator(
                     strokeWidth: AppStyles.loadingIndicatorStrokeWidth,
-                    color: AppStyles.primaryPurple,
+                    color: AppStyles.primary,
                   ),
                 )
               : Text('Save',
                   style: AppStyles.bodyMedium.copyWith(
-                      color: AppStyles.primaryPurple,
+                      color: AppStyles.primary,
                       fontWeight: FontWeight.bold)),
         ),
       ]);

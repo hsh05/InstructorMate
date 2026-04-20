@@ -37,7 +37,7 @@ class ProfileSection extends StatelessWidget {
         Text(
           title.toUpperCase(),
           style: AppStyles.bodySmall.copyWith(
-            color: AppStyles.primaryPurple,
+            color: AppStyles.primary,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
           ),
@@ -81,10 +81,10 @@ class _ProfileField extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(AppStyles.paddingS),
           decoration: BoxDecoration(
-            color: AppStyles.primaryPurple.withOpacity(0.08),
+            color: AppStyles.primary.withOpacity(0.08),
             borderRadius: AppStyles.borderRadiusM,
           ),
-          child: Icon(data.icon, size: AppStyles.iconM, color: AppStyles.primaryPurple),
+          child: Icon(data.icon, size: AppStyles.iconM, color: AppStyles.primary),
         ),
         const SizedBox(width: AppStyles.gapM),
         Expanded(
@@ -107,7 +107,7 @@ class _ProfileField extends StatelessWidget {
         ),
         if (isEditing)
           const Icon(Icons.edit_outlined,
-              size: AppStyles.iconS, color: AppStyles.borderPurple),
+              size: AppStyles.iconS, color: AppStyles.borderPrimary),
       ]),
     );
   }

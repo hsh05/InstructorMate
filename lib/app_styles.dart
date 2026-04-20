@@ -1,3 +1,5 @@
+// lib/app_styles.dart
+
 import 'package:flutter/material.dart';
 
 class AppStyles {
@@ -6,10 +8,14 @@ class AppStyles {
   // ==================== COLORS ====================
   
   // Primary Colors
-  static const Color primaryPurple = Color(0xFF7C5CBF);
-  static const Color primaryDeepPurple = Color(0xFF7C5CBF);
-  static const Color primaryPink = Color(0xFFF093fb);
-  static const Color accent = Color(0xFF00B896); // Teal accent for status/actions
+  static const Color primary = Color(0xFF7C5CBF);
+  static const Color primaryDark = Color(0xFF7C5CBF);
+  static const Color secondary = Color(0xFFF093fb);
+  static const Color accent = Color(0xFF00B896);
+  
+  // Header / Muted Brand Colors
+  static const Color tertiary = Color(0xFFE2D4FF);
+  static const Color tertiaryDark = Color(0xFFC4B0FF);
   
   // Neutral Colors
   static const Color white = Colors.white;
@@ -26,7 +32,7 @@ class AppStyles {
   
   // Border Colors
   static const Color borderLight = Color(0xFFE8E3F8);
-  static const Color borderPurple = Color(0xFFBFB0E8);
+  static const Color borderPrimary = Color(0xFFBFB0E8);
   
   // Status Badge Colors
   static const Color readyBg = Color(0xFFE0FAF5);
@@ -42,7 +48,7 @@ class AppStyles {
   static const LinearGradient backgroundGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [primaryPurple, primaryDeepPurple, primaryPink],
+    colors: [primary, primaryDark, secondary],
   );
   
   // Subtle gradient for workspace backgrounds
@@ -53,7 +59,7 @@ class AppStyles {
   );
   
   static const LinearGradient buttonGradient = LinearGradient(
-    colors: [primaryPurple, primaryDeepPurple],
+    colors: [primary, primaryDark],
   );
 
   // ==================== TEXT STYLES ====================
@@ -98,7 +104,7 @@ class AppStyles {
   );
   
   static const TextStyle linkText = TextStyle(
-    color: primaryPurple,
+    color: primary,
     fontWeight: FontWeight.w600,
   );
   
@@ -171,7 +177,7 @@ class AppStyles {
   
   static final List<BoxShadow> shadowButton = [
     BoxShadow(
-      color: primaryPurple.withOpacity(0.3),
+      color: primary.withOpacity(0.3),
       blurRadius: 15,
       offset: const Offset(0, 8),
     ),
@@ -225,7 +231,7 @@ class AppStyles {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: borderRadiusL,
-        borderSide: const BorderSide(color: primaryPurple, width: 2),
+        borderSide: const BorderSide(color: primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: borderRadiusL,

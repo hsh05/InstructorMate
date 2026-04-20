@@ -83,7 +83,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         backgroundColor: AppStyles.lightGray, 
         appBar: AppBar(
           elevation: 0,
-          backgroundColor: AppStyles.primaryPurple, 
+          backgroundColor: AppStyles.primary, 
           title: const Text(
             'InstructorMate',
             style: TextStyle(
@@ -118,7 +118,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                   backgroundColor: AppStyles.white, // White border effect
                   child: CircleAvatar(
                     radius: 14,
-                    backgroundColor: AppStyles.primaryPurple, 
+                    backgroundColor: AppStyles.primary, 
                     child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
                   ),
                 ),
@@ -139,7 +139,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             widget.vm.importing ? 'Importing...' : 'Add Workspace',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          backgroundColor: AppStyles.primaryPurple, 
+          backgroundColor: AppStyles.primary, 
           foregroundColor: Colors.white,
           elevation: 4,
         ),
@@ -161,7 +161,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   Widget _buildBody(BuildContext context) {
     if (widget.vm.loading && widget.vm.workspaces.isEmpty) {
       return const Center(
-          child: CircularProgressIndicator(color: AppStyles.primaryPurple)); 
+          child: CircularProgressIndicator(color: AppStyles.primary)); 
     }
     if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
       return Center(
@@ -246,7 +246,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: AppStyles.primaryPurple, 
+              primary: AppStyles.primary, 
               onPrimary: Colors.white,
               surface: AppStyles.white, 
               onSurface: AppStyles.textPrimary, 
@@ -366,18 +366,18 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                             color: const Color(0xFFF4F0FF),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                                color: AppStyles.primaryPurple.withOpacity(0.2)), 
+                                color: AppStyles.primary.withOpacity(0.2)), 
                           ),
                           child: Row(children: [
                             Container(
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                                color: AppStyles.primaryPurple.withOpacity(0.12), 
+                                color: AppStyles.primary.withOpacity(0.12), 
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(Icons.school_rounded,
-                                  color: AppStyles.primaryPurple, size: 20), 
+                                  color: AppStyles.primary, size: 20), 
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -441,7 +441,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                         flex: 2,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppStyles.primaryPurple, 
+                            backgroundColor: AppStyles.primary, 
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -796,7 +796,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                     borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(Icons.hourglass_top_rounded,
-                      color: AppStyles.primaryPurple.withOpacity(0.4), size: 22), 
+                      color: AppStyles.primary.withOpacity(0.4), size: 22), 
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -828,7 +828,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                                 height: 8,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  color: AppStyles.primaryPurple 
+                                  color: AppStyles.primary 
                                       .withOpacity(0.6 + _shimmer.value * 0.4),
                                 ),
                               ),
@@ -837,7 +837,7 @@ class _ProcessingCardState extends State<_ProcessingCard>
                                   style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
-                                      color: AppStyles.primaryPurple, 
+                                      color: AppStyles.primary, 
                                       letterSpacing: 0.2)),
                             ],
                           ),
@@ -937,7 +937,7 @@ class _WorkspaceCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: const Icon(Icons.school_rounded,
-                    color: AppStyles.primaryPurple, size: 24), 
+                    color: AppStyles.primary, size: 24), 
               ),
               const SizedBox(width: 12),
               Expanded(

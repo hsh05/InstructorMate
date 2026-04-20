@@ -225,7 +225,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             return AlertDialog(
               title: const Row(
                 children: [
-                  Icon(Icons.tune, color: AppStyles.primaryPurple), 
+                  Icon(Icons.tune, color: AppStyles.primary), 
                   SizedBox(width: 10), 
                   Text("Configure Options")
                 ],
@@ -240,7 +240,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                         margin: const EdgeInsets.only(bottom: 10),
                         elevation: config.isSelected ? 2 : 0,
                         shape: RoundedRectangleBorder(
-                          side: BorderSide(color: config.isSelected ? AppStyles.primaryPurple : Colors.grey.shade300),
+                          side: BorderSide(color: config.isSelected ? AppStyles.primary : Colors.grey.shade300),
                           borderRadius: BorderRadius.circular(8)
                         ),
                         child: Column(
@@ -248,7 +248,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                             CheckboxListTile(
                               title: Text(config.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                               value: config.isSelected,
-                              activeColor: AppStyles.primaryPurple,
+                              activeColor: AppStyles.primary,
                               onChanged: (val) {
                                 setDialogState(() { config.isSelected = val ?? false; });
                                 setState(() {}); 
@@ -305,7 +305,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
               actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppStyles.primaryPurple, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppStyles.primary, foregroundColor: Colors.white),
                   onPressed: () {
                     Navigator.pop(ctx);
                     _generateQuiz(); 
@@ -353,7 +353,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
               _isGenerating ? 'Thinking...' : 'Generate (${widget.vm.selectedMaterialIdsForQuiz.length})', 
               style: const TextStyle(fontWeight: FontWeight.w700)
             ),
-            backgroundColor: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? Colors.grey : AppStyles.primaryPurple, 
+            backgroundColor: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? Colors.grey : AppStyles.primary, 
             foregroundColor: Colors.white,
             elevation: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? 0 : 4,
           ) : null,
@@ -376,11 +376,11 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                       child: TabBar(
                         controller: _tabs,
                         indicator: BoxDecoration(
-                          color: AppStyles.primaryPurple,
+                          color: AppStyles.primary,
                           borderRadius: AppStyles.borderRadiusL,
                           boxShadow: [
                             BoxShadow(
-                              color: AppStyles.primaryPurple.withOpacity(0.3),
+                              color: AppStyles.primary.withOpacity(0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -413,12 +413,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const CircularProgressIndicator(color: AppStyles.primaryPurple),
+                                    const CircularProgressIndicator(color: AppStyles.primary),
                                     const SizedBox(height: 20),
                                     Text(
                                       '✨ AI is extracting syllabus data...',
                                       style: TextStyle(
-                                        color: AppStyles.primaryPurple.withOpacity(0.8),
+                                        color: AppStyles.primary.withOpacity(0.8),
                                         fontSize: 16,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -433,7 +433,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                               )
                             : widget.vm.loading
                                 ? const Center(
-                                    child: CircularProgressIndicator(color: AppStyles.primaryPurple),
+                                    child: CircularProgressIndicator(color: AppStyles.primary),
                                   )
                                 : TabBarView(
                                 controller: _tabs,
@@ -505,15 +505,15 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     return SliverAppBar(
       expandedHeight: 165,
       pinned: true,
-      backgroundColor: AppStyles.primaryDeepPurple,
-      foregroundColor: Colors.white,
+      backgroundColor: AppStyles.tertiaryDark,
+      foregroundColor: AppStyles.textPrimary,
       actions: [
         // 👉 The Global Edit Toggle
         if (_currentTabIndex == 0)
           IconButton(
             icon: Icon(
               _isEditingDetails ? Icons.check_rounded : Icons.edit_rounded, 
-              color: Colors.white,
+              color: AppStyles.textPrimary,
             ),
             tooltip: _isEditingDetails ? 'Save Changes' : 'Edit Details',
             onPressed: () {
@@ -533,7 +533,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppStyles.primaryDeepPurple, Color(0xFF9B78E0)],
+              colors: [AppStyles.tertiaryDark, AppStyles.tertiary],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -559,7 +559,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                             : Text(
                                 ws.title,
                                 style: const TextStyle(
-                                  color: Colors.white,
+                                  color: AppStyles.textPrimary,
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: -0.3,
@@ -573,10 +573,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppStyles.warning.withOpacity(0.2), 
+                          color: ready ? AppStyles.readyBg : AppStyles.draftBg, 
                           borderRadius: AppStyles.borderRadiusXL,
                           border: Border.all(
-                            color: ready ? AppStyles.accent : AppStyles.warning,
+                            color: ready ? AppStyles.readyFg : AppStyles.draftFg,
                             width: 1.5,
                           ),
                         ),
@@ -585,14 +585,14 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                           children: [
                             Icon(
                               ready ? Icons.check_circle_rounded : Icons.pending_rounded,
-                              color: ready ? AppStyles.accent : AppStyles.warning,
+                              color: ready ? AppStyles.readyFg : AppStyles.draftFg,
                               size: 12,
                             ),
                             const SizedBox(width: 4),
                             Text(
                               ready ? 'Ready' : 'Draft',
                               style: TextStyle(
-                                color: ready ? AppStyles.accent : AppStyles.warning,
+                                color: ready ? AppStyles.readyFg : AppStyles.draftFg,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 11,
                               ),
@@ -753,7 +753,7 @@ class _InfoTabState extends State<_InfoTab>
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: AppStyles.primaryPurple,
+              primary: AppStyles.primary,
               onPrimary: Colors.white,
               surface: AppStyles.white,
               onSurface: AppStyles.textPrimary,
@@ -806,10 +806,14 @@ class _InfoTabState extends State<_InfoTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final List<_FieldGroup> groups = [];
-    for (final key in widget.editableKeys) {
-      groups.add(_FieldGroup.single(key));
-    }
+    
+    final List<_FieldGroup> groups = [
+      const _FieldGroup.pair('course_title', 'course_code', flex1: 1, flex2: 1),
+      const _FieldGroup.single('semester'),
+      const _FieldGroup.pair('start_date', 'end_date', flex1: 1, flex2: 1),
+    ];
+
+    // 👉 THE FIX 1: Removed the old 'for' loop here that was duplicating your fields!
 
     final weekText = _calculateCurrentWeek();
 
@@ -818,29 +822,16 @@ class _InfoTabState extends State<_InfoTab>
 
     final scheduleString = widget.ws.fields['weekly_schedule'];
 
-    print('\n=== X-RAY ===');
-    print('Week Text: $weekText');
-    print('Schedule String: $scheduleString');
-    print('All Fields: ${widget.ws.fields}');
-    print('=============\n');
-    
     if (scheduleString != null && scheduleString.isNotEmpty) {
       try {
-        // Decode the JSON dictionary the AI extracted from the PDF
         final Map<String, dynamic> schedule = jsonDecode(scheduleString);
-        
-        // Extract the raw number from our "Week X" string
         final match = RegExp(r'Week (\d+)').firstMatch(weekText);
         
         if (match != null) {
-          final weekNumber = match.group(1)!; // e.g., "3"
-          
-          // Grab the exact text for this week from the AI's dictionary!
+          final weekNumber = match.group(1)!;
           if (schedule.containsKey(weekNumber)) {
             topicsToCover = schedule[weekNumber].toString();
           }
-          
-          // (Optional) If you have the AI extract assessments too:
           final assessmentsString = widget.ws.fields['assessments_schedule'];
           if (assessmentsString != null) {
             final Map<String, dynamic> assessments = jsonDecode(assessmentsString);
@@ -865,21 +856,21 @@ class _InfoTabState extends State<_InfoTab>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: AppStyles.primaryPurple.withOpacity(0.1),
+                color: AppStyles.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10), 
-                border: Border.all(color: AppStyles.primaryPurple.withOpacity(0.3)),
+                border: Border.all(color: AppStyles.primary.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.date_range_rounded, size: 16, color: AppStyles.primaryPurple),
+                  const Icon(Icons.date_range_rounded, size: 16, color: AppStyles.primary),
                   const SizedBox(width: 6), 
                   Text(
                     weekText,
                     style: const TextStyle(
                       fontSize: 13, 
                       fontWeight: FontWeight.w800,
-                      color: AppStyles.primaryPurple,
+                      color: AppStyles.primary,
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -891,7 +882,6 @@ class _InfoTabState extends State<_InfoTab>
         
         const SizedBox(height: 16),
         
-        // Insert the new Weekly Overview Card here!
         _WeeklyOverviewCard(
           weekText: weekText,
           topics: topicsToCover,
@@ -904,7 +894,7 @@ class _InfoTabState extends State<_InfoTab>
           const Padding(
             padding: EdgeInsets.only(bottom: 12.0),
             child: Text('Tap the checkmark in the top right to save changes.',
-                style: TextStyle(fontSize: 12, color: AppStyles.primaryPurple, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 12, color: AppStyles.primary, fontWeight: FontWeight.bold)),
           ),
         Container(
           decoration: BoxDecoration(
@@ -919,20 +909,59 @@ class _InfoTabState extends State<_InfoTab>
                 final idx = entry.key;
                 final group = entry.value;
                 final isLast = idx == groups.length - 1;
-                return Column(children: [
-                  _InfoFieldRow(
+                
+                Widget content;
+                
+                if (group.isPair) {
+                  content = Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: group.flex1,
+                        child: _InfoFieldRow(
+                          fieldKey: group.key,
+                          value: widget.ws.fields[group.key] ?? '',
+                          ctrl: widget.ctrl,
+                          isEditing: widget.isGlobalEditing,
+                          error: _errors[group.key],
+                          keyboardType: _keyboardType(group.key),
+                          onDateTap: () {
+                            if (widget.isGlobalEditing && (group.key == 'start_date' || group.key == 'end_date')) _promptForDates();
+                          },
+                          isFirstInPair: true, 
+                        ),
+                      ),
+                      Expanded(
+                        flex: group.flex2,
+                        child: _InfoFieldRow(
+                          fieldKey: group.secondKey!,
+                          value: widget.ws.fields[group.secondKey!] ?? '',
+                          ctrl: widget.ctrl,
+                          isEditing: widget.isGlobalEditing,
+                          error: _errors[group.secondKey!],
+                          keyboardType: _keyboardType(group.secondKey!),
+                          onDateTap: () {
+                            if (widget.isGlobalEditing && (group.secondKey! == 'start_date' || group.secondKey! == 'end_date')) _promptForDates();
+                          },
+                          isSecondInPair: true, 
+                        ),
+                      ),
+                    ],
+                  );
+                } else {
+                  content = _InfoFieldRow(
                     fieldKey: group.key,
                     value: widget.ws.fields[group.key] ?? '',
                     ctrl: widget.ctrl,
-                    isEditing: widget.isGlobalEditing, // Drive layout from global state
+                    isEditing: widget.isGlobalEditing,
                     error: _errors[group.key],
                     keyboardType: _keyboardType(group.key),
-                    onDateTap: () {
-                      if (widget.isGlobalEditing && (group.key == 'start_date' || group.key == 'end_date')) {
-                        _promptForDates();
-                      }
-                    },
-                  ),
+                    onDateTap: () {},
+                  );
+                }
+
+                return Column(children: [
+                  content,
                   if (!isLast)
                     const Divider(height: 1, indent: 16, endIndent: 16, color: AppStyles.borderLight),
                 ]);
@@ -948,8 +977,16 @@ class _InfoTabState extends State<_InfoTab>
 class _FieldGroup {
   final String key;
   final String? secondKey;
-  bool get isPair => false;
-  const _FieldGroup.single(this.key) : secondKey = null;
+  final int flex1;
+  final int flex2;
+  
+  bool get isPair => secondKey != null;
+
+  const _FieldGroup.single(this.key) 
+      : secondKey = null, flex1 = 1, flex2 = 1;
+      
+  // Allows us to set flex properties (e.g. 60% width for Title, 40% for Code)
+  const _FieldGroup.pair(this.key, this.secondKey, {this.flex1 = 1, this.flex2 = 1});
 }
 
 class _InfoFieldRow extends StatelessWidget {
@@ -961,6 +998,8 @@ class _InfoFieldRow extends StatelessWidget {
     required this.error,
     required this.keyboardType,
     required this.onDateTap,
+    this.isFirstInPair = false,
+    this.isSecondInPair = false,
   });
   
   final String fieldKey;
@@ -970,6 +1009,8 @@ class _InfoFieldRow extends StatelessWidget {
   final String? error;
   final TextInputType keyboardType;
   final VoidCallback onDateTap;
+  final bool isFirstInPair;
+  final bool isSecondInPair;
 
   @override
   Widget build(BuildContext context) {
@@ -1017,7 +1058,7 @@ class _InfoFieldRow extends StatelessWidget {
             readOnly: true,
             style: const TextStyle(color: AppStyles.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
             decoration: _buildInputDeco(icon, hasError).copyWith(
-              suffixIcon: const Icon(Icons.calendar_month_rounded, color: AppStyles.primaryPurple, size: 18),
+              suffixIcon: const Icon(Icons.calendar_month_rounded, color: AppStyles.primary, size: 18),
             ),
           ),
         ),
@@ -1032,11 +1073,16 @@ class _InfoFieldRow extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: EdgeInsets.fromLTRB(
+        isSecondInPair ? 8 : 16, 
+        14, 
+        isFirstInPair ? 8 : 16, 
+        14
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(color: hasError ? AppStyles.warning : AppStyles.primaryPurple, fontSize: 11, fontWeight: FontWeight.w700)),
+          Text(label, style: TextStyle(color: hasError ? AppStyles.warning : AppStyles.primary, fontSize: 11, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           inputWidget,
         ],
@@ -1046,7 +1092,7 @@ class _InfoFieldRow extends StatelessWidget {
 
   InputDecoration _buildInputDeco(IconData icon, bool hasError) {
     return InputDecoration(
-      prefixIcon: Icon(icon, color: hasError ? AppStyles.warning : AppStyles.primaryPurple, size: 17),
+      prefixIcon: Icon(icon, color: hasError ? AppStyles.warning : AppStyles.primary, size: 17),
       hintText: _hintFor(fieldKey),
       hintStyle: const TextStyle(color: AppStyles.darkGray, fontSize: 13),
       filled: true,
@@ -1054,7 +1100,7 @@ class _InfoFieldRow extends StatelessWidget {
       border: OutlineInputBorder(borderRadius: AppStyles.borderRadiusM, borderSide: BorderSide.none),
       focusedBorder: OutlineInputBorder(
         borderRadius: AppStyles.borderRadiusM,
-        borderSide: BorderSide(color: hasError ? AppStyles.warning : AppStyles.primaryPurple, width: 2),
+        borderSide: BorderSide(color: hasError ? AppStyles.warning : AppStyles.primary, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       errorText: error,
@@ -1069,7 +1115,12 @@ class _InfoFieldRow extends StatelessWidget {
     final liveValue = ctrl(fieldKey, value).text;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      padding: EdgeInsets.fromLTRB(
+        isSecondInPair ? 8 : 16, 
+        15, 
+        isFirstInPair ? 8 : 16, 
+        15
+      ),
       child: Row(children: [
         Container(
           width: 36,
@@ -1078,9 +1129,9 @@ class _InfoFieldRow extends StatelessWidget {
             color: liveValue.isEmpty ? AppStyles.warning.withOpacity(0.1) : AppStyles.mediumGray,
             borderRadius: AppStyles.borderRadiusM,
           ),
-          child: Icon(icon, color: liveValue.isEmpty ? AppStyles.warning : AppStyles.primaryPurple, size: 17),
+          child: Icon(icon, color: liveValue.isEmpty ? AppStyles.warning : AppStyles.primary, size: 17),
         ),
-        const SizedBox(width: 13),
+        SizedBox(width: (isFirstInPair || isSecondInPair) ? 8 : 13),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1099,7 +1150,6 @@ class _InfoFieldRow extends StatelessWidget {
             ],
           ),
         ),
-        // NOTE: No suffix icon here anymore! Clean design!
       ]),
     );
   }
@@ -1128,7 +1178,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
         children: [
-          Icon(icon, color: AppStyles.primaryPurple, size: 17),
+          Icon(icon, color: AppStyles.primary, size: 17),
           const SizedBox(width: 7),
           Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppStyles.textPrimary)),
         ],
@@ -1143,23 +1193,33 @@ class _StatPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        // Slightly increased padding for breathing room
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: highlight ? AppStyles.accent.withOpacity(0.2) : Colors.white.withOpacity(0.15),
+          // 👉 THE FIX: Increased background opacity to 0.2 / 0.25 for a more solid feel
+          color: highlight ? AppStyles.accent.withOpacity(0.25) : AppStyles.primary.withOpacity(0.2),
           borderRadius: AppStyles.borderRadiusXL,
           border: Border.all(
-            color: highlight ? AppStyles.accent.withOpacity(0.5) : Colors.white.withOpacity(0.25),
+            // 👉 THE FIX: Stronger border opacity to frame the pill clearly
+            color: highlight ? AppStyles.accent.withOpacity(0.8) : AppStyles.primary.withOpacity(0.5),
+            width: 1.0,
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: highlight ? AppStyles.accent : Colors.white, size: 11),
+          // 👉 THE FIX: Switched to textPrimary (almost black) for maximum contrast
+          Icon(
+            icon, 
+            color: highlight ? AppStyles.accent : AppStyles.textPrimary, 
+            size: 12
+          ),
           const SizedBox(width: 5),
           Text(
             label,
             style: TextStyle(
-              color: highlight ? AppStyles.accent : Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+              // 👉 THE FIX: Dark text and heavier font weight
+              color: highlight ? AppStyles.accent : AppStyles.textPrimary,
+              fontSize: 12, 
+              fontWeight: FontWeight.w800, 
             ),
           ),
         ]),
@@ -1266,7 +1326,7 @@ class _DetailSkeletonState extends State<_DetailSkeleton>
                   height: 13,
                   child: CircularProgressIndicator(
                     strokeWidth: 1.8,
-                    color: AppStyles.primaryPurple.withOpacity(0.3 + t * 0.2),
+                    color: AppStyles.primary.withOpacity(0.3 + t * 0.2),
                   ),
                 ),
                 const SizedBox(width: 9),
@@ -1411,7 +1471,7 @@ class _MaterialsTabState extends State<MaterialsTab> {
         duration: const Duration(milliseconds: 200),
         width: double.infinity,
         height: double.infinity,
-        color: _isDragging ? AppStyles.primaryPurple.withOpacity(0.08) : Colors.transparent,
+        color: _isDragging ? AppStyles.primary.withOpacity(0.08) : Colors.transparent,
         child: Column(
           children: [
             Padding(
@@ -1425,7 +1485,7 @@ class _MaterialsTabState extends State<MaterialsTab> {
                     color: _isDragging ? AppStyles.mediumGray.withOpacity(0.15) : AppStyles.mediumGray,
                     borderRadius: AppStyles.borderRadiusM,
                     border: Border.all(
-                      color: _isDragging ? AppStyles.primaryPurple : AppStyles.primaryPurple.withOpacity(0.3),
+                      color: _isDragging ? AppStyles.primary : AppStyles.primary.withOpacity(0.3),
                       width: _isDragging ? 2.0 : 1.5,
                       style: BorderStyle.solid,
                     ),
@@ -1436,12 +1496,12 @@ class _MaterialsTabState extends State<MaterialsTab> {
                       if (widget.vm.uploadingMaterial)
                         const SizedBox(
                           width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppStyles.primaryPurple),
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppStyles.primary),
                         )
                       else
                         Icon(
                           _isDragging ? Icons.download_rounded : Icons.cloud_upload_rounded, 
-                          color: AppStyles.primaryPurple, 
+                          color: AppStyles.primary, 
                           size: 24
                         ),
                       const SizedBox(width: 12),
@@ -1450,7 +1510,7 @@ class _MaterialsTabState extends State<MaterialsTab> {
                             ? 'Uploading material...' 
                             : (_isDragging ? 'Drop files here!' : 'Upload Course Material'),
                         style: const TextStyle(
-                          color: AppStyles.primaryPurple,
+                          color: AppStyles.primary,
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
                         ),
@@ -1482,11 +1542,11 @@ class _MaterialsTabState extends State<MaterialsTab> {
                             color: isSelected ? AppStyles.mediumGray : Colors.white,
                             borderRadius: AppStyles.borderRadiusM,
                             boxShadow: AppStyles.shadowMedium,
-                            border: isSelected ? Border.all(color: AppStyles.primaryPurple.withOpacity(0.5)) : null,
+                            border: isSelected ? Border.all(color: AppStyles.primary.withOpacity(0.5)) : null,
                           ),
                           child: CheckboxListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            activeColor: AppStyles.primaryPurple,
+                            activeColor: AppStyles.primary,
                             checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                             value: isSelected,
                             onChanged: (bool? value) {
@@ -1494,7 +1554,7 @@ class _MaterialsTabState extends State<MaterialsTab> {
                             },
                             title: Row(
                               children: [
-                                const Icon(Icons.insert_drive_file_rounded, color: AppStyles.primaryPurple, size: 20),
+                                const Icon(Icons.insert_drive_file_rounded, color: AppStyles.primary, size: 20),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
@@ -1538,26 +1598,26 @@ class _WeeklyOverviewCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppStyles.primaryPurple.withOpacity(0.08), AppStyles.primaryPurple.withOpacity(0.02)],
+          colors: [AppStyles.primary.withOpacity(0.08), AppStyles.primary.withOpacity(0.02)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: AppStyles.borderRadiusL,
-        border: Border.all(color: AppStyles.primaryPurple.withOpacity(0.15)),
+        border: Border.all(color: AppStyles.primary.withOpacity(0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.insights_rounded, color: AppStyles.primaryPurple, size: 18),
+              const Icon(Icons.insights_rounded, color: AppStyles.primary, size: 18),
               const SizedBox(width: 8),
               Text(
                 '$weekText Overview',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
-                  color: AppStyles.primaryPurple,
+                  color: AppStyles.primary,
                 ),
               ),
             ],

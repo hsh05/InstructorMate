@@ -41,7 +41,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       _exportService.exportToPDF(context, widget.questions);
                     }),
                                 ListTile(
-                    leading: const Icon(Icons.description, color: AppStyles.primaryPurple),
+                    leading: const Icon(Icons.description, color: AppStyles.primary),
                     title: const Text('Word Document (.doc)', style: TextStyle(color: AppStyles.textPrimary, fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(ctx);
@@ -60,7 +60,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               backgroundColor: AppStyles.white,
               shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusL),
               title: Row(children: const [
-                Icon(Icons.auto_fix_high_rounded, color: AppStyles.primaryPurple),
+                Icon(Icons.auto_fix_high_rounded, color: AppStyles.primary),
                 SizedBox(width: 10),
                 Text("AI Editor", style: AppStyles.headingSmall)
               ]),
@@ -75,7 +75,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     decoration: AppStyles.inputDecoration(
                       labelText: "Instructions",
                       icon: Icons.chat_bubble_outline_rounded,
-                      iconColor: AppStyles.primaryPurple,
+                      iconColor: AppStyles.primary,
                     ).copyWith(hintText: "e.g. 'Make it harder'"),
                     maxLines: 2,
                   ),
@@ -87,7 +87,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     child: const Text("Cancel", style: TextStyle(color: AppStyles.darkGray, fontWeight: FontWeight.w600))),
                 ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: AppStyles.primaryPurple,
+                        backgroundColor: AppStyles.primary,
                         foregroundColor: AppStyles.white,
                         shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM)),
                     onPressed: () {
@@ -103,7 +103,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppStyles.primaryPurple)));
+        builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppStyles.primary)));
 
     try {
       // 👉 THE FIX: Routing the AI request securely through ApiService
@@ -178,7 +178,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     decoration: const InputDecoration(labelText: "Model Answer", labelStyle: TextStyle(color: AppStyles.darkGray))
                   )
                 else ...[
-                  const Text("Options (Mark correct answer in text field below)", style: TextStyle(fontSize: 12, color: AppStyles.primaryPurple, fontWeight: FontWeight.bold)),
+                  const Text("Options (Mark correct answer in text field below)", style: TextStyle(fontSize: 12, color: AppStyles.primary, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   ...optControllers.map((ctrl) => Padding(
                     padding: const EdgeInsets.only(bottom: 8.0),
@@ -205,7 +205,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                  backgroundColor: AppStyles.primaryPurple,
+                  backgroundColor: AppStyles.primary,
                   foregroundColor: AppStyles.white,
                   shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM)),
               onPressed: () {
@@ -235,7 +235,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       backgroundColor: AppStyles.lightGray,
       appBar: AppBar(
         title: const Text("Review Quiz", style: TextStyle(color: AppStyles.white, fontWeight: FontWeight.bold)),
-        backgroundColor: AppStyles.primaryPurple,
+        backgroundColor: AppStyles.primary,
         elevation: 0,
         iconTheme: const IconThemeData(color: AppStyles.white),
       ),
@@ -258,7 +258,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   child: Theme(
                     data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                     child: ExpansionTile(
-                      iconColor: AppStyles.primaryPurple,
+                      iconColor: AppStyles.primary,
                       collapsedIconColor: AppStyles.darkGray,
                       title: Text("${i + 1}. ${q.question}", style: const TextStyle(fontWeight: FontWeight.bold, color: AppStyles.textPrimary)),
                       subtitle: Text(q.type, style: const TextStyle(color: AppStyles.darkGray, fontSize: 12)),
@@ -266,7 +266,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            IconButton(icon: const Icon(Icons.auto_fix_high_rounded, color: AppStyles.primaryPurple), onPressed: () => _promptAIEdit(i)),
+                            IconButton(icon: const Icon(Icons.auto_fix_high_rounded, color: AppStyles.primary), onPressed: () => _promptAIEdit(i)),
                             IconButton(icon: const Icon(Icons.edit_rounded, color: AppStyles.darkGray), onPressed: () => _editQuestion(i)),
                             const SizedBox(width: 8),
                           ],

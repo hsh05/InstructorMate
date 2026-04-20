@@ -94,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: AppStyles.paddingMedium,
             decoration: AppStyles.logoDecoration,
             child: const Icon(Icons.school_rounded,
-                size: AppStyles.iconSizeLarge, color: AppStyles.primaryPurple),
+                size: AppStyles.iconSizeLarge, color: AppStyles.primary),
           ),
           const SizedBox(height: AppStyles.spacingL),
           const Text('InstructorMate', style: AppStyles.headingLarge),
@@ -113,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _field(_email, 'Email Address', Icons.email_rounded,
-                  AppStyles.primaryPurple,
+                  AppStyles.primary,
                   type: TextInputType.emailAddress,
                   validator: (v) => v!.isEmpty
                       ? 'Enter email'
@@ -122,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           : null),
               const SizedBox(height: AppStyles.spacingL),
               _field(_password, 'Password', Icons.lock_rounded,
-                  AppStyles.primaryDeepPurple,
+                  AppStyles.primaryDark,
                   obscure: _obscurePassword,
                   suffix: IconButton(
                     icon: Icon(

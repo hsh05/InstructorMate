@@ -133,7 +133,7 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
         
-        color: AppStyles.primaryPurple, 
+        color: AppStyles.primary, 
         
         ticker: title,
         subText: 'Class Reminder',
@@ -208,7 +208,7 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         
-        color: AppStyles.primaryPurple, 
+        color: AppStyles.primary, 
         
         subText: 'Test',
         styleInformation: bigTextStyle,

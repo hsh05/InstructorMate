@@ -120,7 +120,7 @@ class _NotifToastState extends State<NotifToast>
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: AppStyles.primaryPurple.withOpacity(0.22), // Mapped
+                        color: AppStyles.primary.withOpacity(0.22), // Mapped
                         blurRadius: 48,
                         offset: const Offset(0, 16),
                         spreadRadius: 4,
@@ -144,7 +144,7 @@ class _NotifToastState extends State<NotifToast>
                           decoration: const BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                AppStyles.primaryDeepPurple, // Mapped
+                                AppStyles.primaryDark, // Mapped
                                 Color(0xFF9B78E0),
                               ],
                               begin: Alignment.topLeft,
@@ -199,12 +199,12 @@ class _NotifToastState extends State<NotifToast>
                                       width: 40,
                                       height: 40,
                                       decoration: BoxDecoration(
-                                        color: AppStyles.primaryPurple.withOpacity(0.15), // Mapped
+                                        color: AppStyles.primary.withOpacity(0.15), // Mapped
                                         borderRadius: BorderRadius.circular(11),
                                       ),
                                       child: const Icon(
                                         Icons.school_rounded,
-                                        color: AppStyles.primaryPurple, // Mapped
+                                        color: AppStyles.primary, // Mapped
                                         size: 22,
                                       ),
                                     ),
@@ -255,7 +255,7 @@ class _NotifToastState extends State<NotifToast>
                           padding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
                           child: _ToastProgressBar(
                             duration: _toastDuration,
-                            color: AppStyles.primaryPurple, // Mapped
+                            color: AppStyles.primary, // Mapped
                           ),
                         ),
                       ],

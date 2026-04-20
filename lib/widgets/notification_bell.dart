@@ -138,7 +138,7 @@ class _NotificationBellState extends State<NotificationBell>
                 count > 0
                     ? Icons.notifications_rounded
                     : Icons.notifications_none_rounded,
-                color: count > 0 ? Colors.white : Colors.white70,
+                color: count > 0 ? AppStyles.textPrimary : AppStyles.darkGray,
                 size: 26,
               ),
               if (count > 0)
@@ -147,9 +147,10 @@ class _NotificationBellState extends State<NotificationBell>
                   top: -4,
                   child: Container(
                     padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       color: AppStyles.error, 
                       shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5), 
                     ),
                     constraints: const BoxConstraints(
                       minWidth: 16,
@@ -186,7 +187,7 @@ class _DropdownPanel extends StatelessWidget {
     return Material(
       elevation: 12,
       borderRadius: const BorderRadius.all(Radius.circular(16)),
-      shadowColor: AppStyles.primaryPurple.withOpacity(0.15), 
+      shadowColor: AppStyles.primary.withOpacity(0.15), 
       child: Container(
         width: 320,
         constraints: const BoxConstraints(maxHeight: 400),
@@ -211,7 +212,7 @@ class _DropdownPanel extends StatelessWidget {
                 children: [
                   const Icon(
                     Icons.notifications_rounded,
-                    color: AppStyles.primaryPurple, 
+                    color: AppStyles.textPrimary, 
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -232,7 +233,7 @@ class _DropdownPanel extends StatelessWidget {
                         'Clear all',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppStyles.primaryPurple, 
+                          color: AppStyles.primary, 
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -320,7 +321,7 @@ class _NotifTile extends StatelessWidget {
             ),
             child: const Icon(
               Icons.notifications_active_rounded,
-              color: AppStyles.primaryPurple, 
+              color: AppStyles.primary, 
               size: 20,
             ),
           ),

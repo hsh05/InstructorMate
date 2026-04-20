@@ -72,7 +72,7 @@ class AskTab extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: asking ? AppStyles.darkGray : AppStyles.primaryPurple, 
+                color: asking ? AppStyles.darkGray : AppStyles.primary, 
                 borderRadius: AppStyles.borderRadiusXL, 
               ),
               child: asking
@@ -173,11 +173,11 @@ class AskEmptyState extends StatelessWidget {
                         width: 30,
                         height: 30,
                         decoration: BoxDecoration(
-                            color: AppStyles.primaryPurple.withOpacity(0.15), 
+                            color: AppStyles.primary.withOpacity(0.15), 
                             borderRadius: AppStyles.borderRadiusS), 
                         // 👉 THE FIX: Removed 'const' here
                         child: const Icon(Icons.lightbulb_outline_rounded,
-                            color: AppStyles.primaryPurple, size: 15), 
+                            color: AppStyles.primary, size: 15), 
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -214,7 +214,7 @@ class ChatBubble extends StatelessWidget {
               maxWidth: MediaQuery.of(context).size.width * 0.76),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           decoration: BoxDecoration(
-            color: msg.isUser ? AppStyles.primaryPurple : AppStyles.white, 
+            color: msg.isUser ? AppStyles.primary : AppStyles.white, 
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(14),
               topRight: const Radius.circular(14),
@@ -256,7 +256,7 @@ class TypingIndicator extends StatelessWidget {
           // 👉 THE FIX: Removed 'const' array since children use AppStyles
           child: Row(mainAxisSize: MainAxisSize.min, children: const [
             Icon(Icons.auto_awesome_rounded,
-                size: 13, color: AppStyles.primaryPurple), 
+                size: 13, color: AppStyles.primary), 
             SizedBox(width: 5),
             Text('Thinking…',
                 style: TextStyle(

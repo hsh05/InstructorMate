@@ -88,7 +88,7 @@ class _SignupScreenState extends State<SignupScreen> {
             padding: AppStyles.paddingMedium,
             decoration: AppStyles.logoDecoration,
             child: const Icon(Icons.person_add_rounded,
-                size: AppStyles.iconSizeLarge, color: AppStyles.primaryPurple),
+                size: AppStyles.iconSizeLarge, color: AppStyles.primary),
           ),
           const SizedBox(height: AppStyles.spacingL),
           const Text('Create Account', style: AppStyles.headingLarge),
@@ -105,15 +105,15 @@ class _SignupScreenState extends State<SignupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _field(_name, 'Full Name', Icons.person_rounded, AppStyles.primaryPurple,
+              _field(_name, 'Full Name', Icons.person_rounded, AppStyles.primary,
                   validator: (v) => v!.isEmpty ? 'Enter name' : v.length < 2 ? 'Min 2 chars' : null),
               const SizedBox(height: AppStyles.spacingL),
-              _field(_email, 'Email', Icons.email_rounded, AppStyles.primaryPurple,
+              _field(_email, 'Email', Icons.email_rounded, AppStyles.primary,
                   type: TextInputType.emailAddress,
                   validator: (v) =>
                       v!.isEmpty ? 'Enter email' : !v.contains('@') ? 'Invalid email' : null),
               const SizedBox(height: AppStyles.spacingL),
-              _field(_password, 'Password', Icons.lock_rounded, AppStyles.primaryDeepPurple,
+              _field(_password, 'Password', Icons.lock_rounded, AppStyles.primaryDark,
                   obscure: _obscurePassword,
                   suffix: IconButton(
                     icon: Icon(_obscurePassword
@@ -125,7 +125,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: (v) => v!.isEmpty ? 'Enter password' : v.length < 6 ? 'Min 6 chars' : null),
               const SizedBox(height: AppStyles.spacingL),
               _field(_confirmPassword, 'Confirm Password', Icons.lock_outline_rounded,
-                  AppStyles.primaryDeepPurple,
+                  AppStyles.primaryDark,
                   obscure: _obscureConfirm,
                   suffix: IconButton(
                     icon: Icon(_obscureConfirm
