@@ -33,7 +33,6 @@ class ImportWorkspaceResult {
 }
 
 class ApiService {
-  // Your static URL approach
   static const String _baseUrl = "https://instructormate.onrender.com";
 
   // Helper to cleanly build URLs
@@ -41,10 +40,6 @@ class ApiService {
     final p = path.startsWith('/') ? path : '/$path';
     return Uri.parse('$_baseUrl$p');
   }
-
-  // =========================================================================
-  // ── YOUR ORIGINAL METHODS ────────────────────────────────────────────────
-  // =========================================================================
 
   Future<List<Workspace>> fetchWorkspaces() async {
     const storage = FlutterSecureStorage();
@@ -162,10 +157,6 @@ class ApiService {
     }
   }
 
-  // =========================================================================
-  // ── TEAMMATE'S METHODS ───────────────────────────────────────────────────
-  // =========================================================================
-
   Future<ImportWorkspaceResult> importWorkspace({
     required Uint8List bytes,
     required String filename,
@@ -185,7 +176,6 @@ class ApiService {
         ),
       );
 
-    // 👉 THE FIX: Securely attach the dates to the backend request
     if (startDate != null && startDate.isNotEmpty) {
       req.fields['start_date'] = startDate;
     }
@@ -346,9 +336,7 @@ class ApiService {
     return (map['answer'] ?? '').toString();
   }
 
-  // -----------------------------
-  // Import Student_List
-  // -----------------------------
+  // ── Import Student List ──────────────────────────────────────────────────
   Future<Map<String, dynamic>> uploadStudentList({required File file}) async {
     try {
       final req = http.MultipartRequest('POST', _u('/students/upload'));
