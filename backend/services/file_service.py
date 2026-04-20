@@ -188,6 +188,7 @@ class SyllabusFieldExtractor:
             return {col: "" for col in columns}
 
         cols_json = json.dumps(columns, ensure_ascii=True)
+        # 👉 THE FIX: Added explicit instructions for handling page breaks and combining multiple items for the same week!
         prompt = (
             "You extract structured fields from university syllabus text.\n"
             "Return ONLY valid JSON (no markdown, no commentary).\n"
@@ -200,7 +201,10 @@ class SyllabusFieldExtractor:
             "- 'course_title': The actual name of the class. DO NOT put the instructor's name here.\n"
             "- 'course_code': The short alphanumeric code for the class (e.g. 'PHYS-101').\n"
             "- 'weekly_schedule': A JSON dictionary mapping the week number (e.g., '1', '2') to the course topic exactly as written in the syllabus table.\n"
-            "- 'assessments_schedule': A JSON dictionary mapping the week number (e.g. '4', '9') to ANY assessments, quizzes, assignments, midterms, or exams due that week. You MUST extract this by cross-referencing BOTH the weekly timeline AND the 'Assessment Methods & Student Evaluation' (or Grading) tables. Merge all quizzes and exams you find into this dictionary!\n\n"
+            "- 'assessments_schedule': A JSON dictionary mapping the week number (e.g. '4', '9') to ANY assessments, quizzes, assignments, midterms, or exams. \n"
+            "   CRITICAL RULES FOR ASSESSMENTS:\n"
+            "   1. Look at ALL tables. Tables are sometimes split across page breaks so the data rows (like 'Quiz 1', '4', '12.5%') might appear on a new page without headers. Do not ignore them!\n"
+            "   2. If a week has multiple items (e.g. Week 4 has both an Assignment and a Quiz), YOU MUST COMBINE THEM into a single string separated by a comma (e.g., 'Assignment 1, Quiz 1'). DO NOT overwrite the dictionary key!\n\n"
             f"COLUMNS(JSON array of strings): {cols_json}\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
