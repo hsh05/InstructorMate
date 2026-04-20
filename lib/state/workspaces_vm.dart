@@ -340,21 +340,32 @@ class WorkspacesViewModel extends ChangeNotifier {
     if (ws == null) return;
 
     List<({Uint8List bytes, String name})> filesToUpload = [];
+    
+    // 👉 THE REAL FIX: Added 'ppt' to the list so BOTH PowerPoint formats are accepted!
+    const allowedExtensions = ['pdf', 'docx', 'txt', 'csv', 'xlsx', 'pptx', 'ppt']; 
 
     // 1. Check if files were dragged and dropped
     if (droppedFiles != null && droppedFiles.isNotEmpty) {
       for (final f in droppedFiles) {
-        final bytes = await f.readAsBytes();
-        filesToUpload.add((bytes: bytes, name: f.name));
+        final ext = f.name.split('.').last.toLowerCase();
+        
+        if (allowedExtensions.contains(ext)) {
+          final bytes = await f.readAsBytes();
+          filesToUpload.add((bytes: bytes, name: f.name));
+        } else {
+          // Update the error message to show .ppt is now allowed
+          error = 'Unsupported file type: .$ext. Please use .ppt, .pptx, .pdf, .docx, etc.';
+          notifyListeners();
+        }
       }
     } 
     // 2. Otherwise, open the File Picker with MULTI-SELECT enabled
     else {
       final res = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'docx', 'txt', 'csv', 'xlsx', 'pptx'],
+        allowedExtensions: allowedExtensions, // 👉 File picker will now let you click on .ppt files
         withData: true,
-        allowMultiple: true, // 👉 THE FIX: Users can now highlight multiple files!
+        allowMultiple: true, 
       );
       if (res == null || res.files.isEmpty) return;
       
@@ -372,11 +383,9 @@ class WorkspacesViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 👉 Upload all selected files sequentially
       for (final file in filesToUpload) {
         await api.uploadMaterial(ws.id.toString(), file.bytes, file.name);
       }
-      // Refresh the UI once all files are uploaded
       await refreshCurrentQuietly();
     } catch (e) {
       error = e.toString();
