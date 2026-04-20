@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="InstructorMate">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="InstructorMate">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <title>InstructorMate</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+
+<body>
+  <!-- Browser notification helper called from Flutter via dart:js_interop -->
+  <script>
+    function _showBrowserNotification(title, body) {
+      if (!('Notification' in window)) return;
+      if (Notification.permission !== 'granted') return;
+      try {
+        new Notification(title, {
+          body: body,
+          icon: 'icons/Icon-192.png',
+          tag: title,
+        });
+      } catch (e) {
+        console.warn('Browser notification failed:', e);
+      }
+    }
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+
+</html>

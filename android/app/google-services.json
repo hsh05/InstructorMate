@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "862935696954",
+    "project_id": "instructormate-77b0f",
+    "storage_bucket": "instructormate-77b0f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:862935696954:android:f0c14f200b251880a31703",
+        "android_client_info": {
+          "package_name": "com.example.instructor_mate"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5PDuso9CMxaH0usZloIzTbm_8QalQInY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
