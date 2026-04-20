@@ -1688,7 +1688,8 @@ class _WeeklyOverviewCard extends StatelessWidget {
 class _AssessmentItem {
   final String name;
   final String subtitle;
-  _AssessmentItem(this.name, this.subtitle);
+  final String topic;
+  _AssessmentItem(this.name, this.subtitle, this.topic);
 }
 
 // =============================================================================
@@ -1718,12 +1719,25 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
     final List<_AssessmentItem> list = [];
     final Set<String> foundKeys = {};
 
+    // 👉 NEW: Parse the weekly schedule ONCE to use as a lookup dictionary!
+    Map<String, String> weeklyTopics = {};
+    final weeklyStr = widget.ws.fields['weekly_schedule'] ?? '';
+    if (weeklyStr.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(weeklyStr);
+        if (decoded is Map) {
+          decoded.forEach((k, v) => weeklyTopics[k.toString().trim()] = v.toString().trim());
+        }
+      } catch (_) {}
+    }
+
     void addSafely(String name, String weekRaw) {
       String cleanName = name.trim();
       String cleanWeek = weekRaw.trim();
 
       final weekMatch = RegExp(r'\d+').firstMatch(cleanWeek);
       String finalWeek = weekMatch != null ? 'Week ${weekMatch.group(0)}' : 'Scheduled';
+      String weekNum = weekMatch != null ? weekMatch.group(0)! : '';
 
       if (cleanName.isEmpty || cleanName.toLowerCase() == 'none' || cleanName.toLowerCase() == 'n/a') return;
 
@@ -1731,7 +1745,10 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
       if (foundKeys.contains(uniqueId)) return;
       foundKeys.add(uniqueId);
 
-      list.add(_AssessmentItem(cleanName, finalWeek));
+      // 👉 NEW: Lookup the topic for this specific week
+      String topic = weeklyTopics[weekNum] ?? '';
+
+      list.add(_AssessmentItem(cleanName, finalWeek, topic));
     }
 
     final assessStr = widget.ws.fields['assessments_schedule'] ?? '';
@@ -1777,11 +1794,9 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
     final Map<String, String> updatedSchedule = {};
     
     for (final item in currentList) {
-      // Extract just the number from "Week 4" or default to "0"
       final match = RegExp(r'\d+').firstMatch(item.subtitle);
       final weekKey = match != null ? match.group(0)! : '0';
       
-      // Combine items on the same week using a comma
       if (updatedSchedule.containsKey(weekKey)) {
         updatedSchedule[weekKey] = '${updatedSchedule[weekKey]}, ${item.name}';
       } else {
@@ -1790,8 +1805,6 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
     }
 
     final jsonStr = jsonEncode(updatedSchedule);
-    
-    // Send it directly to the database!
     await widget.vm.updateFields({'assessments_schedule': jsonStr});
   }
 
@@ -1799,7 +1812,6 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
   void _showAssessmentDialog({_AssessmentItem? existingItem, int? index}) {
     final bool isEditing = existingItem != null;
     
-    // Extract the raw number for the week input field
     String initialWeek = '';
     if (isEditing) {
       final match = RegExp(r'\d+').firstMatch(existingItem.subtitle);
@@ -1857,8 +1869,15 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
               
               if (name.isEmpty || week.isEmpty) return;
 
+              // 👉 NEW: Dynamically fetch the topic for the new week they just typed!
+              String topic = '';
+              try {
+                final decoded = jsonDecode(widget.ws.fields['weekly_schedule'] ?? '{}');
+                topic = decoded[week]?.toString() ?? '';
+              } catch (_) {}
+
               final currentList = _getAssessments();
-              final newItem = _AssessmentItem(name, 'Week $week');
+              final newItem = _AssessmentItem(name, 'Week $week', topic);
 
               if (isEditing && index != null) {
                 currentList[index] = newItem;
@@ -1928,7 +1947,6 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
 
     return Column(
       children: [
-        // 👉 NEW: Add Assessment Button
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: SizedBox(
@@ -1997,10 +2015,23 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
                                     item.subtitle, 
                                     style: const TextStyle(fontSize: 12, color: AppStyles.darkGray, fontWeight: FontWeight.w600),
                                   ),
+                                  // 👉 NEW: Show the topic right below the week!
+                                  if (item.topic.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      item.topic,
+                                      style: TextStyle(
+                                        fontSize: 11, 
+                                        color: AppStyles.darkGray.withOpacity(0.8), // Subtle gray
+                                        height: 1.3,
+                                      ),
+                                      maxLines: 2, // Keeps the card from getting too tall
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
-                            // 👉 NEW: Edit & Delete Action Buttons
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -2028,7 +2059,7 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
   }
 }
 
-// ─── Smart Bottom Sheet ───────────────────────────────────────────────────────
+// ─── Manual Linking Bottom Sheet ──────────────────────────────────────────────
 class _AssessmentLinkSheet extends StatefulWidget {
   const _AssessmentLinkSheet({required this.assessmentName, required this.materials});
   final String assessmentName;
@@ -2039,42 +2070,13 @@ class _AssessmentLinkSheet extends StatefulWidget {
 }
 
 class _AssessmentLinkSheetState extends State<_AssessmentLinkSheet> {
+  // Starts completely empty so the instructor has a blank slate
   final Set<int> _selectedIds = {};
 
   @override
   void initState() {
     super.initState();
-    _runAutoMatcher();
-  }
-
-  // 👉 Option B: AI/Regex Auto-Matcher
-  void _runAutoMatcher() {
-    final a = widget.assessmentName.toLowerCase();
-    
-    for (final m in widget.materials) {
-      final f = m.fileName.toLowerCase();
-      
-      // 1. Direct overlap (e.g. "Midterm" matches "midterm_review.pdf")
-      if (f.contains(a)) {
-        _selectedIds.add(m.id);
-        continue;
-      }
-      
-      // 2. Semantic & Abbreviation matching
-      if (a.contains('quiz')) {
-        // Matches "quiz" OR "q1", "q2", "q12", etc.
-        if (f.contains('quiz') || RegExp(r'\bq\d+\b').hasMatch(f)) { 
-          _selectedIds.add(m.id); continue; 
-        }
-      }
-      if (a.contains('test') && (f.contains('test') || RegExp(r'\bt\d+\b').hasMatch(f))) { 
-        _selectedIds.add(m.id); continue; 
-      }
-      if (a.contains('midterm') && f.contains('midterm')) { _selectedIds.add(m.id); continue; }
-      if (a.contains('exam') && f.contains('exam')) { _selectedIds.add(m.id); continue; }
-      if (a.contains('assignment') && f.contains('assignment')) { _selectedIds.add(m.id); continue; }
-      if (a.contains('project') && f.contains('project')) { _selectedIds.add(m.id); continue; }
-    }
+    // Auto-matcher has been completely removed!
   }
 
   @override
@@ -2102,7 +2104,8 @@ class _AssessmentLinkSheetState extends State<_AssessmentLinkSheet> {
                   const SizedBox(height: 4),
                   Text('Link Materials to ${widget.assessmentName}', style: const TextStyle(color: AppStyles.textPrimary, fontWeight: FontWeight.w800, fontSize: 20)),
                   const SizedBox(height: 6),
-                  const Text('We auto-selected materials based on the filename. Review and confirm below:', style: TextStyle(color: AppStyles.darkGray, fontSize: 13, height: 1.4)),
+                  // 👉 Updated text to reflect the manual process
+                  const Text('Select the files you want the AI to use as context for this assessment:', style: TextStyle(color: AppStyles.darkGray, fontSize: 13, height: 1.4)),
                 ],
               ),
             ),
