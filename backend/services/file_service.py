@@ -187,18 +187,27 @@ class SyllabusFieldExtractor:
         if len(syllabus_text.strip()) < 250:
             return {col: "" for col in columns}
 
-        cols_json = json.dumps(columns, ensure_ascii=True)
         prompt = (
-            "You extract structured fields from university syllabus text.\n"
-            "Return ONLY valid JSON (no markdown, no commentary).\n"
-            "Output must be a single JSON object mapping column names to values.\n"
-            "Definitions:\n"
-            "- 'course_title': The actual name of the class.\n"
-            "- 'course_code': The short alphanumeric code (e.g. 'PHYS-101').\n"
-            "- 'weekly_schedule': A JSON dictionary mapping week number to topics.\n"
-            "- 'assessments_schedule': Output a JSON ARRAY of objects representing EVERY single assessment, quiz, exam, midterm, and assignment. "
-            "Scan ALL tables across ALL pages. Example format: [{\"week\": 4, \"assessment\": \"Quiz 1\"}, {\"week\": 4, \"assessment\": \"Assignment 1\"}]. Do not group them yourself; list each item separately!\n\n"
-            f"COLUMNS(JSON array of strings): {cols_json}\n\n"
+            "You are an expert data extractor. Extract structured fields from the syllabus text below.\n"
+            "You MUST return ONLY a valid JSON object matching the exact structure below. Do not add markdown formatting (like ```json).\n\n"
+            "EXPECTED JSON STRUCTURE:\n"
+            "{\n"
+            "  \"course_title\": \"Name of the course\",\n"
+            "  \"course_code\": \"Course code (e.g., PHYS-101)\",\n"
+            "  \"weekly_schedule\": {\n"
+            "    \"1\": \"Topic for week 1\",\n"
+            "    \"2\": \"Topic for week 2\"\n"
+            "  },\n"
+            "  \"assessments_schedule\": [\n"
+            "    {\"week\": \"4\", \"assessment\": \"Assignment 1\"},\n"
+            "    {\"week\": \"4\", \"assessment\": \"Quiz 1\"},\n"
+            "    {\"week\": \"9\", \"assessment\": \"Midterm Exam\"}\n"
+            "  ]\n"
+            "}\n\n"
+            "CRITICAL INSTRUCTIONS:\n"
+            "1. 'assessments_schedule' MUST be a JSON Array of objects, NOT a dictionary.\n"
+            "2. You MUST extract EVERY assignment, quiz, midterm, project, and exam from ALL tables. Check both 'OUT-OF-CLASS ASSIGNMENTS' and 'ASSESSMENT METHODS' tables. Do NOT skip any!\n"
+            "3. If a week has multiple items, you must create a separate object in the array for each item.\n\n"
             f"SYLLABUS TEXT:\n{syllabus_text}\n"
         )
 
@@ -212,6 +221,7 @@ class SyllabusFieldExtractor:
         for name in columns:
             value = data.get(name, "")
             
+            # Python intercepts the array and safely combines items occurring on the same week
             if name == "assessments_schedule" and isinstance(value, list):
                 combined = {}
                 for item in value:
