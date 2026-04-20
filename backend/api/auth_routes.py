@@ -1,4 +1,4 @@
-# backend/routers/auth.py
+# backend/api/auth_routes.py
 
 import os
 from datetime import datetime, timedelta, timezone
