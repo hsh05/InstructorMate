@@ -5,11 +5,8 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from openai import OpenAI
 from sqlalchemy.orm import Session
-
-# 👉 THE FIX: We only import the SQLAlchemy models now. No aliases needed!
 from db.models import Workspace, Section, Instructor, Enrollment, Student
 
 logger = logging.getLogger(__name__)
@@ -36,8 +33,6 @@ class PgWorkspaceRepository:
         return self.db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
 
     def save(self, workspace: Workspace) -> None:
-        # 👉 THE FIX: Since 'workspace' is already a SQLAlchemy model, 
-        # we don't need to manually map columns anymore!
         self.db.add(workspace)
         self.db.commit()
         self.db.refresh(workspace)
@@ -140,6 +135,14 @@ class PgSectionRepository:
         self.db.commit()
         return True
 
+    def update_import_hash(self, section_id: str, file_hash: str):
+        row = self.db.query(Section).filter(Section.section_id == section_id).first()
+        if row:
+            row.file_hash = file_hash
+            self.db.commit()
+            self.db.refresh(row)
+        return row
+
     def _to_dict(self, row: Section) -> Dict:
         days = [d.strip() for d in row.day.split(",")] if row.day else []
         try: reminder = int(row.reminder_minutes or 10)
@@ -150,7 +153,7 @@ class PgSectionRepository:
             "workspace_id": str(row.workspace_id), 
             "name":         str(row.section_id),
             "location":     row.location or "",
-            "last_import_hash": "",
+            "last_import_hash": getattr(row, "file_hash", ""),
             "schedule": {
                 "days":             days,
                 "start_time":       row.start_time.strftime('%H:%M:%S') if row.start_time else "",
