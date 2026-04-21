@@ -67,7 +67,7 @@ flutter pub get
 flutter run
 
 
-https://instructormate1.onrender.com
+https://instructormate.onrender.com
 
 flutter run
 
