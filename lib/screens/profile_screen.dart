@@ -1,16 +1,14 @@
+// lib/screens/profile_screen.dart
+
 import 'package:flutter/material.dart';
 import '../app_styles.dart';
-
-// 👉 THE FIX: Pointing to the new unified files
 import '../models/instructor_model.dart';
 import '../services/auth_service.dart';
-
-// Assuming these are now in your unified widgets folder!
 import '../widgets/profile_header_card.dart';
 import '../widgets/profile_section.dart';
 
 class ProfileScreen extends StatefulWidget {
-  final String userId; // UUID
+  final String userId;
   const ProfileScreen({super.key, required this.userId});
 
   @override
@@ -18,7 +16,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // 👉 THE FIX: Using Instructor instead of InstructorProfile
   Instructor? _profile;
   bool _isLoading = true;
   bool _isEditing = false;
@@ -52,7 +49,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _syncControllers(Instructor p) {
-    // 👉 THE FIX: Mapped to the new Instructor properties
     _fullNameCtrl = TextEditingController(text: p.name);
     _phoneCtrl = TextEditingController(text: p.phone ?? '');
     _universityCtrl = TextEditingController(text: p.universityName ?? '');
@@ -64,7 +60,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfile() async {
     try {
-      // 👉 THE FIX: Using AuthService
       final profile = await AuthService.getProfile(widget.userId);
       setState(() {
         _profile = profile;
@@ -82,7 +77,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _saveProfile() async {
     setState(() => _isSaving = true);
     try {
-      // 👉 THE FIX: Using AuthService
       final updated = await AuthService.updateProfile(widget.userId, {
         'full_name': _fullNameCtrl.text.trim(),
         'phone_number': _phoneCtrl.text.trim(),
@@ -98,10 +92,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isEditing = false;
         _isSaving = false;
       });
-      _showSnackbar('Profile updated successfully', AppStyles.success); // Mapped
+      _showSnackbar('Profile updated successfully', AppStyles.success);
     } catch (e) {
       setState(() => _isSaving = false);
-      _showSnackbar('Failed to save: $e', AppStyles.error); // Mapped
+      _showSnackbar('Failed to save: $e', AppStyles.error);
     }
   }
 

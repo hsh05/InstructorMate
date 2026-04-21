@@ -1,3 +1,5 @@
+# backend/api/auth_routes.py
+
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -5,11 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-
-# 👉 THE FIX: Pointing to the new 'db' folder for the database pool
 from db.database import get_pool
-
-# 👉 THE FIX: Pointing to the unified 'services' folder for your auth utilities
 from services.auth_service import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_access_token,
@@ -65,7 +63,7 @@ async def issue_tokens(instructor_id: int, email: str, pool) -> dict:
         )
 
     return {
-        "user_id": str(instructor_id),          # Keep user_id in output for Flutter compatibility
+        "user_id": str(instructor_id),
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",

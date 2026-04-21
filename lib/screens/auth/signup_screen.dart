@@ -1,3 +1,5 @@
+// lib/screens/auth/signup_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../state/auth_vm.dart';
 import '../../app_styles.dart';
@@ -15,8 +17,6 @@ class _SignupScreenState extends State<SignupScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
-  
-  // 👉 THE FIX: Replaced SignupController with AuthViewModel
   final _authVM = AuthViewModel();
 
   bool _isLoading = false;
@@ -37,7 +37,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() => _isLoading = true);
     
-    // 👉 THE FIX: Capital 'U', removed labels, correct order!
     final success = await _authVM.signUp(
       _email.text,
       _password.text,
