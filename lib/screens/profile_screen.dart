@@ -161,6 +161,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _logout() async {
+    // Clear the secure storage
+    await const FlutterSecureStorage().deleteAll();
+    
+    if (mounted) {
+      // Obliterate the navigation history and push to the login screen
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    }
+  }
+
   void _cancelEdit() {
     _syncControllers(_profile!);
     _loadPreferences(); // Re-sync local dropdowns to what was previously saved
@@ -311,7 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: AppStyles.gapXXL),
 
-          // 👉 NEW: Notification Preference Section (Raw UI Bypass)
+          // Notification Preference Section
           const Text(
             'Weekly Overview Delivery',
             style: TextStyle(
@@ -361,6 +371,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
+          
+          const SizedBox(height: 32),
+
+          // 👉 NEW: The Log Out Button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppStyles.error,
+                side: const BorderSide(color: AppStyles.error, width: 2),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
+              ),
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text(
+                'Log Out', 
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+              ),
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Log Out'),
+                    content: const Text('Are you sure you want to log out of InstructorMate?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AppStyles.error, foregroundColor: Colors.white),
+                        onPressed: () => Navigator.pop(ctx, true), 
+                        child: const Text('Log Out')
+                      ),
+                    ],
+                  )
+                );
+                
+                if (confirm == true) _logout();
+              },
+            ),
+          ),
+          
           const SizedBox(height: AppStyles.gapHuge),
         ]),
       );

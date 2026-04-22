@@ -9,18 +9,6 @@ import '../../app_styles.dart';
 import 'mobile_toast_service.dart';
 import 'in_app_queue.dart'; // 👉 NEW: Import the Desktop Queue
 
-// ─── REQUIRED top-level background handler ───────────────────────────────────
-@pragma('vm:entry-point')
-void notificationBackgroundHandler(NotificationResponse response) {
-  try {
-    final payload = response.payload ?? '';
-    final sep = payload.indexOf('||');
-    final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
-    final body = sep >= 0 ? payload.substring(sep + 2) : '';
-    MobileToastService.show(title: title, body: body);
-  } catch (e) {}
-}
-
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
@@ -62,9 +50,7 @@ class NotificationService {
       );
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
-        onDidReceiveNotificationResponse: _onNotificationResponse,
-        onDidReceiveBackgroundNotificationResponse:
-            notificationBackgroundHandler,
+        onDidReceiveNotificationResponse: _onNotificationResponse
       );
     } catch (e) {
       _initialized = true;
