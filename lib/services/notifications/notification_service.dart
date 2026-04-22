@@ -13,14 +13,11 @@ class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
-
+  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   static const _channel = MethodChannel('com.instructormate/battery');
 
   bool _initialized = false;
   bool _notifGranted = false;
-  bool _alarmGranted = false;
 
   Future<bool>? _initFuture;
 
@@ -61,39 +58,17 @@ class NotificationService {
     }
     _initialized = true;
     try {
-      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final androidImpl = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidImpl != null) {
-        _notifGranted =
-            await androidImpl.requestNotificationsPermission() ?? false;
-        
-        // 👉 THE FIX: Request Exact Alarm permission during initialization
-        await requestExactAlarmPermission();
-        
-        _alarmGranted =
-            await androidImpl.canScheduleExactNotifications() ?? false;
+        _notifGranted = await androidImpl.requestNotificationsPermission() ?? false;
         await _requestBatteryOptimizationExemption();
       } else {
         _notifGranted = true;
-        _alarmGranted = true;
       }
     } catch (e) {
       _notifGranted = true;
     }
     return _notifGranted;
-  }
-
-  // 👉 NEW: Dedicated method to handle the system permission request
-  Future<void> requestExactAlarmPermission() async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      if (androidImpl != null) {
-        // This triggers the Android System "Alarms & Reminders" settings page
-        // if the permission hasn't been granted yet.
-        await androidImpl.requestExactAlarmsPermission();
-      }
-    }
   }
 
   Future<void> _requestBatteryOptimizationExemption() async {
@@ -104,21 +79,7 @@ class NotificationService {
 
   Future<bool> hasPermission() async {
     if (_isDesktopOrWeb) return true;
-
     await init();
-    try {
-      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      if (androidImpl != null) {
-        _notifGranted =
-            await androidImpl.areNotificationsEnabled() ?? _notifGranted;
-        _alarmGranted =
-            await androidImpl.canScheduleExactNotifications() ?? _alarmGranted;
-        // Only require notification permission — scheduleClassReminder already
-        // handles exact vs inexact alarms gracefully via its own canDoExact check.
-        return _notifGranted;
-      }
-    } catch (e) {}
     return _notifGranted;
   }
 
@@ -136,10 +97,6 @@ class NotificationService {
     await init();
     if (!_notifGranted) return;
 
-    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    bool canDoExact = await androidImpl?.canScheduleExactNotifications() ?? false;
-
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         'class_reminders',
@@ -147,6 +104,8 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         color: AppStyles.primary,
+        // 👉 THE FIX: This ensures the text expands properly and doesn't crash on long overview topics
+        styleInformation: BigTextStyleInformation(body),
       ),
       iOS: const DarwinNotificationDetails(
         presentAlert: true,
@@ -163,11 +122,9 @@ class NotificationService {
         when,
         details,
         payload: '$title||$body',
-        androidScheduleMode: canDoExact 
-            ? AndroidScheduleMode.exactAllowWhileIdle 
-            : AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
+        // 👉 THE FIX: Back to exact mode so it fires on the dot and separates your multiple classes!
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
     } catch (e) {
       debugPrint("Schedule Error: $e");
@@ -192,28 +149,5 @@ class NotificationService {
     try {
       await _plugin.cancelAll();
     } catch (e) {}
-  }
-
-  Future<void> showImmediateTest() async {
-    if (_isDesktopOrWeb) {
-      MobileToastService.show(
-        title: '🚀 InstructorMate', 
-        body: 'Notifications working!'
-      );
-      return;
-    }
-
-    await init();
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'class_reminders',
-        'Class Reminders',
-        importance: Importance.max,
-        priority: Priority.max,
-        color: AppStyles.primary, 
-      ),
-    );
-    await _plugin.show(
-        11111, '🚀 InstructorMate', 'Notifications working!', details);
   }
 }
