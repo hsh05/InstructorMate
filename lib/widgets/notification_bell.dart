@@ -138,7 +138,7 @@ class _NotificationBellState extends State<NotificationBell>
                 count > 0
                     ? Icons.notifications_rounded
                     : Icons.notifications_none_rounded,
-                color: count > 0 ? AppStyles.textPrimary : AppStyles.darkGray,
+                color: count > 0 ? AppStyles.textPrimary : AppStyles.white,
                 size: 26,
               ),
               if (count > 0)

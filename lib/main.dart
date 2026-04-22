@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
 // --- UI Screens ---
-// 👉 THE FIX: Updated to point to the correct workspaces_home.dart file
 import 'screens/workspace/workspace_home.dart'; 
 import 'screens/workspace/workspace_detail.dart';
 import 'screens/auth/login_screen.dart';
@@ -10,10 +13,11 @@ import 'screens/profile_screen.dart';
 
 // --- API, Services, and State Management ---
 import 'services/api_service.dart';
-import 'services/auth_service.dart'; // 👉 THE FIX: Added so we can init Google Auth
-import 'state/workspaces_vm.dart';   // 👉 THE FIX: Updated to the new state/ folder path
-
-import 'app_styles.dart';            // 👉 THE FIX: Removed the slash
+import 'services/auth_service.dart'; 
+import 'services/notifications/in_app_queue.dart';
+import 'state/workspaces_vm.dart';   
+import 'state/auth_vm.dart';
+import 'app_styles.dart';    
 
 // 1. The Global Navigator Key
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -21,32 +25,39 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  tz_data.initializeTimeZones();
+  try {
+    final currentTimeZone = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(currentTimeZone.identifier)); // Grab the string identifier
+  } catch (e) {
+    debugPrint('Could not set local timezone: $e');
+  }
+  InAppQueue.startTimer();
+
   // Load dotenv from assets
   await dotenv.load(fileName: ".env");
 
-  // 👉 THE FIX: Initialize Google Sign-In before the app boots!
+  // Initialize Google Sign-In before the app boots!
   await AuthService().initialize();
 
-  runApp(const InstructorMateApp());
+  runApp(
+    // 👉 THE FIX: Wrap the entire app in MultiProvider
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => WorkspacesViewModel(api: ApiService()),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AuthViewModel(),
+        ),
+      ],
+      child: const InstructorMateApp(),
+    ),
+  );
 }
 
-class InstructorMateApp extends StatefulWidget {
+class InstructorMateApp extends StatelessWidget {
   const InstructorMateApp({super.key});
-
-  @override
-  State<InstructorMateApp> createState() => _InstructorMateAppState();
-}
-
-class _InstructorMateAppState extends State<InstructorMateApp> {
-  // 2. Initialize your ViewModel
-  late final WorkspacesViewModel _workspacesVM;
-
-  @override
-  void initState() {
-    super.initState();
-    final apiService = ApiService(); 
-    _workspacesVM = WorkspacesViewModel(api: apiService);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +66,6 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       
-      // 👉 Inject AppStyles globally here!
       theme: ThemeData(
         primaryColor: AppStyles.primary,
         scaffoldBackgroundColor: AppStyles.lightGray,
@@ -83,11 +93,11 @@ class _InstructorMateAppState extends State<InstructorMateApp> {
       // 4. Define the static routes for navigation
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/home': (context) => WorkspacesHome(vm: _workspacesVM),
-        '/workspace': (context) => WorkspaceDetailPage(vm: _workspacesVM),
+        '/home': (context) => const WorkspacesHome(),
+        '/workspace': (context) => const WorkspaceDetailPage(),
       },
 
-      // 5. Dynamic routes (Profile needs a userId argument)
+      // 5. Dynamic routes (Profile now has access to the provider tree)
       onGenerateRoute: (settings) {
         if (settings.name == '/profile') {
           final userId = settings.arguments as String; 

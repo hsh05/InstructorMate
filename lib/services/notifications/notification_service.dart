@@ -1,12 +1,13 @@
 // lib/services/notifications/notification_service.dart
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'; // 👉 NEW: Imported for defaultTargetPlatform
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../app_styles.dart'; 
 import 'mobile_toast_service.dart';
+import 'in_app_queue.dart'; // 👉 NEW: Import the Desktop Queue
 
 // ─── REQUIRED top-level background handler ───────────────────────────────────
 @pragma('vm:entry-point')
@@ -34,10 +35,18 @@ class NotificationService {
   bool _alarmGranted = false;
 
   Future<bool>? _initFuture;
-  bool get _supported => !kIsWeb;
+
+  // 👉 NEW: Helper to check if we are on a desktop/web platform
+  bool get _isDesktopOrWeb => 
+      kIsWeb || 
+      defaultTargetPlatform == TargetPlatform.windows || 
+      defaultTargetPlatform == TargetPlatform.macOS || 
+      defaultTargetPlatform == TargetPlatform.linux;
 
   Future<bool> init() {
-    if (!_supported) return Future.value(false);
+    // 👉 THE FIX: Bypass OS initialization if on Desktop/Web
+    if (_isDesktopOrWeb) return Future.value(true); 
+    
     _initFuture ??= _doInit();
     return _initFuture!;
   }
@@ -88,7 +97,9 @@ class NotificationService {
   }
 
   Future<bool> hasPermission() async {
-    if (!_supported) return false;
+    // 👉 THE FIX: Always grant permission on desktop so the Bell Icon shows up!
+    if (_isDesktopOrWeb) return true;
+
     await init();
     try {
       final androidImpl = _plugin.resolvePlatformSpecificImplementation<
@@ -110,7 +121,12 @@ class NotificationService {
     required String body,
     required tz.TZDateTime when,
   }) async {
-    if (!_supported) return;
+    // 👉 THE FIX: Route Desktop/Web requests to our custom queue
+    if (_isDesktopOrWeb) {
+      await InAppQueue.add(id: id, title: title, body: body, fireTime: when);
+      return;
+    }
+
     await init();
     if (!_notifGranted) return;
 
@@ -170,14 +186,24 @@ class NotificationService {
   }
 
   Future<void> cancel(int id) async {
-    if (!_supported) return;
+    // 👉 THE FIX: Cancel from the queue if on Desktop
+    if (_isDesktopOrWeb) {
+      await InAppQueue.cancel(id);
+      return;
+    }
+
     try {
       await _plugin.cancel(id);
     } catch (_) {}
   }
 
   Future<void> cancelAll() async {
-    if (!_supported) return;
+    // 👉 THE FIX: Clear the entire queue if on Desktop
+    if (_isDesktopOrWeb) {
+      await InAppQueue.cancelAll();
+      return;
+    }
+
     try {
       await _plugin.cancelAll();
     } catch (e) {}
@@ -194,7 +220,15 @@ class NotificationService {
   }
 
   Future<void> showImmediateTest() async {
-    if (!_supported) return;
+    // 👉 THE FIX: Show the custom toast immediately on Desktop
+    if (_isDesktopOrWeb) {
+      MobileToastService.show(
+        title: '🚀 InstructorMate', 
+        body: 'Notifications working!'
+      );
+      return;
+    }
+
     await init();
     final bigTextStyle = BigTextStyleInformation(
       'Your notifications are working correctly. You will be reminded before each class starts.',

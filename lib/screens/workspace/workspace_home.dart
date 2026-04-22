@@ -4,18 +4,16 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-// 👉 THE FIX: Updated imports to step out of the workspace folder!
 import '../../state/workspaces_vm.dart';
 import '../../models/workspace_model.dart';
 import '../../app_styles.dart';
 import '../../widgets/notification_bell.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../profile_screen.dart';
 
 class WorkspacesHome extends StatefulWidget {
-  const WorkspacesHome({super.key, required this.vm});
-  final WorkspacesViewModel vm;
+  const WorkspacesHome({super.key});
 
   @override
   State<WorkspacesHome> createState() => _WorkspacesHomeState();
@@ -26,7 +24,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   @override
   void initState() {
     super.initState();
-    widget.vm.load(); 
+    // Fetch the VM once to load initial data without listening for changes here
+    context.read<WorkspacesViewModel>().load(); 
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -77,110 +76,104 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.vm,
-      builder: (_, __) => Scaffold(
-        backgroundColor: AppStyles.lightGray, 
-        appBar: AppBar(
-          elevation: 0,
-          backgroundColor: AppStyles.primary, 
-          title: const Text(
-            'InstructorMate',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              fontSize: 18,
-            ),
+    // Watch the VM so the UI rebuilds whenever workspaces change
+    final vm = context.watch<WorkspacesViewModel>();
+
+    return Scaffold(
+      backgroundColor: AppStyles.lightGray, 
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: AppStyles.primary, 
+        title: const Text(
+          'InstructorMate',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            fontSize: 18,
           ),
-          centerTitle: true,
-          actions: [
-            const NotificationBell(),
-            const SizedBox(width: 8), 
-            // 👉 ADD THE PROFILE BUTTON HERE
-            Padding(
-              padding: const EdgeInsets.only(right: 16.0),
-              child: GestureDetector(
-                onTap: () async {
-                  const storage = FlutterSecureStorage();
-                  final realUserId = await storage.read(key: 'user_id') ?? '';
-                  
-                  if (context.mounted) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ProfileScreen(userId: realUserId),
-                      ),
-                    );
-                  }
-                },
-                child: const CircleAvatar(
-                  radius: 15,
-                  backgroundColor: AppStyles.white, // White border effect
-                  child: CircleAvatar(
-                    radius: 14,
-                    backgroundColor: AppStyles.primary, 
-                    child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
-                  ),
+        ),
+        centerTitle: true,
+        actions: [
+          const NotificationBell(),
+          const SizedBox(width: 8), 
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: GestureDetector(
+              onTap: () async {
+                const storage = FlutterSecureStorage();
+                final realUserId = await storage.read(key: 'user_id') ?? '';
+                
+                if (context.mounted) {
+                  Navigator.pushNamed(context, '/profile', arguments: realUserId);
+                }
+              },
+              child: const CircleAvatar(
+                radius: 15,
+                backgroundColor: AppStyles.white, 
+                child: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: AppStyles.primary, 
+                  child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
                 ),
               ),
             ),
-          ],
-        ),
-        
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: widget.vm.importing ? null : _pickFile,
-          icon: widget.vm.importing
-              ? const SizedBox(
-                  width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                )
-              : const Icon(Icons.add_rounded),
-          label: Text(
-            widget.vm.importing ? 'Importing...' : 'Add Workspace',
-            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          backgroundColor: AppStyles.primary, 
-          foregroundColor: Colors.white,
-          elevation: 4,
+        ],
+      ),
+      
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: vm.importing ? null : _pickFile,
+        icon: vm.importing
+            ? const SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.add_rounded),
+        label: Text(
+          vm.importing ? 'Importing...' : 'Add Workspace',
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
+        backgroundColor: AppStyles.primary, 
+        foregroundColor: Colors.white,
+        elevation: 4,
+      ),
 
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppStyles.mediumGray, AppStyles.lightGray], 
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppStyles.mediumGray, AppStyles.lightGray], 
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
-          child: _buildBody(context),
         ),
+        child: _buildBody(context, vm),
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    if (widget.vm.loading && widget.vm.workspaces.isEmpty) {
+  Widget _buildBody(BuildContext context, WorkspacesViewModel vm) {
+    if (vm.loading && vm.workspaces.isEmpty) {
       return const Center(
           child: CircularProgressIndicator(color: AppStyles.primary)); 
     }
-    if (widget.vm.error != null && widget.vm.workspaces.isEmpty) {
+    if (vm.error != null && vm.workspaces.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Text(widget.vm.error!,
+          child: Text(vm.error!,
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppStyles.error)), 
         ),
       );
     }
 
-    if (widget.vm.workspaces.isNotEmpty) {
+    if (vm.workspaces.isNotEmpty) {
       return ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), 
-        itemCount: widget.vm.workspaces.length,
+        itemCount: vm.workspaces.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (_, i) {
-          final ws = widget.vm.workspaces[i];
+          final ws = vm.workspaces[i];
           
           final isStillProcessing = ws.isProcessing || ws.title.toLowerCase().contains('untitled');
 
@@ -188,17 +181,17 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
             return _PollingWorkspaceCard(
               key: ValueKey(ws.id),
               workspace: ws,
-              vm: widget.vm,
+              vm: vm,
               onReady: (title) => _showSuccess(
                 '"$title" imported successfully ✓',
               ),
-              onDelete: () => _confirmDelete(context, ws),
+              onDelete: () => _confirmDelete(context, ws, vm),
             );
           }
           return _WorkspaceCard(
             workspace: ws,
-            onTap: () => _openWorkspace(context, ws.id.toString()),
-            onDelete: () => _confirmDelete(context, ws),
+            onTap: () => _openWorkspace(context, ws.id.toString(), vm),
+            onDelete: () => _confirmDelete(context, ws, vm),
           );
         },
       );
@@ -217,13 +210,14 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 
   // ── Instant open — no await ───────────────────────────────────────────────
-  void _openWorkspace(BuildContext context, String id) {
-    widget.vm.openWorkspace(int.parse(id));
+  void _openWorkspace(BuildContext context, String id, WorkspacesViewModel vm) {
+    vm.openWorkspace(int.parse(id));
     Navigator.of(context).pushNamed('/workspace');
   }
 
   Future<void> _pickFile() async {
-    if (widget.vm.importing) return;
+    final vm = context.read<WorkspacesViewModel>();
+    if (vm.importing) return;
 
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -266,10 +260,11 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 
   Future<void> _importBytes(Uint8List bytes, String filename, DateTimeRange dates) async {
+    final vm = context.read<WorkspacesViewModel>();
     final startStr = dates.start.toIso8601String().split('T').first;
     final endStr = dates.end.toIso8601String().split('T').first;
 
-    await widget.vm.importSyllabusBytes(
+    await vm.importSyllabusBytes(
       bytes: bytes, 
       filename: filename,
       startDate: startStr,
@@ -278,22 +273,22 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
     if (!mounted) return;
 
-    if (widget.vm.current != null) {
-      await widget.vm.updateFields({
+    if (vm.current != null) {
+      await vm.updateFields({
         'start_date': startStr,
         'end_date': endStr,
       });
     }
 
     // ── Duplicate ─────────────────────────────────────────────────────────
-    if (widget.vm.lastImportWasDuplicate) {
-      widget.vm.lastImportWasDuplicate = false;
+    if (vm.lastImportWasDuplicate) {
+      vm.lastImportWasDuplicate = false;
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         barrierColor: Colors.black.withOpacity(0.6),
         builder: (ctx) {
-          final ws = widget.vm.current;
+          final ws = vm.current;
           return Dialog(
             backgroundColor: Colors.transparent,
             insetPadding: const EdgeInsets.symmetric(horizontal: 28),
@@ -473,16 +468,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
     }
 
     // ── Error ─────────────────────────────────────────────────────────────
-    if (widget.vm.error != null) {
-      _showError(widget.vm.error!);
+    if (vm.error != null) {
+      _showError(vm.error!);
       return;
-    }
-
-    if (widget.vm.current != null) {
-      await widget.vm.updateFields({
-        'start_date': dates.start.toIso8601String().split('T').first,
-        'end_date': dates.end.toIso8601String().split('T').first,
-      });
     }
 
     // ── Success — workspace queued for processing ─────────────────────────
@@ -490,7 +478,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
   }
 
   // ── Delete confirmation ───────────────────────────────────────────────────
-  void _confirmDelete(BuildContext context, WorkspaceSummary workspace) {
+  void _confirmDelete(BuildContext context, WorkspaceSummary workspace, WorkspacesViewModel vm) {
     final title =
         workspace.title.isNotEmpty ? workspace.title : 'this workspace';
     showDialog(
@@ -632,14 +620,14 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
                       onPressed: () async {
                         Navigator.pop(context);
                         final ok =
-                            await widget.vm.deleteWorkspace(workspace.id);
+                            await vm.deleteWorkspace(workspace.id);
                         if (!mounted) return;
                         if (ok) {
                           _showInfo(
                               '"${workspace.title.isNotEmpty ? workspace.title : "Workspace"}" deleted');
                         } else {
                           _showError(
-                              widget.vm.error ?? 'Failed to delete workspace');
+                              vm.error ?? 'Failed to delete workspace');
                         }
                       },
                     ),

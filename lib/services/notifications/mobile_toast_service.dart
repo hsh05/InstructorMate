@@ -1,7 +1,7 @@
 // lib/services/notifications/mobile_toast_service.dart
 
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
@@ -28,8 +28,9 @@ class MobileToastService {
   }
 
   static void _playChime() {
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.macOS) return;
+    
     try {
-      // 👉 THE FIX: Added the parentheses back! It requires an instance.
       FlutterRingtonePlayer().playNotification(
         looping: false,
         volume: 0.8,

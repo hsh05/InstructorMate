@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // 👉 NEW: Required for Provider
 import 'package:desktop_drop/desktop_drop.dart';
 import 'dart:convert';
 
@@ -33,8 +34,8 @@ const _fieldIcons = {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 class WorkspaceDetailPage extends StatefulWidget {
-  const WorkspaceDetailPage({super.key, required this.vm});
-  final WorkspacesViewModel vm;
+  // 👉 THE FIX: Removed the 'required this.vm' parameter
+  const WorkspaceDetailPage({super.key});
 
   @override
   State<WorkspaceDetailPage> createState() => _WorkspaceDetailPageState();
@@ -47,13 +48,15 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   Timer? _pollingTimer;
 
+  // 👉 THE FIX: We store a local reference to the VM for callbacks and init
+  late final WorkspacesViewModel _vm;
+
   final Map<String, TextEditingController> _fieldCtrl = {};
 
   final _askCtrl = TextEditingController();
   final _askScroll = ScrollController();
   bool _asking = false;
 
-  // 👉 The Global Edit Mode Tracker
   bool _isEditingDetails = false;
 
   static const _editableKeys = ['course_title', 'course_code', 'semester', 'start_date', 'end_date'];
@@ -66,30 +69,32 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   };
 
   List<ChatMsg> get _chat =>
-      widget.vm.chatHistory[widget.vm.current?.id ?? 0] ??= [];
+      _vm.chatHistory[_vm.current?.id ?? 0] ??= [];
 
   @override
   void initState() {
     super.initState();
+    // 👉 THE FIX: Grab the VM from the context once when the screen loads
+    _vm = context.read<WorkspacesViewModel>();
+    
     _tabs = TabController(length: 7, vsync: this);
 
     _tabs.addListener(() {
       if (_tabs.index != _currentTabIndex) {
         setState(() {
           _currentTabIndex = _tabs.index;
-          // Turn off edit mode if they navigate away from the info tab
           if (_currentTabIndex != 0) _isEditingDetails = false; 
         });
       }
     });
     
     _syncControllersFromWorkspace();
-    widget.vm.addListener(_onVmUpdate);
+    _vm.addListener(_onVmUpdate);
     _startSmartPolling();
   }
 
   void _onVmUpdate() {
-    final ws = widget.vm.current;
+    final ws = _vm.current;
     if (ws != null && _needsPolling(ws)) {
       if (_pollingTimer == null || !_pollingTimer!.isActive) {
         _startSmartPolling();
@@ -100,12 +105,12 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   void _startSmartPolling() {
     _pollingTimer?.cancel(); 
 
-    final ws = widget.vm.current;
+    final ws = _vm.current;
     if (ws != null && _needsPolling(ws)) {
       _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
-        await widget.vm.refreshCurrentQuietly(); 
+        await _vm.refreshCurrentQuietly(); 
         
-        final updatedWs = widget.vm.current;
+        final updatedWs = _vm.current;
         if (updatedWs != null && !_needsPolling(updatedWs)) {
           timer.cancel(); 
           if (mounted) {
@@ -118,17 +123,8 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     }
   }
 
-  @override
-  void didUpdateWidget(WorkspaceDetailPage old) {
-    super.didUpdateWidget(old);
-    if (old.vm.current != widget.vm.current) {
-      _syncControllersFromWorkspace();
-      _startSmartPolling();
-    }
-  }
-
   void _syncControllersFromWorkspace() {
-    final ws = widget.vm.current;
+    final ws = _vm.current;
     if (ws == null) return;
     for (final key in _editableKeys) {
       String value = ws.fields[key] ?? '';
@@ -146,7 +142,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   @override
   void dispose() {
-    widget.vm.removeListener(_onVmUpdate);
+    _vm.removeListener(_onVmUpdate);
     _pollingTimer?.cancel();
     _tabs.dispose();
     _askCtrl.dispose();
@@ -185,38 +181,35 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       _editableKeys.where((k) => (ws.fields[k] ?? '').trim().isEmpty).toList();
 
   void _initiateGenerationFromAssessment(List<int> materialIds, String assessmentName) {
-    // 1. Set the materials
-    widget.vm.clearMaterialSelection();
+    _vm.clearMaterialSelection();
     for (final id in materialIds) {
-      widget.vm.toggleMaterialSelection(id);
+      _vm.toggleMaterialSelection(id);
     }
 
-    // 2. Pre-fill the AI instructions to focus on this assessment!
     for (var config in _configs.values) {
       config.topicController.text = "Focus entirely on generating questions for: $assessmentName";
     }
 
-    // 3. Pop the config dialog
     _showSettings();
   }
 
   void _generateQuiz() async {
-    final selectedIds = widget.vm.selectedMaterialIdsForQuiz.toList();
-    if (selectedIds.isEmpty || widget.vm.current == null) return;
+    final selectedIds = _vm.selectedMaterialIdsForQuiz.toList();
+    if (selectedIds.isEmpty || _vm.current == null) return;
 
     setState(() => _isGenerating = true);
 
     try {
       var activeConfigs = _configs.values.where((c) => c.isSelected && c.count > 0).toList();
 
-      var questions = await widget.vm.api.generateQuiz(
-        widget.vm.current!.id,
+      var questions = await _vm.api.generateQuiz(
+        _vm.current!.id,
         selectedIds,
         activeConfigs,
       );
 
       if (mounted && questions.isNotEmpty) {
-        widget.vm.clearMaterialSelection(); 
+        _vm.clearMaterialSelection(); 
         Navigator.push(context, MaterialPageRoute(
           builder: (context) => ReviewScreen(questions: questions.cast<QuizQuestion>()),
         ));
@@ -338,188 +331,187 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.vm,
-      builder: (_, __) {
-        final ws = widget.vm.current;
-        if (ws == null) {
-          return const Scaffold(
-            backgroundColor: AppStyles.lightGray,
-            body: Center(child: Text('No workspace selected.')),
-          );
-        }
+    // 👉 THE FIX: We use watch to trigger automatic UI rebuilds when the state changes
+    final vm = context.watch<WorkspacesViewModel>();
+    final ws = vm.current;
 
-        if (!widget.vm.loadingDetail) {
-          _syncControllersFromWorkspace();
-        }
+    if (ws == null) {
+      return const Scaffold(
+        backgroundColor: AppStyles.lightGray,
+        body: Center(child: Text('No workspace selected.')),
+      );
+    }
 
-        final ready = !_needsPolling(ws);
-        final missing = widget.vm.loadingDetail ? <String>[] : _missingFields(ws);
+    if (!vm.loadingDetail) {
+      _syncControllersFromWorkspace();
+    }
 
-        return Scaffold(
-          backgroundColor: AppStyles.lightGray,
-          floatingActionButton: (ready && _currentTabIndex == 3) ? FloatingActionButton.extended(
-            onPressed: widget.vm.selectedMaterialIdsForQuiz.isEmpty || _isGenerating 
-                ? null 
-                : _showSettings,
-            icon: _isGenerating 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.auto_awesome_rounded), 
-            label: Text(
-              _isGenerating ? 'Thinking...' : 'Generate (${widget.vm.selectedMaterialIdsForQuiz.length})', 
-              style: const TextStyle(fontWeight: FontWeight.w700)
-            ),
-            backgroundColor: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? Colors.grey : AppStyles.primary, 
-            foregroundColor: Colors.white,
-            elevation: widget.vm.selectedMaterialIdsForQuiz.isEmpty ? 0 : 4,
-          ) : null,
-          
-          body: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-            child: NestedScrollView(
-              headerSliverBuilder: (_, __) => [_buildHeader(ws, ready)],
-              body: Column(
-                children: [
-                  Container(
-                    color: AppStyles.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppStyles.lightGray,
-                        borderRadius: AppStyles.borderRadiusXL,
-                      ),
-                      padding: const EdgeInsets.all(3),
-                      child: TabBar(
-                        controller: _tabs,
-                        indicator: BoxDecoration(
-                          color: AppStyles.primary,
-                          borderRadius: AppStyles.borderRadiusL,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppStyles.primary.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        dividerColor: Colors.transparent,
-                        labelColor: Colors.white,
-                        unselectedLabelColor: AppStyles.darkGray,
-                        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
-                        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
-                        tabs: const [
-                          Tab(icon: Icon(Icons.info_outline_rounded, size: 16), text: 'Info'),
-                          Tab(icon: Icon(Icons.groups_2_rounded, size: 16), text: 'Sections'),
-                          Tab(icon: Icon(Icons.people_alt_rounded, size: 16), text: 'Students'),
-                          Tab(icon: Icon(Icons.folder_zip_rounded, size: 16), text: 'Materials'),
-                          Tab(icon: Icon(Icons.assignment_rounded, size: 16), text: 'Assessments'),
-                          Tab(icon: Icon(Icons.auto_awesome_rounded, size: 16), text: 'Ask AI'),
-                          Tab(icon: Icon(Icons.fact_check_outlined, size: 16), text: 'Attendance'),
-                        ],
-                      ),
-                    ),
+    final ready = !_needsPolling(ws);
+    final missing = vm.loadingDetail ? <String>[] : _missingFields(ws);
+
+    return Scaffold(
+      backgroundColor: AppStyles.lightGray,
+      floatingActionButton: (ready && _currentTabIndex == 3) ? FloatingActionButton.extended(
+        onPressed: vm.selectedMaterialIdsForQuiz.isEmpty || _isGenerating 
+            ? null 
+            : _showSettings,
+        icon: _isGenerating 
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : const Icon(Icons.auto_awesome_rounded), 
+        label: Text(
+          _isGenerating ? 'Thinking...' : 'Generate (${vm.selectedMaterialIdsForQuiz.length})', 
+          style: const TextStyle(fontWeight: FontWeight.w700)
+        ),
+        backgroundColor: vm.selectedMaterialIdsForQuiz.isEmpty ? Colors.grey : AppStyles.primary, 
+        foregroundColor: Colors.white,
+        elevation: vm.selectedMaterialIdsForQuiz.isEmpty ? 0 : 4,
+      ) : null,
+      
+      body: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: NestedScrollView(
+          headerSliverBuilder: (_, __) => [_buildHeader(ws, ready, vm)],
+          body: Column(
+            children: [
+              Container(
+                color: AppStyles.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppStyles.lightGray,
+                    borderRadius: AppStyles.borderRadiusXL,
                   ),
-                  if (!ready && missing.isNotEmpty && !widget.vm.loadingDetail)
-                    _MissingBanner(fields: missing),
-                  Expanded(
-                    child: widget.vm.loadingDetail
-                        ? const _DetailSkeleton()
-                        : (!ready) 
-                            ? Center(
+                  padding: const EdgeInsets.all(3),
+                  child: TabBar(
+                    controller: _tabs,
+                    indicator: BoxDecoration(
+                      color: AppStyles.primary,
+                      borderRadius: AppStyles.borderRadiusL,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppStyles.primary.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: AppStyles.darkGray,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
+                    tabs: const [
+                      Tab(icon: Icon(Icons.info_outline_rounded, size: 16), text: 'Info'),
+                      Tab(icon: Icon(Icons.groups_2_rounded, size: 16), text: 'Sections'),
+                      Tab(icon: Icon(Icons.people_alt_rounded, size: 16), text: 'Students'),
+                      Tab(icon: Icon(Icons.folder_zip_rounded, size: 16), text: 'Materials'),
+                      Tab(icon: Icon(Icons.assignment_rounded, size: 16), text: 'Assessments'),
+                      Tab(icon: Icon(Icons.auto_awesome_rounded, size: 16), text: 'Ask AI'),
+                      Tab(icon: Icon(Icons.fact_check_outlined, size: 16), text: 'Attendance'),
+                    ],
+                  ),
+                ),
+              ),
+              if (!ready && missing.isNotEmpty && !vm.loadingDetail)
+                _MissingBanner(fields: missing),
+              Expanded(
+                child: vm.loadingDetail
+                    ? const _DetailSkeleton()
+                    : (!ready) 
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const CircularProgressIndicator(color: AppStyles.primary),
+                                const SizedBox(height: 20),
+                                Text(
+                                  '✨ AI is extracting syllabus data...',
+                                  style: TextStyle(
+                                    color: AppStyles.primary.withOpacity(0.8),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'This usually takes about 5-10 seconds.',
+                                  style: TextStyle(color: AppStyles.darkGray, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          )
+                        : vm.loading
+                            ? const Center(
+                                child: CircularProgressIndicator(color: AppStyles.primary),
+                              )
+                            : TabBarView(
+                            controller: _tabs,
+                            children: [
+                              _InfoTab(
+                                ws: ws,
+                                editableKeys: _editableKeys,
+                                ctrl: _ctrl,
+                                onSave: _onSave,
+                                isGlobalEditing: _isEditingDetails,
+                              ),
+                              // We pass 'vm' to tabs so their inner state doesn't break
+                              SectionsTab(
+                                ws: ws,
+                                vm: vm,
+                                onError: _showError,
+                                onNavigateToStudents: () => _tabs.animateTo(2),
+                              ),
+                              StudentsTab(
+                                ws: ws,
+                                vm: vm,
+                                onError: _showError,
+                              ),
+                              MaterialsTab(
+                                ws: ws,
+                                vm: vm,
+                              ),
+                              AssessmentsTab(
+                                ws: ws,
+                                vm: vm,
+                                onGenerateRequested: _initiateGenerationFromAssessment,
+                              ),
+                              AskTab(
+                                chat: _chat,
+                                ctrl: _askCtrl,
+                                scrollCtrl: _askScroll,
+                                asking: _asking,
+                                onAsk: _onAsk,
+                              ),
+                              Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const CircularProgressIndicator(color: AppStyles.primary),
-                                    const SizedBox(height: 20),
-                                    Text(
-                                      '✨ AI is extracting syllabus data...',
-                                      style: TextStyle(
-                                        color: AppStyles.primary.withOpacity(0.8),
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
+                                    Icon(Icons.construction_rounded, size: 48, color: AppStyles.darkGray.withOpacity(0.5)),
+                                    const SizedBox(height: 16),
                                     const Text(
-                                      'This usually takes about 5-10 seconds.',
-                                      style: TextStyle(color: AppStyles.darkGray, fontSize: 13),
+                                      'Attendance Module Coming Soon',
+                                      style: TextStyle(
+                                        color: AppStyles.darkGray,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ],
                                 ),
-                              )
-                            : widget.vm.loading
-                                ? const Center(
-                                    child: CircularProgressIndicator(color: AppStyles.primary),
-                                  )
-                                : TabBarView(
-                                controller: _tabs,
-                                children: [
-                                  _InfoTab(
-                                    ws: ws,
-                                    editableKeys: _editableKeys,
-                                    ctrl: _ctrl,
-                                    onSave: _onSave,
-                                    isGlobalEditing: _isEditingDetails, // Pass the global state
-                                  ),
-                                  SectionsTab(
-                                    ws: ws,
-                                    vm: widget.vm,
-                                    onError: _showError,
-                                    onNavigateToStudents: () => _tabs.animateTo(2),
-                                  ),
-                                  StudentsTab(
-                                    ws: ws,
-                                    vm: widget.vm,
-                                    onError: _showError,
-                                  ),
-                                  MaterialsTab(
-                                    ws: ws,
-                                    vm: widget.vm,
-                                  ),
-                                  AssessmentsTab(
-                                    ws: ws,
-                                    vm: widget.vm,
-                                    onGenerateRequested: _initiateGenerationFromAssessment,
-                                  ),
-                                  AskTab(
-                                    chat: _chat,
-                                    ctrl: _askCtrl,
-                                    scrollCtrl: _askScroll,
-                                    asking: _asking,
-                                    onAsk: _onAsk,
-                                  ),
-                                  Center(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.construction_rounded, size: 48, color: AppStyles.darkGray.withOpacity(0.5)),
-                                        const SizedBox(height: 16),
-                                        const Text(
-                                          'Attendance Module Coming Soon',
-                                          style: TextStyle(
-                                            color: AppStyles.darkGray,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
                               ),
-                  ),
-                ],
+                            ],
+                          ),
               ),
-            ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildHeader(Workspace ws, bool ready) {
-    final totalStudents = widget.vm.totalStudentsCount;
+  Widget _buildHeader(Workspace ws, bool ready, WorkspacesViewModel vm) {
+    final totalStudents = vm.totalStudentsCount;
     final sectionCount = ws.sections.length;
     final code = ws.fields['workspace_code'] ?? '';
     final semester = ws.fields['semester'] ?? '';
@@ -530,7 +522,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
       backgroundColor: AppStyles.tertiaryDark,
       foregroundColor: AppStyles.textPrimary,
       actions: [
-        // 👉 The Global Edit Toggle
         if (_currentTabIndex == 0)
           IconButton(
             icon: Icon(
@@ -540,7 +531,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
             tooltip: _isEditingDetails ? 'Save Changes' : 'Edit Details',
             onPressed: () {
               if (_isEditingDetails) {
-                // If they click the checkmark, save it!
                 _onSave(); 
               }
               setState(() {
@@ -667,10 +657,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     final updated = {
       for (final k in _editableKeys) k: (_fieldCtrl[k]?.text.trim() ?? ''),
     };
-    await widget.vm.updateFields(updated);
+    await _vm.updateFields(updated);
     if (!mounted) return;
-    if (widget.vm.error != null) {
-      _showError(widget.vm.error!);
+    if (_vm.error != null) {
+      _showError(_vm.error!);
     } else {
       _syncControllersFromWorkspace();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -691,10 +681,10 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
     });
     _askCtrl.clear();
     _scrollChat();
-    final answer = await widget.vm.askInWorkspace(q, history: historySnapshot);
+    final answer = await _vm.askInWorkspace(q, history: historySnapshot);
     setState(() {
       _chat.add(ChatMsg(
-        text: (widget.vm.error != null && widget.vm.error!.contains('chunks'))
+        text: (_vm.error != null && _vm.error!.contains('chunks'))
             ? '⚠️ Syllabus not processed yet. Tap "Re-upload PDF" above.'
             : (answer ?? "Sorry, I couldn't get an answer."),
         isUser: false,
@@ -834,8 +824,6 @@ class _InfoTabState extends State<_InfoTab>
       const _FieldGroup.single('semester'),
       const _FieldGroup.pair('start_date', 'end_date', flex1: 1, flex2: 1),
     ];
-
-    // 👉 THE FIX 1: Removed the old 'for' loop here that was duplicating your fields!
 
     final weekText = _calculateCurrentWeek();
 
@@ -1007,7 +995,6 @@ class _FieldGroup {
   const _FieldGroup.single(this.key) 
       : secondKey = null, flex1 = 1, flex2 = 1;
       
-  // Allows us to set flex properties (e.g. 60% width for Title, 40% for Code)
   const _FieldGroup.pair(this.key, this.secondKey, {this.flex1 = 1, this.flex2 = 1});
 }
 
@@ -1036,11 +1023,9 @@ class _InfoFieldRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // If we are actively editing, render the input form fields
     if (isEditing) {
       return _buildEditableForm(context);
     } 
-    // If not, render the clean, read-only list with NO pens
     else {
       return _buildReadOnlyDisplay(context);
     }
@@ -1074,7 +1059,7 @@ class _InfoFieldRow extends StatelessWidget {
     } else if (fieldKey == 'start_date' || fieldKey == 'end_date') {
       inputWidget = GestureDetector(
         onTap: onDateTap,
-        child: AbsorbPointer( // Prevents keyboard opening, forces tap to go to GestureDetector
+        child: AbsorbPointer( 
           child: TextFormField(
             controller: ctrl(fieldKey, value),
             readOnly: true,
@@ -1215,20 +1200,16 @@ class _StatPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        // Slightly increased padding for breathing room
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          // 👉 THE FIX: Increased background opacity to 0.2 / 0.25 for a more solid feel
           color: highlight ? AppStyles.accent.withOpacity(0.25) : AppStyles.primary.withOpacity(0.2),
           borderRadius: AppStyles.borderRadiusXL,
           border: Border.all(
-            // 👉 THE FIX: Stronger border opacity to frame the pill clearly
             color: highlight ? AppStyles.accent.withOpacity(0.8) : AppStyles.primary.withOpacity(0.5),
             width: 1.0,
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          // 👉 THE FIX: Switched to textPrimary (almost black) for maximum contrast
           Icon(
             icon, 
             color: highlight ? AppStyles.accent : AppStyles.textPrimary, 
@@ -1238,7 +1219,6 @@ class _StatPill extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              // 👉 THE FIX: Dark text and heavier font weight
               color: highlight ? AppStyles.accent : AppStyles.textPrimary,
               fontSize: 12, 
               fontWeight: FontWeight.w800, 
@@ -1700,7 +1680,7 @@ class AssessmentsTab extends StatefulWidget {
   const AssessmentsTab({
     super.key, 
     required this.ws, 
-    required this.vm, // 👉 Now accepts the ViewModel
+    required this.vm, 
     required this.onGenerateRequested
   });
   
@@ -1719,7 +1699,6 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
     final List<_AssessmentItem> list = [];
     final Set<String> foundKeys = {};
 
-    // 👉 NEW: Parse the weekly schedule ONCE to use as a lookup dictionary!
     Map<String, String> weeklyTopics = {};
     final weeklyStr = widget.ws.fields['weekly_schedule'] ?? '';
     if (weeklyStr.isNotEmpty) {
@@ -1745,7 +1724,6 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
       if (foundKeys.contains(uniqueId)) return;
       foundKeys.add(uniqueId);
 
-      // 👉 NEW: Lookup the topic for this specific week
       String topic = weeklyTopics[weekNum] ?? '';
 
       list.add(_AssessmentItem(cleanName, finalWeek, topic));
@@ -1869,7 +1847,6 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
               
               if (name.isEmpty || week.isEmpty) return;
 
-              // 👉 NEW: Dynamically fetch the topic for the new week they just typed!
               String topic = '';
               try {
                 final decoded = jsonDecode(widget.ws.fields['weekly_schedule'] ?? '{}');
@@ -2015,17 +1992,16 @@ class _AssessmentsTabState extends State<AssessmentsTab> {
                                     item.subtitle, 
                                     style: const TextStyle(fontSize: 12, color: AppStyles.darkGray, fontWeight: FontWeight.w600),
                                   ),
-                                  // 👉 NEW: Show the topic right below the week!
                                   if (item.topic.isNotEmpty) ...[
                                     const SizedBox(height: 4),
                                     Text(
                                       item.topic,
                                       style: TextStyle(
                                         fontSize: 11, 
-                                        color: AppStyles.darkGray.withOpacity(0.8), // Subtle gray
+                                        color: AppStyles.darkGray.withOpacity(0.8), 
                                         height: 1.3,
                                       ),
-                                      maxLines: 2, // Keeps the card from getting too tall
+                                      maxLines: 2, 
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
@@ -2070,13 +2046,11 @@ class _AssessmentLinkSheet extends StatefulWidget {
 }
 
 class _AssessmentLinkSheetState extends State<_AssessmentLinkSheet> {
-  // Starts completely empty so the instructor has a blank slate
   final Set<int> _selectedIds = {};
 
   @override
   void initState() {
     super.initState();
-    // Auto-matcher has been completely removed!
   }
 
   @override
@@ -2104,7 +2078,6 @@ class _AssessmentLinkSheetState extends State<_AssessmentLinkSheet> {
                   const SizedBox(height: 4),
                   Text('Link Materials to ${widget.assessmentName}', style: const TextStyle(color: AppStyles.textPrimary, fontWeight: FontWeight.w800, fontSize: 20)),
                   const SizedBox(height: 6),
-                  // 👉 Updated text to reflect the manual process
                   const Text('Select the files you want the AI to use as context for this assessment:', style: TextStyle(color: AppStyles.darkGray, fontSize: 13, height: 1.4)),
                 ],
               ),

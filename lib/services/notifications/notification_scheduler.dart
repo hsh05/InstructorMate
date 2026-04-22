@@ -1,12 +1,11 @@
 // lib/services/notifications/notification_scheduler.dart
 
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:timezone/timezone.dart' as tz;
-
-// 👉 THE FIX: Added an extra '../' to reach out of the new subfolder
 import '../../models/workspace_model.dart';
 import '../../utils/schedule_utils.dart';
-import 'notification_service.dart'; // Stays the same since they are in the same folder now
+import 'notification_service.dart';
 
 class NotificationScheduler {
   // How many future occurrences to schedule per section+day.
@@ -18,6 +17,7 @@ class NotificationScheduler {
     final hasPermission = await NotificationService.instance.hasPermission();
     if (!hasPermission) return;
 
+    // 👉 Wipes all ghosts for class section reminders
     await NotificationService.instance.cancelAll();
 
     for (final ws in workspaces) {
@@ -26,6 +26,106 @@ class NotificationScheduler {
           section: section,
           workspaceName: ws.title,
           workspaceId: ws.id.toString(),
+        );
+      }
+    }
+  }
+
+  // ── Weekly Overview Scheduler ───────────────────────────────────────────────
+  static Future<void> scheduleWeeklyOverviews({
+    required List<Workspace> workspaces,
+    required String preferredDay,
+    required int hour,
+    required int minute,
+  }) async {
+    if (kIsWeb) return;
+
+    final hasPermission = await NotificationService.instance.hasPermission();
+    if (!hasPermission) return;
+
+    final targetWeekday = ScheduleUtils.weekdayFor(preferredDay);
+    if (targetWeekday == null) return;
+
+    // 👉 PREVENT GHOSTS: Cancel all possible old overview notifications first
+    // If you changed your preferred day, we need to wipe the old days' scheduled overviews 
+    // without using cancelAll() (which would delete your class reminders too).
+    final allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    for (final ws in workspaces) {
+      for (final day in allDays) {
+        for (int w = 0; w < _weeksAhead; w++) {
+          await NotificationService.instance.cancel(
+            _notifId(ws.id.toString(), 'overview', day, w + 50)
+          );
+        }
+      }
+    }
+
+    final location = tz.local;
+    
+    // Find the very NEXT occurrence of the chosen day and time from right now
+    final nextFireBase = _nextOccurrence(
+      weekday: targetWeekday,
+      hour: hour,
+      minute: minute,
+      location: location,
+      reminderMinutes: 0, // We want it exactly on the hour, no early reminder
+    );
+
+    for (final ws in workspaces) {
+      Map<String, dynamic> topics = {};
+      Map<String, dynamic> assessments = {};
+
+      try {
+        if (ws.fields.containsKey('weekly_schedule')) {
+          topics = jsonDecode(ws.fields['weekly_schedule']!);
+        }
+        if (ws.fields.containsKey('assessments_schedule')) {
+          assessments = jsonDecode(ws.fields['assessments_schedule']!);
+        }
+      } catch (_) {}
+
+      // Calculate what week they are currently in based on the actual SEMESTER START DATE
+      int currentAcademicWeek = 1; // Default fallback
+      final startStr = ws.fields['start_date'];
+      
+      if (startStr != null && startStr.isNotEmpty) {
+        final startDate = DateTime.tryParse(startStr);
+        if (startDate != null) {
+          final startOnly = DateTime(startDate.year, startDate.month, startDate.day);
+          final now = DateTime.now();
+          final todayOnly = DateTime(now.year, now.month, now.day);
+          
+          // Only calculate if the semester has actually started
+          if (!todayOnly.isBefore(startOnly)) {
+            // Align both dates to the previous Monday to safely calculate full calendar weeks
+            final startMonday = startOnly.subtract(Duration(days: startOnly.weekday - 1));
+            final todayMonday = todayOnly.subtract(Duration(days: todayOnly.weekday - 1));
+            
+            final diffDays = todayMonday.difference(startMonday).inDays;
+            currentAcademicWeek = (diffDays ~/ 7) + 1;
+          }
+        }
+      }
+
+      // Schedule this week, and the next 3 weeks ahead
+      for (int weekOffset = 0; weekOffset < _weeksAhead; weekOffset++) {
+        final targetAcademicWeek = (currentAcademicWeek + weekOffset).toString();
+        
+        final topicText = topics[targetAcademicWeek] ?? 'No specific topic scheduled.';
+        final assessText = assessments[targetAcademicWeek] ?? 'No assessments scheduled.';
+
+        final title = '📅 ${ws.title} - Week $targetAcademicWeek';
+        final body = '📚 Topic: $topicText\n📝 Assessments: $assessText';
+
+        // Unique ID so it doesn't overwrite class reminders
+        final notifId = _notifId(ws.id.toString(), 'overview', preferredDay, weekOffset + 50); 
+        final fireTime = nextFireBase.add(Duration(days: weekOffset * 7));
+
+        await NotificationService.instance.scheduleClassReminder(
+          id: notifId,
+          title: title,
+          body: body,
+          when: fireTime,
         );
       }
     }
