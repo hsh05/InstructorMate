@@ -125,7 +125,7 @@ class NotificationScheduler {
           id: notifId,
           title: title,
           body: body,
-          when: fireTime,
+          when: tz.TZDateTime.from(fireTime, tz.local),
         );
       }
     }

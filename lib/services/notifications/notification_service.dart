@@ -171,11 +171,14 @@ class NotificationService {
         when,
         details,
         payload: payload,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle, 
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-    } catch (e) {}
+      print("🔔 [ANDROID] Scheduled exact notification ID: $id for $when");
+    } catch (e) {
+      print("❌ [ANDROID] Error scheduling exact notification: $e");
+    }
   }
 
   Future<void> cancel(int id) async {
@@ -199,16 +202,6 @@ class NotificationService {
 
     try {
       await _plugin.cancelAll();
-    } catch (e) {}
-  }
-
-  static void _onNotificationResponse(NotificationResponse response) {
-    try {
-      final payload = response.payload ?? '';
-      final sep = payload.indexOf('||');
-      final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
-      final body = sep >= 0 ? payload.substring(sep + 2) : '';
-      MobileToastService.show(title: title, body: body);
     } catch (e) {}
   }
 
