@@ -8,16 +8,18 @@ import '../../utils/schedule_utils.dart';
 import 'notification_service.dart';
 
 class NotificationScheduler {
-  // How many future occurrences to schedule per section+day.
   static const int _weeksAhead = 4;
+
+  // 👉 THE FIX 2: Safely limit strings so Android doesn't crash on Intent overload
+  static String _safeTruncate(String text, int maxChars) {
+    if (text.length <= maxChars) return text;
+    return '${text.substring(0, maxChars)}...';
+  }
 
   static Future<void> rescheduleAll(List<Workspace> workspaces) async {
     if (kIsWeb) return;
-
     final hasPermission = await NotificationService.instance.hasPermission();
     if (!hasPermission) return;
-
-    // 👉 Wipes all ghosts for class section reminders
     await NotificationService.instance.cancelAll();
 
     for (final ws in workspaces) {
@@ -31,7 +33,6 @@ class NotificationScheduler {
     }
   }
 
-  // ── Weekly Overview Scheduler ───────────────────────────────────────────────
   static Future<void> scheduleWeeklyOverviews({
     required List<Workspace> workspaces,
     required String preferredDay,
@@ -39,16 +40,12 @@ class NotificationScheduler {
     required int minute,
   }) async {
     if (kIsWeb) return;
-
     final hasPermission = await NotificationService.instance.hasPermission();
     if (!hasPermission) return;
 
     final targetWeekday = ScheduleUtils.weekdayFor(preferredDay);
     if (targetWeekday == null) return;
 
-    // 👉 PREVENT GHOSTS: Cancel all possible old overview notifications first
-    // If you changed your preferred day, we need to wipe the old days' scheduled overviews 
-    // without using cancelAll() (which would delete your class reminders too).
     final allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     for (final ws in workspaces) {
       for (final day in allDays) {
@@ -61,14 +58,12 @@ class NotificationScheduler {
     }
 
     final location = tz.local;
-    
-    // Find the very NEXT occurrence of the chosen day and time from right now
     final nextFireBase = _nextOccurrence(
       weekday: targetWeekday,
       hour: hour,
       minute: minute,
       location: location,
-      reminderMinutes: 0, // We want it exactly on the hour, no early reminder
+      reminderMinutes: 0,
     );
 
     for (final ws in workspaces) {
@@ -84,8 +79,7 @@ class NotificationScheduler {
         }
       } catch (_) {}
 
-      // Calculate what week they are currently in based on the actual SEMESTER START DATE
-      int currentAcademicWeek = 1; // Default fallback
+      int currentAcademicWeek = 1;
       final startStr = ws.fields['start_date'];
       
       if (startStr != null && startStr.isNotEmpty) {
@@ -95,29 +89,29 @@ class NotificationScheduler {
           final now = DateTime.now();
           final todayOnly = DateTime(now.year, now.month, now.day);
           
-          // Only calculate if the semester has actually started
           if (!todayOnly.isBefore(startOnly)) {
-            // Align both dates to the previous Monday to safely calculate full calendar weeks
             final startMonday = startOnly.subtract(Duration(days: startOnly.weekday - 1));
             final todayMonday = todayOnly.subtract(Duration(days: todayOnly.weekday - 1));
-            
             final diffDays = todayMonday.difference(startMonday).inDays;
             currentAcademicWeek = (diffDays ~/ 7) + 1;
           }
         }
       }
 
-      // Schedule this week, and the next 3 weeks ahead
       for (int weekOffset = 0; weekOffset < _weeksAhead; weekOffset++) {
         final targetAcademicWeek = (currentAcademicWeek + weekOffset).toString();
         
-        final topicText = topics[targetAcademicWeek] ?? 'No specific topic scheduled.';
-        final assessText = assessments[targetAcademicWeek] ?? 'No assessments scheduled.';
+        final rawTopic = topics[targetAcademicWeek] ?? 'No specific topic scheduled.';
+        final rawAssess = assessments[targetAcademicWeek] ?? 'No assessments scheduled.';
 
-        final title = '📅 ${ws.title} - Week $targetAcademicWeek';
-        final body = '📚 $topicText  ·  📝 $assessText';
+        // 👉 TRUNCATE: Prevent massive AI blocks from crashing the OS
+        final safeTopic = _safeTruncate(rawTopic, 80);
+        final safeAssess = _safeTruncate(rawAssess, 80);
+        final safeTitle = _safeTruncate(ws.title, 25);
 
-        // Unique ID so it doesn't overwrite class reminders
+        final title = '📅 $safeTitle - Week $targetAcademicWeek';
+        final body = '📚 $safeTopic\n📝 $safeAssess';
+
         final notifId = _notifId(ws.id.toString(), 'overview', preferredDay, weekOffset + 50); 
         final fireTime = nextFireBase.add(Duration(days: weekOffset * 7));
 
@@ -131,12 +125,7 @@ class NotificationScheduler {
     }
   }
 
-  static int _notifId(
-    String workspaceId,
-    String sectionId,
-    String day,
-    int weekIndex,
-  ) {
+  static int _notifId(String workspaceId, String sectionId, String day, int weekIndex) {
     final key = '$workspaceId:$sectionId:$day:$weekIndex';
     int hash = 5381;
     for (final c in key.codeUnits) {
@@ -161,17 +150,8 @@ class NotificationScheduler {
     final location = tz.local;
     final reminderMinutes = sch.reminderMinutes > 0 ? sch.reminderMinutes : 10;
 
-    // ── Build notification content ────────────────────────────────────────────
-    //
-    // Title: always short so it NEVER gets truncated on any screen size.
-    // The emoji + countdown is the most urgent info — must always be visible.
-    final title = '⏰ Class starting in ${reminderMinutes}min';
-
-    // Body line 1: full workspace name (visible when notification is expanded)
-    final workspaceDisplay = workspaceName.isNotEmpty ? workspaceName : 'Your class';
-
-    // Body line 2: section · location · day time
-    // Only include parts that actually have data
+    final title = '⏰ Class in ${reminderMinutes}min';
+    final workspaceDisplay = _safeTruncate(workspaceName.isNotEmpty ? workspaceName : 'Your class', 35);
     final sectionLabel = section.name.isNotEmpty ? section.name : '';
     final locationLabel = section.location.isNotEmpty ? section.location : '';
     final friendlyTime = ScheduleUtils.formatTime(sch.startTime);
@@ -181,17 +161,15 @@ class NotificationScheduler {
       final weekday = ScheduleUtils.weekdayFor(dayTrimmed);
       if (weekday == null) continue;
 
-      // Include the day name in the details line so the user knows
-      // which day this is for (important for multi-day sections)
       final parts = <String>[];
       if (sectionLabel.isNotEmpty) parts.add(sectionLabel);
       if (locationLabel.isNotEmpty) parts.add(locationLabel);
       parts.add('$dayTrimmed $friendlyTime');
 
       final detailsLine = parts.join('  ·  ');
-
-      // Full body shown when notification is expanded via BigTextStyle
-      final body = '$workspaceDisplay\n$detailsLine';
+      
+      // 👉 TRUNCATE body
+      final body = _safeTruncate('$workspaceDisplay\n$detailsLine', 150);
 
       final firstOccurrence = _nextOccurrence(
         weekday: weekday,
@@ -220,8 +198,7 @@ class NotificationScheduler {
     final upper = s.toUpperCase();
     final isPM = upper.contains('PM');
     final isAM = upper.contains('AM');
-    final timeOnly =
-        s.replaceAll(RegExp(r'[AaPp][Mm]', caseSensitive: false), '').trim();
+    final timeOnly = s.replaceAll(RegExp(r'[AaPp][Mm]', caseSensitive: false), '').trim();
     final parts = timeOnly.split(':');
     if (parts.length < 2) return null;
     final h = int.tryParse(parts[0].trim());

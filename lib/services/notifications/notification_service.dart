@@ -5,8 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-import '../../app_styles.dart'; 
-import 'mobile_toast_service.dart';
+import '../../app_styles.dart';
 import 'in_app_queue.dart';
 
 class NotificationService {
@@ -45,11 +44,9 @@ class NotificationService {
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
         onDidReceiveNotificationResponse: (NotificationResponse response) {
-          final payload = response.payload ?? '';
-          final sep = payload.indexOf('||');
-          final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
-          final body = sep >= 0 ? payload.substring(sep + 2) : '';
-          MobileToastService.show(title: title, body: body);
+          // If the user clicks the notification, we don't need the toast anymore.
+          // Tapping it naturally opens the app. 
+          debugPrint("User tapped notification.");
         },
       );
     } catch (e) {
@@ -61,6 +58,7 @@ class NotificationService {
       final androidImpl = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidImpl != null) {
         _notifGranted = await androidImpl.requestNotificationsPermission() ?? false;
+        await requestExactAlarmPermission();
         await _requestBatteryOptimizationExemption();
       } else {
         _notifGranted = true;
@@ -69,6 +67,15 @@ class NotificationService {
       _notifGranted = true;
     }
     return _notifGranted;
+  }
+
+  Future<void> requestExactAlarmPermission() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidImpl = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImpl != null) {
+        await androidImpl.requestExactAlarmsPermission();
+      }
+    }
   }
 
   Future<void> _requestBatteryOptimizationExemption() async {
@@ -104,7 +111,6 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         color: AppStyles.primary,
-        // 👉 THE FIX: This ensures the text expands properly and doesn't crash on long overview topics
         styleInformation: BigTextStyleInformation(body),
       ),
       iOS: const DarwinNotificationDetails(
@@ -121,8 +127,8 @@ class NotificationService {
         body,
         when,
         details,
-        payload: '$title||$body',
-        // 👉 THE FIX: Back to exact mode so it fires on the dot and separates your multiple classes!
+        // 👉 THE FIX 3: Removed the massive payload string that was choking the BroadcastReceiver
+        payload: 'InstructorMate_Reminder',
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
