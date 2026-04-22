@@ -50,7 +50,14 @@ class NotificationService {
       );
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
-        onDidReceiveNotificationResponse: _onNotificationResponse
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          // This handles what happens when the user TAPS a notification while the app is open
+          final payload = response.payload ?? '';
+          final sep = payload.indexOf('||');
+          final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
+          final body = sep >= 0 ? payload.substring(sep + 2) : '';
+          MobileToastService.show(title: title, body: body);
+        },
       );
     } catch (e) {
       _initialized = true;
@@ -164,7 +171,7 @@ class NotificationService {
         when,
         details,
         payload: payload,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
