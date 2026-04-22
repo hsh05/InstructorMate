@@ -11,12 +11,22 @@ class InAppQueue {
   static const _key = 'in_app_notif_queue';
   static Timer? _timer;
 
-  // Starts the background clock
+  // Starts the background clock.
+  // ✅ MUST be called once at app boot (e.g. in main() after
+  // WidgetsFlutterBinding.ensureInitialized()) so queued in-app
+  // notifications are actually fired on desktop/web.
+  //
+  //   void main() async {
+  //     WidgetsFlutterBinding.ensureInitialized();
+  //     InAppQueue.startTimer();
+  //     runApp(MyApp());
+  //   }
   static void startTimer() {
+    if (_timer != null && _timer!.isActive) return; // Prevent double-start
     _timer?.cancel();
-    // Check the clock every 20 seconds silently
+    // Check the queue every 20 seconds silently
     _timer = Timer.periodic(const Duration(seconds: 20), (_) => _checkQueue());
-    _checkQueue(); // Initial check on boot
+    _checkQueue(); // Immediate check on boot
   }
 
   // Adds a notification to the desktop queue

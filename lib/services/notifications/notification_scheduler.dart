@@ -115,7 +115,7 @@ class NotificationScheduler {
         final assessText = assessments[targetAcademicWeek] ?? 'No assessments scheduled.';
 
         final title = '📅 ${ws.title} - Week $targetAcademicWeek';
-        final body = '📚 Topic: $topicText\n📝 Assessments: $assessText';
+        final body = '📚 $topicText  ·  📝 $assessText';
 
         // Unique ID so it doesn't overwrite class reminders
         final notifId = _notifId(ws.id.toString(), 'overview', preferredDay, weekOffset + 50); 

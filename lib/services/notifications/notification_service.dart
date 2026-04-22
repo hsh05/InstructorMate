@@ -1,13 +1,13 @@
 // lib/services/notifications/notification_service.dart
 
-import 'package:flutter/foundation.dart'; // 👉 NEW: Imported for defaultTargetPlatform
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../app_styles.dart'; 
 import 'mobile_toast_service.dart';
-import 'in_app_queue.dart'; // 👉 NEW: Import the Desktop Queue
+import 'in_app_queue.dart';
 
 class NotificationService {
   NotificationService._();
@@ -24,7 +24,6 @@ class NotificationService {
 
   Future<bool>? _initFuture;
 
-  // 👉 NEW: Helper to check if we are on a desktop/web platform
   bool get _isDesktopOrWeb => 
       kIsWeb || 
       defaultTargetPlatform == TargetPlatform.windows || 
@@ -32,9 +31,7 @@ class NotificationService {
       defaultTargetPlatform == TargetPlatform.linux;
 
   Future<bool> init() {
-    // 👉 THE FIX: Bypass OS initialization if on Desktop/Web
     if (_isDesktopOrWeb) return Future.value(true); 
-    
     _initFuture ??= _doInit();
     return _initFuture!;
   }
@@ -51,7 +48,6 @@ class NotificationService {
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
         onDidReceiveNotificationResponse: (NotificationResponse response) {
-          // This handles what happens when the user TAPS a notification while the app is open
           final payload = response.payload ?? '';
           final sep = payload.indexOf('||');
           final title = sep >= 0 ? payload.substring(0, sep) : 'Class Reminder';
@@ -70,8 +66,12 @@ class NotificationService {
       if (androidImpl != null) {
         _notifGranted =
             await androidImpl.requestNotificationsPermission() ?? false;
+        
+        // 👉 THE FIX: Request Exact Alarm permission during initialization
+        await requestExactAlarmPermission();
+        
         _alarmGranted =
-            await androidImpl.requestExactAlarmsPermission() ?? false;
+            await androidImpl.canScheduleExactNotifications() ?? false;
         await _requestBatteryOptimizationExemption();
       } else {
         _notifGranted = true;
@@ -83,6 +83,19 @@ class NotificationService {
     return _notifGranted;
   }
 
+  // 👉 NEW: Dedicated method to handle the system permission request
+  Future<void> requestExactAlarmPermission() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImpl != null) {
+        // This triggers the Android System "Alarms & Reminders" settings page
+        // if the permission hasn't been granted yet.
+        await androidImpl.requestExactAlarmsPermission();
+      }
+    }
+  }
+
   Future<void> _requestBatteryOptimizationExemption() async {
     try {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
@@ -90,7 +103,6 @@ class NotificationService {
   }
 
   Future<bool> hasPermission() async {
-    // 👉 THE FIX: Always grant permission on desktop so the Bell Icon shows up!
     if (_isDesktopOrWeb) return true;
 
     await init();
@@ -102,6 +114,8 @@ class NotificationService {
             await androidImpl.areNotificationsEnabled() ?? _notifGranted;
         _alarmGranted =
             await androidImpl.canScheduleExactNotifications() ?? _alarmGranted;
+        // Only require notification permission — scheduleClassReminder already
+        // handles exact vs inexact alarms gracefully via its own canDoExact check.
         return _notifGranted;
       }
     } catch (e) {}
@@ -114,7 +128,6 @@ class NotificationService {
     required String body,
     required tz.TZDateTime when,
   }) async {
-    // 👉 THE FIX: Route Desktop/Web requests to our custom queue
     if (_isDesktopOrWeb) {
       await InAppQueue.add(id: id, title: title, body: body, fireTime: when);
       return;
@@ -123,46 +136,25 @@ class NotificationService {
     await init();
     if (!_notifGranted) return;
 
-    final bigTextStyle = BigTextStyleInformation(
-      body,
-      htmlFormatBigText: false,
-      contentTitle: title,
-      htmlFormatContentTitle: false,
-      summaryText: 'InstructorMate',
-      htmlFormatSummaryText: false,
-    );
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    bool canDoExact = await androidImpl?.canScheduleExactNotifications() ?? false;
 
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         'class_reminders',
         'Class Reminders',
-        channelDescription: 'Upcoming class reminders from InstructorMate',
         importance: Importance.max,
         priority: Priority.max,
-        playSound: true,
-        enableVibration: true,
-        
-        color: AppStyles.primary, 
-        
-        ticker: title,
-        subText: 'Class Reminder',
-        styleInformation: bigTextStyle,
-        visibility: NotificationVisibility.public,
-        fullScreenIntent: false,
+        color: AppStyles.primary,
       ),
       iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
-        subtitle: 'Class Reminder',
       ),
     );
 
-    try {
-      await _plugin.cancel(id);
-    } catch (_) {}
-
-    final payload = '$title||$body';
     try {
       await _plugin.zonedSchedule(
         id,
@@ -170,43 +162,39 @@ class NotificationService {
         body,
         when,
         details,
-        payload: payload,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle, 
+        payload: '$title||$body',
+        androidScheduleMode: canDoExact 
+            ? AndroidScheduleMode.exactAllowWhileIdle 
+            : AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-      print("🔔 [ANDROID] Scheduled exact notification ID: $id for $when");
     } catch (e) {
-      print("❌ [ANDROID] Error scheduling exact notification: $e");
+      debugPrint("Schedule Error: $e");
     }
   }
 
   Future<void> cancel(int id) async {
-    // 👉 THE FIX: Cancel from the queue if on Desktop
     if (_isDesktopOrWeb) {
       await InAppQueue.cancel(id);
       return;
     }
-
     try {
       await _plugin.cancel(id);
     } catch (_) {}
   }
 
   Future<void> cancelAll() async {
-    // 👉 THE FIX: Clear the entire queue if on Desktop
     if (_isDesktopOrWeb) {
       await InAppQueue.cancelAll();
       return;
     }
-
     try {
       await _plugin.cancelAll();
     } catch (e) {}
   }
 
   Future<void> showImmediateTest() async {
-    // 👉 THE FIX: Show the custom toast immediately on Desktop
     if (_isDesktopOrWeb) {
       MobileToastService.show(
         title: '🚀 InstructorMate', 
@@ -216,26 +204,13 @@ class NotificationService {
     }
 
     await init();
-    final bigTextStyle = BigTextStyleInformation(
-      'Your notifications are working correctly. You will be reminded before each class starts.',
-      contentTitle: '🚀 InstructorMate — Test Notification',
-      summaryText: 'InstructorMate',
-    );
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         'class_reminders',
         'Class Reminders',
         importance: Importance.max,
         priority: Priority.max,
-        
         color: AppStyles.primary, 
-        
-        subText: 'Test',
-        styleInformation: bigTextStyle,
-        visibility: NotificationVisibility.public,
-      ),
-      iOS: const DarwinNotificationDetails(
-        subtitle: 'Test',
       ),
     );
     await _plugin.show(
