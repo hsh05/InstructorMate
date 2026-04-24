@@ -11,6 +11,7 @@ import '../../state/workspaces_vm.dart';
 import '../../models/workspace_model.dart';
 import '../../app_styles.dart';
 import '../../widgets/notification_bell.dart';
+import '../../widgets/custom_app_bar.dart';
 
 class WorkspacesHome extends StatefulWidget {
   const WorkspacesHome({super.key});
@@ -81,18 +82,9 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
 
     return Scaffold(
       backgroundColor: AppStyles.lightGray, 
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: AppStyles.primary, 
-        title: const Text(
-          'InstructorMate',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            fontSize: 18,
-          ),
-        ),
-        centerTitle: true,
+      appBar: CustomAppBar(
+        title: 'InstructorMate',
+        showBackButton: false, // It's the home screen, so no back arrow
         actions: [
           const NotificationBell(),
           const SizedBox(width: 8), 
@@ -109,12 +101,8 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
               },
               child: const CircleAvatar(
                 radius: 15,
-                backgroundColor: AppStyles.white, 
-                child: CircleAvatar(
-                  radius: 14,
-                  backgroundColor: AppStyles.primary, 
-                  child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
-                ),
+                backgroundColor: AppStyles.primary, 
+                child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
               ),
             ),
           ),

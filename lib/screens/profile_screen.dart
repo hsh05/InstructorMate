@@ -13,6 +13,7 @@ import '../widgets/profile_section.dart';
 import '../state/workspaces_vm.dart'; 
 import '../services/notifications/notification_scheduler.dart';
 import '../services/api_service.dart';
+import '../widgets/custom_app_bar.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
@@ -191,12 +192,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppStyles.lightGray,
-      appBar: AppBar(
-        title: const Text('My Profile'),
-        titleTextStyle: AppStyles.headingSmall,
-        backgroundColor: AppStyles.white,
-        foregroundColor: AppStyles.primary,
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: 'My Profile',
         actions: [
           if (!_isLoading && _error == null)
             _isEditing ? _buildEditActions() : _buildEditButton(),

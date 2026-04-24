@@ -76,7 +76,7 @@ class InstructorMateApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'InstructorMate',
+      title: 'Instructor Mate',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       

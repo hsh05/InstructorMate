@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../models/question_model.dart';
 import '../../services/export_service.dart';
-import '../../services/api_service.dart'; // 👉 THE FIX: Changed from openai_service.dart
-import '../../app_styles.dart';           // 👉 THE FIX: Added AppStyles
+import '../../services/api_service.dart';
+import '../../app_styles.dart';
+import '../../widgets/custom_app_bar.dart';
 
 class ReviewScreen extends StatefulWidget {
   final List<QuizQuestion> questions;
@@ -14,7 +15,7 @@ class ReviewScreen extends StatefulWidget {
 
 class _ReviewScreenState extends State<ReviewScreen> {
   final ExportService _exportService = ExportService();
-  final ApiService _apiService = ApiService(); // 👉 THE FIX: Using ApiService
+  final ApiService _apiService = ApiService();
 
   void _showExportOptions() {
     showModalBottomSheet(
@@ -233,11 +234,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppStyles.lightGray,
-      appBar: AppBar(
-        title: const Text("Review Quiz", style: TextStyle(color: AppStyles.white, fontWeight: FontWeight.bold)),
-        backgroundColor: AppStyles.primary,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: AppStyles.white),
+      appBar: const CustomAppBar(
+        title: 'Review Quiz',
       ),
       body: Column(
         children: [
