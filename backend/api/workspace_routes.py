@@ -15,14 +15,12 @@ from db.database import get_db
 from db.models import Workspace as DBWorkspace
 from db import models
 
-# 👉 THE FIX: Pointing all repositories to our new unified pg_repository!
 from repositories.pg_repository import (
     PgWorkspaceRepository, 
     PgSectionRepository, 
     PgStudentRepository
 )
 
-# 👉 THE FIX: Pointing to the new unified service files!
 from services.file_service import FileHashService
 from services.app_service import WorkspaceService
 from services.ai_service import (
@@ -79,8 +77,6 @@ def get_workspace_service(
 
 def _ws_dict(workspace_id, ws, section_repo, student_repo, db: Session) -> dict:
     d = ws.to_dict()
-    
-    # 👉 THE FIX: Safely convert string ID to int for DB operations
     ws_id_int = int(workspace_id)
     
     sections = section_repo.list_by_workspace(ws_id_int)
@@ -98,7 +94,7 @@ def _ws_dict(workspace_id, ws, section_repo, student_repo, db: Session) -> dict:
             d["start_date"] = ""
             d["end_date"] = ""
 
-        # Fetch Materials for this workspace and attach them!
+        # Fetch Materials for this workspace and attach them
         materials = db.query(models.Material).filter(models.Material.workspace_id == ws_id_int).all()
         d["materials"] = [
             {
@@ -133,19 +129,19 @@ def list_workspaces(
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     db: Session = Depends(get_db), 
 ):
-    # 👉 1. Ask the database ONLY for the workspace IDs belonging to this instructor
+    # 1. Ask the database ONLY for the workspace IDs belonging to this instructor
     db_workspaces = db.query(models.Workspace.workspace_id).filter(
         models.Workspace.instructor_id == instructor_id
     ).all()
     
-    # 👉 2. Use your repository to fetch the proper domain objects (which DO have .to_dict!)
+    # 2. Use your repository to fetch the proper domain objects (which DO have .to_dict!)
     valid_workspaces = []
     for (wid,) in db_workspaces:
         domain_ws = workspace_repo.get_by_id(wid)
         if domain_ws:
             valid_workspaces.append(domain_ws)
 
-    # 👉 3. Return them safely without crashing!
+    # 3. Return them safely without crashing!
     return {
         "workspaces": [
             _ws_dict(ws.workspace_id, ws, section_repo, student_repo, db)
@@ -174,7 +170,7 @@ async def import_workspace(
             detail=f"Unsupported file type '{ext}'. Allowed: {sorted(_ALLOWED_SYLLABUS_EXTENSIONS)}",
         )
 
-    # 1. Read the file and let the service do the initial creation
+    # Read the file and let the service do the initial creation
     content     = await file.read()
     result      = workspace_service.create_from_file(filename, content, instructor_id)
     domain_ws   = result["workspace"]
@@ -182,7 +178,7 @@ async def import_workspace(
     ws_id_int = int(domain_ws.workspace_id)
     db_ws = db.query(DBWorkspace).filter(DBWorkspace.workspace_id == ws_id_int).first()
 
-    # 3. Safely parse and assign the dates to the DB record
+    # Safely parse and assign the dates to the DB record
     if db_ws:
         try:
             db_ws.instructor_id = instructor_id
@@ -199,7 +195,7 @@ async def import_workspace(
     else:
         logger.warning(f"Could not find DB record to update dates for workspace {ws_id_int}")
     
-    # 4. FIREBASE UPLOAD ONLY 
+    # Firebase Upload Only
     if not result["already_uploaded"]:
         try:
             bucket = storage.bucket()
@@ -233,7 +229,6 @@ def get_workspace(
     student_repo:   PgStudentRepository   = Depends(get_student_repo),
     db: Session = Depends(get_db), 
 ):
-    # 👉 THE FIX: Parse as int for repository
     ws = workspace_repo.get_by_id(int(workspace_id))
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -297,7 +292,6 @@ def delete_workspace(
     workspace_service.cancel_if_in_flight(workspace_id)
 
     try:
-        # 👉 THE FIX: Parse as int
         deleted = workspace_repo.delete(int(workspace_id))
     except Exception as exc:
         logger.error("Delete failed for workspace=%s: %s", workspace_id, exc, exc_info=True)
