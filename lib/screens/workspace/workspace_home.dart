@@ -84,7 +84,7 @@ class _WorkspacesHomeState extends State<WorkspacesHome> {
       backgroundColor: AppStyles.lightGray, 
       appBar: CustomAppBar(
         title: 'InstructorMate',
-        showBackButton: false, // It's the home screen, so no back arrow
+        showBackButton: false,
         actions: [
           const NotificationBell(),
           const SizedBox(width: 8), 
