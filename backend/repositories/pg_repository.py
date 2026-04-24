@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from openai import OpenAI
 from sqlalchemy.orm import Session
-from db.models import Workspace, Section, Instructor, Enrollment, Student
+from db.models import Workspace, Section, Instructor, Enrollment, Student, Attendance
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -233,3 +234,70 @@ class PgStudentRepository:
             "name":         row.student_name,  
             "email":        f"{row.student_id}@aau.ac.ae", 
         }
+    
+# ==============================================================================
+# ── ATTENDANCE REPOSITORY ─────────────────────────────────────────────────────
+# ==============================================================================
+class PgAttendanceRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_last_lecture_number(self, workspace_id: int, section_id: str) -> Optional[int]:
+        result = self.db.query(func.max(Attendance.lecture_no)).filter(
+            Attendance.workspace_id == workspace_id,
+            Attendance.section_id == section_id
+        ).scalar()
+        return result
+
+    def save_attendance_for_lecture(self, workspace_id: int, section_id: str, lecture_number: int, rows: List[Dict]):
+        # 1. Delete old rows (replace behavior)
+        self.db.query(Attendance).filter(
+            Attendance.workspace_id == workspace_id,
+            Attendance.section_id == section_id,
+            Attendance.lecture_no == lecture_number
+        ).delete()
+
+        # 2. Insert new rows
+        for r in rows:
+            new_att = Attendance(
+                student_id=str(r.get("StudentID")),
+                section_id=section_id,
+                workspace_id=workspace_id,
+                lecture_no=lecture_number,
+                status=str(r.get("Status")),
+                confidence=str(r.get("Confidence", "Unknown"))
+            )
+            self.db.add(new_att)
+        self.db.commit()
+
+    def fetch_attendance_rows(self, workspace_id: int, section_id: str, lecture_number: Optional[int] = None) -> List[Dict]:
+        query = self.db.query(Attendance).filter(
+            Attendance.workspace_id == workspace_id,
+            Attendance.section_id == section_id
+        )
+        if lecture_number is not None:
+            query = query.filter(Attendance.lecture_no == lecture_number)
+        
+        rows = query.order_by(Attendance.lecture_no, Attendance.student_id).all()
+        return [
+            {
+                "lecture_number": r.lecture_no,
+                "student_id": r.student_id,
+                "status": r.status,
+                "confidence": r.confidence
+            } for r in rows
+        ]
+        
+    def update_student_encoding(self, student_id: str, encoding_list: list) -> bool:
+        student = self.db.query(Student).filter(Student.student_id == str(student_id)).first()
+        if student:
+            student.facial_encoding = encoding_list
+            self.db.commit()
+            return True
+        return False
+        
+    def get_students_with_encodings(self, workspace_id: int, section_id: str):
+        return self.db.query(Student).join(Enrollment).filter(
+            Enrollment.workspace_id == workspace_id,
+            Enrollment.section_id == section_id
+        ).all()

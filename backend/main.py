@@ -30,6 +30,7 @@ from api.quiz_routes import router as quiz_router
 from api.auth_routes import router as auth_router
 from api.profile_routes import router as profile_router
 from api.materials_routes import router as material_router
+from api.attendance_routes import router as attendance_router
 
 # --- External Services ---
 from openai import OpenAI
@@ -94,6 +95,7 @@ app.include_router(quiz_router)
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(profile_router)
 app.include_router(material_router)
+app.include_router(attendance_router)
 
 
 # ==============================================================================
