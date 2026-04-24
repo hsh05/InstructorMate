@@ -1,4 +1,4 @@
-// lib/screens/workspace/workspaces_home.dart
+// lib/screens/workspace/workspace_home.dart
 
 import 'dart:async';
 import 'dart:typed_data';
