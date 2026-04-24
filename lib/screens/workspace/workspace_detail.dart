@@ -2,7 +2,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // 👉 NEW: Required for Provider
+import 'package:provider/provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'dart:convert';
 
@@ -34,7 +34,6 @@ const _fieldIcons = {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 class WorkspaceDetailPage extends StatefulWidget {
-  // 👉 THE FIX: Removed the 'required this.vm' parameter
   const WorkspaceDetailPage({super.key});
 
   @override
@@ -48,7 +47,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   Timer? _pollingTimer;
 
-  // 👉 THE FIX: We store a local reference to the VM for callbacks and init
   late final WorkspacesViewModel _vm;
 
   final Map<String, TextEditingController> _fieldCtrl = {};
@@ -74,7 +72,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
   @override
   void initState() {
     super.initState();
-    // 👉 THE FIX: Grab the VM from the context once when the screen loads
     _vm = context.read<WorkspacesViewModel>();
     
     _tabs = TabController(length: 7, vsync: this);
@@ -331,7 +328,6 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    // 👉 THE FIX: We use watch to trigger automatic UI rebuilds when the state changes
     final vm = context.watch<WorkspacesViewModel>();
     final ws = vm.current;
 
@@ -1672,10 +1668,7 @@ class _AssessmentItem {
   _AssessmentItem(this.name, this.subtitle, this.topic);
 }
 
-// =============================================================================
 // ── TAB 5 — Assessments (With CRUD Functionality) ────────────────────────────
-// =============================================================================
-
 class AssessmentsTab extends StatefulWidget {
   const AssessmentsTab({
     super.key, 
