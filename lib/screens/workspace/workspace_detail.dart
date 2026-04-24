@@ -16,6 +16,7 @@ import '../../models/question_model.dart';
 import 'workspace_sections.dart';
 import 'workspace_ask.dart';
 import 'review_screen.dart'; 
+import 'attendance_screen.dart';
 
 const _fieldLabels = {
   'course_title': 'Course Title',
@@ -479,23 +480,7 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                                 asking: _asking,
                                 onAsk: _onAsk,
                               ),
-                              Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.construction_rounded, size: 48, color: AppStyles.darkGray.withOpacity(0.5)),
-                                    const SizedBox(height: 16),
-                                    const Text(
-                                      'Attendance Module Coming Soon',
-                                      style: TextStyle(
-                                        color: AppStyles.darkGray,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              _AttendanceTab(ws: ws),
                             ],
                           ),
               ),
@@ -2132,6 +2117,72 @@ class _AssessmentLinkSheetState extends State<_AssessmentLinkSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AttendanceTab extends StatelessWidget {
+  final Workspace ws;
+  const _AttendanceTab({required this.ws});
+
+  @override
+  Widget build(BuildContext context) {
+    if (ws.sections.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.groups_2_rounded, size: 48, color: AppStyles.darkGray.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            const Text(
+              'No sections created yet.',
+              style: TextStyle(color: AppStyles.darkGray, fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Create a section first to take attendance.',
+              style: TextStyle(color: AppStyles.darkGray, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: ws.sections.length,
+      itemBuilder: (context, index) {
+        final section = ws.sections[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            leading: CircleAvatar(
+              backgroundColor: AppStyles.primary.withOpacity(0.1),
+              child: const Icon(Icons.class_, color: AppStyles.primary),
+            ),
+            title: Text(
+              '${ws.title.isEmpty ? "Course" : ws.title} - Section ${section.name}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AttendanceScreen(
+                    workspaceId: ws.id,
+                    sectionId: section.name,
+                    courseTitle: ws.title,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

@@ -1,0 +1,1176 @@
+// lib/screens/workspace/attendance_screen.dart
+
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../services/api_service.dart';
+import '../../widgets/student_preview_card.dart';
+import 'statistics_screen.dart';
+import '../../utils/file_saver.dart';
+
+class AttendanceScreen extends StatefulWidget {
+  final int workspaceId;
+  final String sectionId;
+  final String courseTitle;
+
+  const AttendanceScreen({
+    super.key,
+    required this.workspaceId,
+    required this.sectionId,
+    required this.courseTitle,
+  });
+
+  @override
+  State<AttendanceScreen> createState() => _AttendanceScreenState();
+}
+
+class _AttendanceScreenState extends State<AttendanceScreen> {
+  final ApiService api = ApiService();
+  final ImagePicker _picker = ImagePicker();
+  final TextEditingController lectureCtrl = TextEditingController(text: "1");
+
+  bool loading = false;
+  String statusText = 'Idle';
+  int lectureNumber = 1;
+  int? lastLectureFromDb;
+  List<int> availableLectures = [];
+  bool showUploadPanel = false;
+  Map<String, String> studentNameMap = {};
+  String? hoveredAction;
+
+  @override
+  void initState() {
+    super.initState();
+    loadLastLecture();
+    loadAvailableLectures();
+    loadStudents();
+  }
+
+  Future<void> loadAvailableLectures() async {
+    try {
+      final list = await api.getAvailableLectures(
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+      );
+      setState(() {
+        availableLectures = list;
+      });
+    } catch (e) {
+      print("Error loading available lectures: $e");
+    }
+  }
+
+  Future<void> loadStudents() async {
+    try {
+      final students = await api.getStudentsForSection(
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+      );
+
+      studentNameMap = {for (var s in students) s["student_id"]: s["name"]};
+
+      final rows = students.map((s) {
+        return {
+          "StudentID": s["student_id"],
+          "Name": s["name"],
+          "Status": null,
+          "Confidence": "Unknown",
+        };
+      }).toList();
+
+      setState(() {
+        previewRows = rows;
+      });
+      await loadAttendanceForLecture();
+    } catch (e) {
+      print("Error loading students: $e");
+    }
+  }
+
+  Future<void> loadAttendanceForLecture() async {
+    try {
+      final rows = await api.getAttendanceForLecture(
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+        lectureNumber: lectureNumber,
+      );
+
+      if (rows.isEmpty) {
+        for (var r in previewRows) {
+          r["Status"] = null;
+          r["Confidence"] = "Unknown";
+        }
+      } else {
+        for (var dbRow in rows) {
+          final index = previewRows.indexWhere(
+            (r) => r["StudentID"] == dbRow["student_id"],
+          );
+          if (index != -1) {
+            previewRows[index]["Status"] = dbRow["status"];
+            previewRows[index]["Confidence"] = dbRow["confidence"];
+          }
+        }
+      }
+
+      setState(() {});
+    } catch (e) {
+      print("Error loading attendance: $e");
+    }
+  }
+
+  // =============================
+  // Export from DB (collapsed UI)
+  // =============================
+  bool showDbExport = false;
+  final TextEditingController dbExportLectureCtrl = TextEditingController(
+    text: '1',
+  );
+
+  List<Map<String, dynamic>> previewRows = [];
+
+  bool uploadedOk = false;
+  List<String> uploadedFileNames = [];
+  List<String> uploadedVideoIds = [];
+
+  int? backendTotalPresent;
+  int? backendTotalAbsent;
+
+  Future<void> loadLastLecture() async {
+    try {
+      final last = await api.getLastLecture(
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+      );
+      setState(() {
+        lastLectureFromDb = last;
+        lectureNumber = last ?? 1;
+        lectureCtrl.text = lectureNumber.toString();
+      });
+    } catch (e) {
+      print("Error loading last lecture: $e");
+    }
+  }
+
+  // =============================
+  // Upload only (Pick from files)
+  // =============================
+  Future<void> pickAndUploadVideo() async {
+    setState(() {
+      loading = true;
+      statusText = 'Picking videos...';
+      for (var r in previewRows) {
+        r["Status"] = null;
+        r["Confidence"] = "Unknown";
+      }
+      uploadedOk = false;
+      if (uploadedVideoIds.isEmpty) {
+        uploadedFileNames.clear();
+      }
+      backendTotalPresent = null;
+      backendTotalAbsent = null;
+    });
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: true,
+      );
+
+      if (result == null) {
+        setState(() {
+          loading = false;
+          statusText = 'Cancelled.';
+        });
+        return;
+      }
+
+      for (var f in result.files) {
+        if (f.path == null) continue;
+        if (uploadedVideoIds.length >= 2) break;
+
+        final file = File(f.path!);
+
+        final upload = await api.uploadCheck(
+          videoFile: file,
+          lectureNumber: lectureNumber,
+          workspaceId: widget.workspaceId,
+          sectionId: widget.sectionId,
+        );
+
+        if (upload['ok'] == true) {
+          final id = upload['video_id']?.toString();
+          final name = (upload['original_filename'] ?? upload['saved_path'])
+              ?.toString();
+
+          if (id != null) {
+            uploadedVideoIds.add(id);
+            uploadedFileNames.add(name ?? "video");
+          }
+        }
+      }
+
+      setState(() {
+        uploadedOk = uploadedVideoIds.isNotEmpty;
+        loading = false;
+        statusText = uploadedOk
+            ? 'Uploaded ${uploadedVideoIds.length} video(s) ✅'
+            : 'No valid videos uploaded';
+      });
+    } catch (e) {
+      setState(() {
+        loading = false;
+        statusText = 'Error: $e';
+      });
+    }
+  }
+
+  // =============================
+  // Upload only (Capture video)
+  // =============================
+  Future<void> captureAndUploadVideo() async {
+    setState(() {
+      loading = true;
+      statusText = 'Opening camera...';
+      for (var r in previewRows) {
+        r["Status"] = null;
+        r["Confidence"] = "Unknown";
+      }
+      uploadedOk = false;
+      if (uploadedVideoIds.isEmpty) {
+        uploadedFileNames.clear();
+      }
+      backendTotalPresent = null;
+      backendTotalAbsent = null;
+    });
+
+    try {
+      final XFile? captured = await _picker.pickVideo(
+        source: ImageSource.camera,
+        maxDuration: const Duration(seconds: 30),
+      );
+
+      if (captured == null) {
+        setState(() {
+          loading = false;
+          statusText = 'Cancelled.';
+        });
+        return;
+      }
+
+      final file = File(captured.path);
+
+      final exists = await file.exists();
+      if (!exists) {
+        setState(() {
+          loading = false;
+          statusText = 'Error: captured video file not found';
+        });
+        return;
+      }
+
+      setState(() => statusText = 'Uploading...');
+
+      final upload = await api.uploadCheck(
+        videoFile: file,
+        lectureNumber: lectureNumber,
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+      );
+
+      if (upload['ok'] != true) {
+        throw Exception(upload['error'] ?? 'Upload failed');
+      }
+
+      setState(() {
+        final id = upload['video_id']?.toString();
+        final name = (upload['original_filename'] ?? upload['saved_path'])
+            ?.toString();
+
+        if (id != null && uploadedVideoIds.length < 2) {
+          uploadedVideoIds.add(id);
+          uploadedFileNames.add(name ?? "video");
+        }
+
+        uploadedOk = uploadedVideoIds.isNotEmpty;
+        loading = false;
+        statusText = 'Uploaded ${uploadedVideoIds.length} video(s) ✅';
+      });
+    } catch (e) {
+      setState(() {
+        loading = false;
+        statusText = 'Error: $e';
+      });
+    }
+  }
+
+  // =============================
+  // Preview Attendance
+  // =============================
+  Future<void> runPreview() async {
+    if (uploadedVideoIds.isEmpty) {
+      setState(() => statusText = 'Upload at least one video');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      statusText = 'Processing videos...';
+      for (var r in previewRows) {
+        r["Status"] = null;
+        r["Confidence"] = "Unknown";
+      }
+    });
+
+    try {
+      for (var id in uploadedVideoIds) {
+        final data = await api.previewAttendance(
+          lectureNumber: lectureNumber,
+          videoId: id,
+          workspaceId: widget.workspaceId,
+          sectionId: widget.sectionId,
+        );
+
+        if (data['ok'] != true) continue;
+
+        final rowsRaw = (data['rows'] as List).cast<dynamic>();
+
+        for (var r in rowsRaw) {
+          final sid = r["student_id"];
+          final status = r["status"];
+          final index = previewRows.indexWhere((x) => x["StudentID"] == sid);
+          final confidence = r["confidence"];
+
+          if (index != -1) {
+            if (status == "Present") {
+              previewRows[index]["Status"] = "Present";
+              previewRows[index]["Confidence"] = confidence;
+            } else {
+              if (previewRows[index]["Status"] == null) {
+                previewRows[index]["Status"] = status;
+                previewRows[index]["Confidence"] = confidence;
+              }
+            }
+          }
+        }
+      }
+
+      setState(() {
+        loading = false;
+        statusText = 'Preview ready';
+      });
+    } catch (e) {
+      setState(() {
+        loading = false;
+        statusText = 'Error: $e';
+      });
+    }
+  }
+
+  // =============================
+  // Export Attendance
+  // =============================
+  Future<void> exportAttendance() async {
+    try {
+      setState(() {
+        loading = true;
+        statusText = 'Exporting...';
+      });
+
+      final bytes = await api.exportAttendanceCsvFromDb(
+        lectureNumber: lectureNumber,
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+      );
+
+      String cleanCourse = widget.courseTitle
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
+          .trim();
+
+      final fileName = '$cleanCourse-${widget.sectionId}(L$lectureNumber).csv';
+
+      final savedPath = await FileSaver.saveToDownloads(
+        bytes: bytes,
+        fileName: fileName,
+      );
+
+      setState(() {
+        loading = false;
+        statusText = 'Exported ✅';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved to Downloads:\n$savedPath')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        loading = false;
+        statusText = 'Export failed: $e';
+      });
+    }
+  }
+
+  // =============================
+  // Export ALL lectures
+  // =============================
+  Future<void> exportAllAttendance() async {
+    try {
+      setState(() {
+        loading = true;
+        statusText = 'Exporting ALL...';
+      });
+
+      final bytes = await api.exportAttendanceCsvFromDb(
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+        lectureNumber: null,
+      );
+
+      String cleanCourse = widget.courseTitle
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
+          .trim();
+
+      final fileName = '$cleanCourse-${widget.sectionId}(ALL).csv';
+
+      final savedPath = await FileSaver.saveToDownloads(
+        bytes: bytes,
+        fileName: fileName,
+      );
+
+      setState(() {
+        loading = false;
+        statusText = 'Exported ALL ✅';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved to Downloads:\n$savedPath')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        loading = false;
+        statusText = 'Export ALL failed: $e';
+      });
+    }
+  }
+
+  // =============================
+  // Confirm and save to db button
+  // =============================
+  Future<void> confirmAndSave() async {
+    bool hasUnmarked = previewRows.any((r) => r["Status"] == null);
+
+    if (hasUnmarked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please mark all students before saving ⚠️"),
+        ),
+      );
+      return;
+    }
+
+    if (previewRows.isEmpty) {
+      setState(() => statusText = 'No preview to save');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      statusText = 'Saving attendance...';
+    });
+
+    try {
+      final rowsForApi = previewRows.map((r) {
+        return {
+          "student_id": r["StudentID"].toString(),
+          "status": (r["Status"] ?? "Absent").toString(),
+          "confidence": (r["Confidence"] ?? "Unknown").toString(),
+        };
+      }).toList();
+
+      final res = await api.confirmAttendance(
+        lectureNumber: lectureNumber,
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+        rows: rowsForApi,
+      );
+
+      if (res["ok"] != true) {
+        throw Exception(res["error"] ?? "Save failed");
+      }
+
+      setState(() {
+        loading = false;
+        statusText = 'Attendance saved successfully ✅';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Attendance saved successfully ✅')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        loading = false;
+        statusText = 'Save failed: $e';
+      });
+    }
+  }
+
+  // =============================
+  // Status toggle
+  // =============================
+  void setStatus(int i, String status) {
+    setState(() {
+      previewRows[i]['Status'] = status;
+    });
+  }
+
+  void setAllStatus(String status) {
+    setState(() {
+      for (var r in previewRows) {
+        r['Status'] = status;
+      }
+    });
+  }
+
+  int get presentCount =>
+      previewRows.where((r) => r['Status'] == 'Present').length;
+
+  int get absentCount =>
+      previewRows.where((r) => r['Status'] == 'Absent').length;
+
+  int get excusedCount =>
+      previewRows.where((r) => r['Status'] == 'Excused').length;
+
+  // =============================
+  // UI helpers
+  // =============================
+  Widget countPill(String label, int v, Color c) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            v.toString(),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: c,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget statusBtn(String t, bool active, Color c, VoidCallback tap) {
+    return OutlinedButton(
+      onPressed: tap,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: active ? c.withOpacity(.15) : null,
+        side: BorderSide(color: active ? c : Colors.grey),
+      ),
+      child: Text(
+        t,
+        style: TextStyle(
+          color: active ? c : Colors.black,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    dbExportLectureCtrl.dispose();
+    super.dispose();
+  }
+
+  bool get isLectureAlreadyRecorded {
+    return lastLectureFromDb != null && lectureNumber <= lastLectureFromDb!;
+  }
+
+  // =============================
+  // Build
+  // =============================
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("${widget.courseTitle} - Section ${widget.sectionId}"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.analytics, size: 42),
+            tooltip: "View Statistics",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatisticsScreen(
+                    workspaceId: widget.workspaceId,
+                    sectionId: widget.sectionId,
+                    courseTitle: widget.courseTitle,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // TOP CONTROLS (scrollable on mobile if content is tall)
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 4,
+                  children: [
+                    const Text(
+                      'Lecture',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+
+                    IconButton(
+                      onPressed: lectureNumber <= 1
+                          ? null
+                          : () {
+                              setState(() {
+                                lectureNumber--;
+                                lectureCtrl.text = lectureNumber.toString();
+                                loadAttendanceForLecture();
+                              });
+                            },
+                      icon: const Icon(Icons.remove),
+                    ),
+
+                    SizedBox(
+                      width: 45,
+                      child: TextField(
+                        controller: lectureCtrl,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 4,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          int num = int.tryParse(value) ?? 1;
+                          if (num < 1) num = 1;
+                          setState(() {
+                            lectureNumber = num;
+                          });
+                          loadAttendanceForLecture();
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(width: 10),
+
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          lectureNumber++;
+                          lectureCtrl.text = lectureNumber.toString();
+                          loadAttendanceForLecture();
+                        });
+                      },
+                      icon: const Icon(Icons.add),
+                    ),
+
+                    const SizedBox(width: 10),
+
+                    // Blue info pill
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        lastLectureFromDb == null
+                            ? 'No records'
+                            : 'Last: $lastLectureFromDb',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Red warning (only if duplicate)
+                    if (isLectureAlreadyRecorded)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          '⚠️ Attendance already taken',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 4),
+
+                // Upload + Capture - Collapsible Panel
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() => showUploadPanel = !showUploadPanel);
+                    },
+                    icon: Icon(
+                      showUploadPanel ? Icons.expand_less : Icons.expand_more,
+                    ),
+                    label: const Text('Take Attendnace by Video'),
+                  ),
+                ),
+
+                if (showUploadPanel)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade300),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Upload + Capture buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: loading ? null : pickAndUploadVideo,
+                                icon: const Icon(Icons.upload_file),
+                                label: const Text('Upload recording'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: loading
+                                    ? null
+                                    : captureAndUploadVideo,
+                                icon: const Icon(Icons.videocam),
+                                label: const Text('Capture Video'),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // Video Preview
+                        if (uploadedVideoIds.isNotEmpty)
+                          Column(
+                            children: List.generate(uploadedVideoIds.length, (
+                              index,
+                            ) {
+                              return Container(
+                                margin: const EdgeInsets.only(top: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(.10),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.videocam,
+                                      size: 18,
+                                      color: Colors.green,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        uploadedFileNames[index],
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          uploadedVideoIds.removeAt(index);
+                                          uploadedFileNames.removeAt(index);
+                                        });
+                                      },
+                                      child: const Icon(
+                                        Icons.close,
+                                        color: Colors.red,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ),
+
+                        const SizedBox(height: 10),
+
+                        // Take Attendance button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 40,
+                          child: ElevatedButton(
+                            onPressed: (loading || uploadedVideoIds.isEmpty)
+                                ? null
+                                : runPreview,
+                            child: const Text("Take Attendance"),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 6),
+
+                // Pills + bulk action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            countPill('Present', presentCount, Colors.green),
+                            const SizedBox(width: 8),
+                            countPill('Absent', absentCount, Colors.red),
+                            const SizedBox(width: 8),
+                            countPill('Excused', excusedCount, Colors.orange),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          onPressed: () => setAllStatus('Present'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.green,
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          child: const Text("Present all"),
+                        ),
+                        const SizedBox(width: 4),
+                        Container(width: 1, height: 16, color: Colors.black54),
+                        const SizedBox(width: 4),
+                        TextButton(
+                          onPressed: () => setAllStatus('Absent'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                          child: const Text("Absent all"),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 5),
+              ],
+            ),
+          ),
+
+          //STUDENT LIST
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ListView.builder(
+                itemCount: previewRows.length,
+                itemBuilder: (_, i) => StudentCard(
+                  row: previewRows[i],
+                  index: i,
+                  onPresent: () => setStatus(i, 'Present'),
+                  onAbsent: () => setStatus(i, 'Absent'),
+                  onExcused: () => setStatus(i, 'Excused'),
+                ),
+              ),
+            ),
+          ),
+
+          // BOTTOM ACTIONS
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+            child: Column(
+              children: [
+                // Confirm & Save
+                SizedBox(
+                  width: double.infinity,
+                  height: 42,
+                  child: ElevatedButton.icon(
+                    onPressed: (loading || previewRows.isEmpty)
+                        ? null
+                        : confirmAndSave,
+                    icon: const Icon(Icons.check_circle),
+                    label: const Text('Confirm & Save'),
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                // Export Attendance
+                SizedBox(
+                  width: double.infinity,
+                  height: 42,
+                  child: OutlinedButton.icon(
+                    onPressed: previewRows.isEmpty ? null : exportAttendance,
+                    icon: const Icon(Icons.ios_share),
+                    label: const Text('Export Attendance'),
+                  ),
+                ),
+
+                // Collapsed: Export from DB (History)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() => showDbExport = !showDbExport);
+                    },
+                    icon: Icon(
+                      showDbExport ? Icons.expand_less : Icons.expand_more,
+                    ),
+                    label: const Text('Export from database…'),
+                  ),
+                ),
+
+                if (showDbExport)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade300),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select Lecture',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Text('Lecture:'),
+                            const SizedBox(width: 12),
+                            IconButton(
+                              icon: const Icon(Icons.remove),
+                              onPressed: () {
+                                final value =
+                                    int.tryParse(dbExportLectureCtrl.text) ?? 1;
+                                if (value > 1) {
+                                  dbExportLectureCtrl.text = (value - 1)
+                                      .toString();
+                                }
+                              },
+                            ),
+                            SizedBox(
+                              width: 40,
+                              child: TextField(
+                                controller: dbExportLectureCtrl,
+                                textAlign: TextAlign.center,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  border: UnderlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add),
+                              onPressed: () {
+                                final value =
+                                    int.tryParse(dbExportLectureCtrl.text) ?? 0;
+                                dbExportLectureCtrl.text = (value + 1)
+                                    .toString();
+                                setState(() {});
+                              },
+                            ),
+                            const Spacer(),
+                            SizedBox(
+                              height: 32,
+                              child: OutlinedButton(
+                                onPressed: loading ? null : exportAllAttendance,
+                                child: const Text('ALL'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            onPressed: loading
+                                ? null
+                                : () async {
+                                    try {
+                                      setState(() {
+                                        loading = true;
+                                        statusText = 'Exporting from DB...';
+                                      });
+
+                                      final text = dbExportLectureCtrl.text
+                                          .trim();
+                                      int lec = int.tryParse(text) ?? 1;
+                                      if (lec < 1) lec = 1;
+
+                                      if (!availableLectures.contains(lec)) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "No attendance recorded for this lecture",
+                                            ),
+                                          ),
+                                        );
+                                        setState(() {
+                                          loading = false;
+                                        });
+                                        return;
+                                      }
+
+                                      final bytes =
+                                          await api.exportAttendanceCsvFromDb(
+                                            lectureNumber: lec,
+                                            workspaceId: widget.workspaceId,
+                                            sectionId: widget.sectionId,
+                                          );
+
+                                      String cleanCourse = widget.courseTitle
+                                          .replaceAll(
+                                            RegExp(r'[\\/:*?"<>|]'),
+                                            '',
+                                          )
+                                          .trim();
+
+                                      final fileName =
+                                          '$cleanCourse-${widget.sectionId}(L$lec).csv';
+
+                                      final savedPath =
+                                          await FileSaver.saveToDownloads(
+                                            bytes: bytes,
+                                            fileName: fileName,
+                                          );
+
+                                      setState(() {
+                                        loading = false;
+                                        statusText = 'Exported ✅';
+                                      });
+
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Saved to Downloads:\n$savedPath',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      setState(() {
+                                        loading = false;
+                                        statusText = 'Export failed: $e';
+                                      });
+                                    }
+                                  },
+                            icon: const Icon(Icons.download),
+                            label: const Text('Download CSV'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 6),
+                Text(statusText, style: TextStyle(color: Colors.grey.shade700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

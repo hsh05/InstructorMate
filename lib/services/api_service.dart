@@ -41,6 +41,26 @@ class ApiService {
     return Uri.parse('$_baseUrl$p');
   }
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  MediaType _contentTypeFor(String filename) {
+    final f = filename.toLowerCase();
+    if (f.endsWith('.pdf')) return MediaType('application', 'pdf');
+    if (f.endsWith('.docx')) return MediaType('application', 'vnd.openxmlformats-officedocument.wordprocessingml.document');
+    return MediaType('text', 'plain');
+  }
+
+  String _extractDetail(http.Response resp) {
+    try {
+      final m = jsonDecode(resp.body);
+      if (m is Map && m['detail'] != null) return m['detail'].toString();
+    } catch (_) {}
+    return 'Request failed (${resp.statusCode}).';
+  }
+
+  // ===========================================================================
+  // ── Original Workspace & AI Methods ────────────────────────────────────────
+  // ===========================================================================
+
   Future<List<Workspace>> fetchWorkspaces() async {
     const storage = FlutterSecureStorage();
     final userId = await storage.read(key: 'user_id') ?? '';
@@ -109,7 +129,6 @@ class ApiService {
     }
   }
 
-  // ── Generate AI Quiz from Materials ──────────────────────────────────────
   Future<List<dynamic>> generateQuizFromMaterials({
     required String workspaceId,
     required List<int> selectedMaterialIds,
@@ -132,29 +151,17 @@ class ApiService {
     }
   }
 
-  // ── Materials API ────────────────────────────────────────────────────────
   Future<void> uploadMaterial(String workspaceId, Uint8List bytes, String filename) async {
     final request = http.MultipartRequest('POST', _u('/workspaces/$workspaceId/materials/')); 
-
-    request.files.add(http.MultipartFile.fromBytes(
-      'file', 
-      bytes,
-      filename: filename,
-    ));
-
+    request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
     final streamedResponse = await request.send().timeout(AppConfig.uploadTimeout);
     final response = await http.Response.fromStream(streamedResponse);
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to upload material: ${response.body}');
-    }
+    if (response.statusCode != 200) throw Exception('Failed to upload material: ${response.body}');
   }
 
   Future<void> deleteMaterial(String materialId) async {
     final response = await http.delete(_u('/materials/$materialId')); 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to delete material: ${response.body}');
-    }
+    if (response.statusCode != 200) throw Exception('Failed to delete material: ${response.body}');
   }
 
   Future<ImportWorkspaceResult> importWorkspace({
@@ -176,12 +183,8 @@ class ApiService {
         ),
       );
 
-    if (startDate != null && startDate.isNotEmpty) {
-      req.fields['start_date'] = startDate;
-    }
-    if (endDate != null && endDate.isNotEmpty) {
-      req.fields['end_date'] = endDate;
-    }
+    if (startDate != null && startDate.isNotEmpty) req.fields['start_date'] = startDate;
+    if (endDate != null && endDate.isNotEmpty) req.fields['end_date'] = endDate;
 
     http.StreamedResponse streamed;
     try {
@@ -237,9 +240,7 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(d.toJson()),
     ).timeout(AppConfig.shortTimeout);
-    if (resp.statusCode != 200 && resp.statusCode != 201) {
-      throw Exception(_extractDetail(resp));
-    }
+    if (resp.statusCode != 200 && resp.statusCode != 201) throw Exception(_extractDetail(resp));
     final map = jsonDecode(resp.body) as Map<String, dynamic>;
     if (map['workspace'] != null) return Workspace.fromJson(map['workspace'] as Map<String, dynamic>);
     return getWorkspace(wid);
@@ -336,60 +337,217 @@ class ApiService {
     return (map['answer'] ?? '').toString();
   }
 
-  // ── Import Student List ──────────────────────────────────────────────────
   Future<Map<String, dynamic>> uploadStudentList({required File file}) async {
     try {
       final req = http.MultipartRequest('POST', _u('/students/upload'));
-
       final filePart = await http.MultipartFile.fromPath('file', file.path);
-
       req.files.add(filePart);
-
       final streamed = await req.send().timeout(AppConfig.uploadTimeout); 
       final response = await http.Response.fromStream(streamed);
-
-      if (response.statusCode == 200) {
-        return Map<String, dynamic>.from(jsonDecode(response.body));
-      }
-
-      return {
-        "ok": false,
-        "status": response.statusCode,
-        "error": response.body,
-      };
+      if (response.statusCode == 200) return Map<String, dynamic>.from(jsonDecode(response.body));
+      return {"ok": false, "status": response.statusCode, "error": response.body};
     } catch (e) {
       return {"ok": false, "error": e.toString()};
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  MediaType _contentTypeFor(String filename) {
-    final f = filename.toLowerCase();
-    if (f.endsWith('.pdf')) return MediaType('application', 'pdf');
-    if (f.endsWith('.docx')) return MediaType('application', 'vnd.openxmlformats-officedocument.wordprocessingml.document');
-    return MediaType('text', 'plain');
-  }
-
-  String _extractDetail(http.Response resp) {
-    try {
-      final m = jsonDecode(resp.body);
-      if (m is Map && m['detail'] != null) return m['detail'].toString();
-    } catch (_) {}
-    return 'Request failed (${resp.statusCode}).';
-  }
-
-  // ── Edit Quiz Question ───────────────────────────────────────────────────
   Future<QuizQuestion> editQuestionWithAI(QuizQuestion oldQuestion, String instruction) async {
     var response = await http.post(
       _u('/edit-question/'),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"question_data": oldQuestion.toJson(), "instruction": instruction}),
     );
-
     if (response.statusCode == 200) {
       var data = jsonDecode(response.body);
       return QuizQuestion.fromJson(data['updated_question']);
     } 
     throw Exception("Failed to edit question");
+  }
+
+  // ===========================================================================
+  // ── NEW Attendance & Facial Recognition Methods ────────────────────────────
+  // ===========================================================================
+
+  Future<Map<String, dynamic>> uploadCheck({
+    required File videoFile,
+    required int lectureNumber,
+    required int workspaceId,
+    required String sectionId,
+  }) async {
+    try {
+      // Changed to the unified endpoint we built in Python
+      final req = http.MultipartRequest('POST', _u('/attendance/process-video'));
+
+      req.fields['lecture_number'] = lectureNumber.toString();
+      req.fields['workspace_id'] = workspaceId.toString();
+      req.fields['section_id'] = sectionId;
+
+      final videoPart = await http.MultipartFile.fromPath('video', videoFile.path);
+      req.files.add(videoPart);
+
+      final streamed = await req.send().timeout(const Duration(minutes: 5)); // Allow longer for video processing
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+
+      return {"ok": false, "status": response.statusCode, "error": response.body};
+    } catch (e) {
+      return {"ok": false, "error": e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> previewAttendance({
+    required int lectureNumber,
+    required String videoId,
+    required int workspaceId,
+    required String sectionId,
+  }) async {
+    // Note: If you use the combined process-video route, preview data is returned immediately on upload!
+    // This is kept here for backward compatibility with your UI.
+    try {
+      final res = await http.post(
+        _u('/attendance/preview'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "lecture_number": lectureNumber,
+          "video_id": videoId,
+          "workspace_id": workspaceId,
+          "section_id": sectionId,
+        }),
+      );
+
+      if (res.statusCode == 200) return Map<String, dynamic>.from(jsonDecode(res.body));
+      return {"ok": false, "status": res.statusCode, "error": res.body};
+    } catch (e) {
+      return {"ok": false, "error": e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> confirmAttendance({
+    required int lectureNumber,
+    required int workspaceId,
+    required String sectionId,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    final body = jsonEncode({
+      "lecture_number": lectureNumber,
+      "workspace_id": workspaceId,
+      "section_id": sectionId,
+      "rows": rows.map((r) => {
+        "student_id": r["student_id"].toString(),
+        "status": r["status"].toString(),
+        "confidence": (r["confidence"] ?? "Unknown").toString(),
+      }).toList(),
+    });
+
+    final response = await http.post(
+      _u('/attendance/confirm'),
+      headers: {"Content-Type": "application/json"},
+      body: body,
+    );
+    
+    if (response.statusCode != 200) {
+      throw Exception("Confirm failed: ${response.statusCode} ${response.body}");
+    }
+    return jsonDecode(response.body);
+  }
+
+  Future<List<int>> exportAttendanceCsvFromDb({
+    required int workspaceId,
+    required String sectionId,
+    int? lectureNumber,
+  }) async {
+    final queryParams = {
+      'workspace_id': workspaceId.toString(),
+      'section_id': sectionId,
+    };
+    if (lectureNumber != null) queryParams['lecture_number'] = lectureNumber.toString();
+
+    final uri = Uri.parse('$_baseUrl/export-attendance').replace(queryParameters: queryParams);
+    final res = await http.get(uri);
+
+    if (res.statusCode != 200) throw Exception("Export failed: ${res.statusCode}");
+    return res.bodyBytes;
+  }
+
+  Future<Map<String, dynamic>> uploadEncoding({
+    required String studentId,
+    required List<File> images,
+    bool override = false,
+  }) async {
+    final req = http.MultipartRequest('POST', _u('/encoding/upload'));
+    req.fields['student_id'] = studentId;
+    req.fields['override'] = override.toString();
+
+    for (var img in images) {
+      req.files.add(await http.MultipartFile.fromPath('files', img.path));
+    }
+    
+    final streamed = await req.send().timeout(AppConfig.uploadTimeout);
+    final res = await http.Response.fromStream(streamed);
+    final data = jsonDecode(res.body);
+
+    if (res.statusCode != 200) return {"ok": false, "message": data["detail"] ?? "Unknown error"};
+    return data;
+  }
+
+  Future<List<dynamic>> getEncodingStudents() async {
+    final res = await http.get(_u('/students/')); // Adjusted to fetch global students list
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception("Failed to load encoding students");
+  }
+
+  Future<int?> getLastLecture({required int workspaceId, required String sectionId}) async {
+    final uri = Uri.parse('$_baseUrl/attendance/last-lecture?workspace_id=$workspaceId&section_id=$sectionId');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) throw Exception("Failed to fetch last lecture");
+    final data = jsonDecode(res.body);
+    if (data['ok'] == true) return data['last_lecture'];
+    return null;
+  }
+
+  Future<List<int>> getAvailableLectures({required int workspaceId, required String sectionId}) async {
+    final uri = Uri.parse('$_baseUrl/attendance/available-lectures?workspace_id=$workspaceId&section_id=$sectionId');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) return []; // Graceful failure if none exist
+    final data = jsonDecode(res.body);
+    return List<int>.from(data['lectures'] ?? []);
+  }
+
+  Future<List<Map<String, dynamic>>> getStudentsForSection({required int workspaceId, required String sectionId}) async {
+    final uri = Uri.parse('$_baseUrl/workspaces/$workspaceId/sections/$sectionId/students');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) throw Exception("Failed to load students");
+    final data = jsonDecode(res.body);
+    return List<Map<String, dynamic>>.from(data['students'] ?? []);
+  }
+
+  Future<List<Map<String, dynamic>>> getAttendanceForLecture({
+    required int workspaceId, required String sectionId, required int lectureNumber,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/attendance/lecture?workspace_id=$workspaceId&section_id=$sectionId&lecture_number=$lectureNumber');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) throw Exception("Failed to load attendance");
+    final data = jsonDecode(res.body);
+    return List<Map<String, dynamic>>.from(data['rows'] ?? []);
+  }
+
+  Future<List<int>> downloadWarningReport({
+    required int workspaceId, required String sectionId, required String studentId, required int absences,
+  }) async {
+    final res = await http.post(
+      _u('/attendance/generate-warning-report'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "workspace_id": workspaceId,
+        "section_id": sectionId,
+        "student_id": studentId,
+        "absences": absences,
+      }),
+    );
+    if (res.statusCode != 200) throw Exception("Failed to generate report");
+    return res.bodyBytes;
   }
 }
