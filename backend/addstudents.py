@@ -1,6 +1,7 @@
 import os
 import pandas as pd
-from dbconn import get_connection
+from db.database import engine
+from sqlalchemy import text
 
 INPUT_FOLDER = "input_student_list"
 
@@ -67,50 +68,57 @@ def insert_students_from_file(filepath):
     inserted = 0
     skipped = 0
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
+    # engine.begin() automatically starts a transaction and commits it when done!
+    with engine.begin() as conn:
+        for _, row in df.iterrows():
+            student_id = str(row["student_id"]).strip()
 
-            for _, row in df.iterrows():
-                student_id = str(row["student_id"]).strip()
+            # 1. Use text() and named parameters (:student_id) to check for existing student
+            check_query = text("SELECT 1 FROM student WHERE student_id = :student_id")
+            result = conn.execute(check_query, {"student_id": student_id})
 
-                cur.execute(
-                    "SELECT 1 FROM Students WHERE student_id = %s",
-                    (student_id,)
+            if result.fetchone():
+                skipped += 1
+                continue
+
+            # 2. Use named parameters for the insert as well
+            insert_query = text("""
+                INSERT INTO student (
+                    student_id,
+                    student_name,
+                    campus_code,
+                    campus_desc,
+                    college_code,
+                    college_desc,
+                    major_code,
+                    major_desc,
+                    facial_encoding
                 )
-
-                if cur.fetchone():
-                    skipped += 1
-                    continue
-
-                cur.execute(
-                    """
-                    INSERT INTO Students (
-                        student_id,
-                        student_name,
-                        campus_code,
-                        campus_desc,
-                        college_code,
-                        college_desc,
-                        major_code,
-                        major_desc,
-                        facial_encoding
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NULL)
-                    """,
-                    (
-                        student_id,
-                        str(row["student_name"]).strip(),
-                        str(row["campus_code"]).strip(),
-                        str(row["campus_desc"]).strip(),
-                        int(row["college_code"]) if not pd.isna(row["college_code"]) else None,
-                        str(row["college_desc"]).strip(),
-                        str(row["major_code"]).strip(),
-                        str(row["major_desc"]).strip(),
-                    )
+                VALUES (
+                    :student_id,
+                    :student_name,
+                    :campus_code,
+                    :campus_desc,
+                    :college_code,
+                    :college_desc,
+                    :major_code,
+                    :major_desc,
+                    NULL
                 )
-                inserted += 1
+            """)
 
-        conn.commit()
+            # 3. Execute directly on the connection, passing a dictionary of the values
+            conn.execute(insert_query, {
+                "student_id": student_id,
+                "student_name": str(row["student_name"]).strip(),
+                "campus_code": str(row["campus_code"]).strip(),
+                "campus_desc": str(row["campus_desc"]).strip(),
+                "college_code": int(row["college_code"]) if not pd.isna(row["college_code"]) else None,
+                "college_desc": str(row["college_desc"]).strip(),
+                "major_code": str(row["major_code"]).strip(),
+                "major_desc": str(row["major_desc"]).strip(),
+            })
+            inserted += 1
 
     print(f"\nProcessed {os.path.basename(filepath)}")
     print(f"Inserted: {inserted}")

@@ -168,13 +168,20 @@ async def upload_encoding(
     student_id: str = Form(...),
     override: bool = Form(False),
     files: List[UploadFile] = File(...),
-    repo: PgAttendanceRepository = Depends(get_attendance_repo)
+    repo: PgAttendanceRepository = Depends(get_attendance_repo),
+    db: Session = Depends(get_db)
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No images uploaded")
     
+    student = db.query(Student).filter(Student.student_id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found in database")
+        
+    if student.facial_encoding and len(student.facial_encoding) > 0 and not override:
+        return {"needs_override": True, "message": "Student already has a registered face. Override?"}
+    
     fr = FaceRecognizer()
-    # Process the first image in memory
     image_bytes = await files[0].read()
     encoding = fr.generate_encoding_from_image(image_bytes)
     
@@ -185,7 +192,7 @@ async def upload_encoding(
     success = repo.update_student_encoding(student_id, encoding_list)
     
     if not success:
-        raise HTTPException(status_code=404, detail="Student not found in database")
+        raise HTTPException(status_code=500, detail="Failed to save encoding")
         
     return {"ok": True, "message": "Encoding saved successfully"}
 

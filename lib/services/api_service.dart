@@ -522,8 +522,15 @@ class ApiService {
     final uri = Uri.parse('$_baseUrl/workspaces/$workspaceId/sections/$sectionId/students');
     final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception("Failed to load students");
+    
     final data = jsonDecode(res.body);
-    return List<Map<String, dynamic>>.from(data['students'] ?? []);
+    List<dynamic> rawStudents = data['students'] ?? [];
+    
+    return rawStudents.map((s) => {
+      "student_id": s["student_no"]?.toString() ?? s["student_id"]?.toString() ?? "",
+      "name": s["name"] ?? "Unknown",
+      "email": s["email"] ?? ""
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> getAttendanceForLecture({
