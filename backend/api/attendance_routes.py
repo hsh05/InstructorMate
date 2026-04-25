@@ -40,7 +40,7 @@ async def process_video_attendance(
     repo: PgAttendanceRepository = Depends(get_attendance_repo)
 ):
     # Save video to a temporary file that cleans itself up after
-    with tempfile.NamedNamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
         temp_video.write(await video.read())
         temp_video_path = temp_video.name
 

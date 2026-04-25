@@ -8,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../widgets/student_preview_card.dart';
 import 'statistics_screen.dart';
 import '../../utils/file_saver.dart';
+import 'generate_encodings_screen.dart';
 
 class AttendanceScreen extends StatefulWidget {
   final int workspaceId;
@@ -619,7 +620,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         title: Text("${widget.courseTitle} - Section ${widget.sectionId}"),
         actions: [
           IconButton(
-            icon: const Icon(Icons.analytics, size: 42),
+            icon: const Icon(Icons.face_retouching_natural, size: 32),
+            tooltip: "Student Face Encodings",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const GenerateEncodingsScreen(),
+                ),
+              );
+            },
+          ),
+          // Your existing Statistics Button
+          IconButton(
+            icon: const Icon(Icons.analytics, size: 36), // slightly resized to match
             tooltip: "View Statistics",
             onPressed: () {
               Navigator.push(
@@ -634,6 +648,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               );
             },
           ),
+          const SizedBox(width: 8), // Just a little padding on the right edge
         ],
       ),
       body: Column(
