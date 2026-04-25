@@ -22,13 +22,13 @@ class FaceRecognizer:
         self.known_student_names = []
 
         for s in students:
-            # Handle both object and dictionary structures safely
-            enc = getattr(s, 'encoding', None) or (s.get('encoding') if isinstance(s, dict) else None)
+            enc = getattr(s, 'facial_encoding', None) or (s.get('facial_encoding') if isinstance(s, dict) else None)
             sid = getattr(s, 'student_id', None) or (s.get('student_id') if isinstance(s, dict) else None)
-            name = getattr(s, 'name', None) or (s.get('name') if isinstance(s, dict) else None)
+            name = getattr(s, 'student_name', None) or (s.get('student_name') if isinstance(s, dict) else None)
             
-            if enc is None:
+            if enc is None or len(enc) == 0:
                 continue
+                
             self.known_face_encodings.append(np.asarray(enc, dtype=float))
             self.known_student_ids.append(sid)
             self.known_student_names.append(name)
