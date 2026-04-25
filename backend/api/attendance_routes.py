@@ -114,6 +114,30 @@ def attendance_confirm(req: ConfirmRequest, repo: PgAttendanceRepository = Depen
         "saved_rows": len(mapped_rows)
     }
 
+@router.get("/attendance/lecture")
+def get_lecture_attendance(
+    workspace_id: int, 
+    section_id: str, 
+    lecture_number: int, 
+    repo: PgAttendanceRepository = Depends(get_attendance_repo)
+):
+    """Fetches the attendance records for a specific lecture."""
+    rows = repo.fetch_attendance_rows(workspace_id, section_id, lecture_number)
+    return {"ok": True, "rows": rows}
+
+@router.get("/attendance/available-lectures")
+def get_available_lectures(
+    workspace_id: int, 
+    section_id: str, 
+    repo: PgAttendanceRepository = Depends(get_attendance_repo)
+):
+    """Finds all the unique lecture numbers that have recorded attendance."""
+    all_rows = repo.fetch_attendance_rows(workspace_id, section_id)
+    # Extract just the unique lecture numbers and sort them
+    unique_lectures = sorted(list(set(row["lecture_number"] for row in all_rows)))
+    
+    return {"ok": True, "lectures": unique_lectures}
+
 @router.get("/export-attendance")
 def export_attendance(workspace_id: int, section_id: str, lecture_number: int | None = None, repo: PgAttendanceRepository = Depends(get_attendance_repo)):
     rows = repo.fetch_attendance_rows(workspace_id, section_id, lecture_number)
