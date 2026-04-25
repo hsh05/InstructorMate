@@ -15,7 +15,7 @@ from db.database import get_db
 from repositories.pg_repository import PgAttendanceRepository
 from services.face_recognizer import FaceRecognizer
 from services.attendance_service import AttendanceService
-from db.models import Student
+from db.models import Student, Workspace 
 
 router = APIRouter(tags=["Attendance"])
 
@@ -203,3 +203,68 @@ def get_encoding_students(db: Session = Depends(get_db)):
         }
         for s in students
     ]
+
+# ==========================================
+# Generate Warning Report Route
+# ==========================================
+class WarningReportRequest(BaseModel):
+    workspace_id: int
+    section_id: str
+    student_id: str
+    absences: int
+
+@router.post("/attendance/generate-warning-report")
+def generate_warning_report(data: WarningReportRequest, db: Session = Depends(get_db)):
+    # 1. Get student using SQLAlchemy
+    student = db.query(Student).filter(Student.student_id == data.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 2. Get course info using SQLAlchemy
+    workspace = db.query(Workspace).filter(Workspace.workspace_id == data.workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # 3. Load Template
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(BASE_DIR, "templates", "warning_template.docx")
+    
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=500, detail=f"Warning template file missing at {template_path}")
+
+    doc = DocxTemplate(template_path)
+
+    # 4. Warning logic
+    first = 4 <= data.absences < 8
+    second = 8 <= data.absences < 10
+    third = data.absences >= 10
+
+    context = {
+        "course_title": workspace.course_title,
+        "course_code": workspace.course_code,
+        "section": data.section_id,
+        "semester": workspace.semester,
+        "student_name": student.student_name, 
+        "student_id": student.student_id,
+        "absences": data.absences,
+        "first_warning": "☑" if first else "☐",
+        "second_warning": "☑" if second else "☐",
+        "third_warning": "☑" if third else "☐",
+    }
+
+    doc.render(context)
+
+    # 5. Save directly to RAM
+    file_stream = io.BytesIO()
+    doc.save(file_stream)
+    file_stream.seek(0)
+
+    filename = f"Warning_{data.student_id}_{workspace.course_code}.docx"
+
+    return Response(
+        content=file_stream.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )

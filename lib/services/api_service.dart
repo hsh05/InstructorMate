@@ -536,12 +536,20 @@ class ApiService {
     return List<Map<String, dynamic>>.from(data['rows'] ?? []);
   }
 
+  // ==========================================
+  // Generate Warning Report (.docx)
+  // ==========================================
   Future<List<int>> downloadWarningReport({
-    required int workspaceId, required String sectionId, required String studentId, required int absences,
+    required int workspaceId,
+    required String sectionId,
+    required String studentId,
+    required int absences,
   }) async {
-    final res = await http.post(
-      _u('/attendance/generate-warning-report'),
-      headers: {"Content-Type": "application/json"},
+    final url = Uri.parse('$_baseUrl/attendance/generate-warning-report');
+
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         "workspace_id": workspaceId,
         "section_id": sectionId,
@@ -549,7 +557,11 @@ class ApiService {
         "absences": absences,
       }),
     );
-    if (res.statusCode != 200) throw Exception("Failed to generate report");
-    return res.bodyBytes;
+
+    if (response.statusCode == 200) {
+      return response.bodyBytes; 
+    } else {
+      throw Exception('Failed to generate report: ${response.body}');
+    }
   }
 }
