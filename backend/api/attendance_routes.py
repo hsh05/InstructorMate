@@ -226,7 +226,7 @@ def generate_warning_report(data: WarningReportRequest, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     # 3. Load Template
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     template_path = os.path.join(BASE_DIR, "templates", "warning_template.docx")
     
     if not os.path.exists(template_path):
