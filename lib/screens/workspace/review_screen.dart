@@ -1,3 +1,5 @@
+// lib/screens/workspace/review_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../models/question_model.dart';
 import '../../services/export_service.dart';
@@ -107,7 +109,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppStyles.primary)));
 
     try {
-      // 👉 THE FIX: Routing the AI request securely through ApiService
       QuizQuestion newQuestion = await _apiService.editQuestionWithAI(
           widget.questions[index], instruction);
 
@@ -118,7 +119,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text("Question updated!"), 
-          backgroundColor: AppStyles.success, // Mapped from green
+          backgroundColor: AppStyles.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
         ));
@@ -127,7 +128,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       if (mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text("Error: $e"), 
-        backgroundColor: AppStyles.error, // Mapped from red
+        backgroundColor: AppStyles.error,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: AppStyles.borderRadiusM),
       ));
