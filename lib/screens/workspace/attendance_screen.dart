@@ -154,31 +154,49 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   // =============================
-  // Upload only (Pick from files)
+  // Helper to map backend rows to UI
+  // =============================
+  void _applyPreviewRows(List<dynamic> rowsRaw) {
+    for (var r in rowsRaw) {
+      final sid = r["student_id"];
+      final status = r["status"];
+      final confidence = r["confidence"];
+      final index = previewRows.indexWhere((x) => x["StudentID"] == sid);
+
+      if (index != -1) {
+        if (status == "Present") {
+          previewRows[index]["Status"] = "Present";
+          previewRows[index]["Confidence"] = confidence;
+        } else {
+          if (previewRows[index]["Status"] == null) {
+            previewRows[index]["Status"] = status;
+            previewRows[index]["Confidence"] = confidence;
+          }
+        }
+      }
+    }
+  }
+
+  // =============================
+  // Upload & Process (Pick from files)
   // =============================
   Future<void> pickAndUploadVideo() async {
     setState(() {
       loading = true;
-      statusText = 'Picking videos...';
+      statusText = 'Picking video...';
       for (var r in previewRows) {
         r["Status"] = null;
         r["Confidence"] = "Unknown";
       }
       uploadedOk = false;
-      if (uploadedVideoIds.isEmpty) {
-        uploadedFileNames.clear();
-      }
-      backendTotalPresent = null;
-      backendTotalAbsent = null;
+      uploadedVideoIds.clear();
+      uploadedFileNames.clear();
     });
 
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: true,
-      );
+      final result = await FilePicker.platform.pickFiles(type: FileType.video);
 
-      if (result == null) {
+      if (result == null || result.files.isEmpty || result.files.first.path == null) {
         setState(() {
           loading = false;
           statusText = 'Cancelled.';
@@ -186,38 +204,31 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         return;
       }
 
-      for (var f in result.files) {
-        if (f.path == null) continue;
-        if (uploadedVideoIds.length >= 2) break;
+      final file = File(result.files.first.path!);
 
-        final file = File(f.path!);
+      setState(() => statusText = 'Processing video... (this may take a minute)');
 
-        final upload = await api.uploadCheck(
-          videoFile: file,
-          lectureNumber: lectureNumber,
-          workspaceId: widget.workspaceId,
-          sectionId: widget.sectionId,
-        );
+      final upload = await api.uploadCheck(
+        videoFile: file,
+        lectureNumber: lectureNumber,
+        workspaceId: widget.workspaceId,
+        sectionId: widget.sectionId,
+      );
 
-        if (upload['ok'] == true) {
-          final id = upload['video_id']?.toString();
-          final name = (upload['original_filename'] ?? upload['saved_path'])
-              ?.toString();
+      if (upload['ok'] == true) {
+        final rowsRaw = (upload['rows'] as List).cast<dynamic>();
+        _applyPreviewRows(rowsRaw);
 
-          if (id != null) {
-            uploadedVideoIds.add(id);
-            uploadedFileNames.add(name ?? "video");
-          }
-        }
+        setState(() {
+          uploadedVideoIds.add("processed_video"); // Fake ID to satisfy UI
+          uploadedFileNames.add(result.files.first.name);
+          uploadedOk = true;
+          loading = false;
+          statusText = 'Attendance preview ready ✅';
+        });
+      } else {
+        throw Exception(upload['error'] ?? 'Upload failed');
       }
-
-      setState(() {
-        uploadedOk = uploadedVideoIds.isNotEmpty;
-        loading = false;
-        statusText = uploadedOk
-            ? 'Uploaded ${uploadedVideoIds.length} video(s) ✅'
-            : 'No valid videos uploaded';
-      });
     } catch (e) {
       setState(() {
         loading = false;
@@ -227,7 +238,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   // =============================
-  // Upload only (Capture video)
+  // Upload & Process (Capture video)
   // =============================
   Future<void> captureAndUploadVideo() async {
     setState(() {
@@ -238,11 +249,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         r["Confidence"] = "Unknown";
       }
       uploadedOk = false;
-      if (uploadedVideoIds.isEmpty) {
-        uploadedFileNames.clear();
-      }
-      backendTotalPresent = null;
-      backendTotalAbsent = null;
+      uploadedVideoIds.clear();
+      uploadedFileNames.clear();
     });
 
     try {
@@ -261,16 +269,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       final file = File(captured.path);
 
-      final exists = await file.exists();
-      if (!exists) {
-        setState(() {
-          loading = false;
-          statusText = 'Error: captured video file not found';
-        });
-        return;
-      }
-
-      setState(() => statusText = 'Uploading...');
+      setState(() => statusText = 'Processing video... (this may take a minute)');
 
       final upload = await api.uploadCheck(
         videoFile: file,
@@ -279,24 +278,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         sectionId: widget.sectionId,
       );
 
-      if (upload['ok'] != true) {
+      if (upload['ok'] == true) {
+        final rowsRaw = (upload['rows'] as List).cast<dynamic>();
+        _applyPreviewRows(rowsRaw);
+
+        setState(() {
+          uploadedVideoIds.add("processed_video"); 
+          uploadedFileNames.add("Captured Video");
+          uploadedOk = true;
+          loading = false;
+          statusText = 'Attendance preview ready ✅';
+        });
+      } else {
         throw Exception(upload['error'] ?? 'Upload failed');
       }
-
-      setState(() {
-        final id = upload['video_id']?.toString();
-        final name = (upload['original_filename'] ?? upload['saved_path'])
-            ?.toString();
-
-        if (id != null && uploadedVideoIds.length < 2) {
-          uploadedVideoIds.add(id);
-          uploadedFileNames.add(name ?? "video");
-        }
-
-        uploadedOk = uploadedVideoIds.isNotEmpty;
-        loading = false;
-        statusText = 'Uploaded ${uploadedVideoIds.length} video(s) ✅';
-      });
     } catch (e) {
       setState(() {
         loading = false;
@@ -309,63 +304,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // Preview Attendance
   // =============================
   Future<void> runPreview() async {
-    if (uploadedVideoIds.isEmpty) {
-      setState(() => statusText = 'Upload at least one video');
-      return;
-    }
-
+    // Because the video is now processed instantly during upload, 
+    // the "Take Attendance" button is technically obsolete! 
     setState(() {
-      loading = true;
-      statusText = 'Processing videos...';
-      for (var r in previewRows) {
-        r["Status"] = null;
-        r["Confidence"] = "Unknown";
-      }
+      statusText = 'Preview is already generated above!';
     });
-
-    try {
-      for (var id in uploadedVideoIds) {
-        final data = await api.previewAttendance(
-          lectureNumber: lectureNumber,
-          videoId: id,
-          workspaceId: widget.workspaceId,
-          sectionId: widget.sectionId,
-        );
-
-        if (data['ok'] != true) continue;
-
-        final rowsRaw = (data['rows'] as List).cast<dynamic>();
-
-        for (var r in rowsRaw) {
-          final sid = r["student_id"];
-          final status = r["status"];
-          final index = previewRows.indexWhere((x) => x["StudentID"] == sid);
-          final confidence = r["confidence"];
-
-          if (index != -1) {
-            if (status == "Present") {
-              previewRows[index]["Status"] = "Present";
-              previewRows[index]["Confidence"] = confidence;
-            } else {
-              if (previewRows[index]["Status"] == null) {
-                previewRows[index]["Status"] = status;
-                previewRows[index]["Confidence"] = confidence;
-              }
-            }
-          }
-        }
-      }
-
-      setState(() {
-        loading = false;
-        statusText = 'Preview ready';
-      });
-    } catch (e) {
-      setState(() {
-        loading = false;
-        statusText = 'Error: $e';
-      });
-    }
   }
 
   // =============================

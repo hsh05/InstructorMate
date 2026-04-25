@@ -1,3 +1,5 @@
+// lib/services/api_service.dart
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -494,7 +496,7 @@ class ApiService {
   }
 
   Future<List<dynamic>> getEncodingStudents() async {
-    final res = await http.get(_u('/students/')); // Adjusted to fetch global students list
+    final res = await http.get(_u('/encoding/students'));
     if (res.statusCode == 200) return jsonDecode(res.body);
     throw Exception("Failed to load encoding students");
   }

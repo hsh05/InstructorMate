@@ -15,6 +15,7 @@ from db.database import get_db
 from repositories.pg_repository import PgAttendanceRepository
 from services.face_recognizer import FaceRecognizer
 from services.attendance_service import AttendanceService
+from db.models import Student
 
 router = APIRouter(tags=["Attendance"])
 
@@ -187,3 +188,18 @@ async def upload_encoding(
         raise HTTPException(status_code=404, detail="Student not found in database")
         
     return {"ok": True, "message": "Encoding saved successfully"}
+
+@router.get("/encoding/students")
+def get_encoding_students(db: Session = Depends(get_db)):
+    """Fetches all students and flags whether they have a saved facial encoding."""
+    students = db.query(Student).all()
+    
+    return [
+        {
+            "student_id": s.student_id,
+            "name": s.student_name,
+            # Checks if the encoding column is NOT empty
+            "has_encoding": s.facial_encoding is not None and len(s.facial_encoding) > 0 
+        }
+        for s in students
+    ]
