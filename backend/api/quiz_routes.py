@@ -1,3 +1,5 @@
+# backend/api/quiz_routes.py
+
 import json
 import os
 import io
@@ -9,7 +11,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from fastapi import Depends
-from db.database import get_db # 👈 Ensuring this points to the db folder!
+from db.database import get_db
 from db import models
 import schemas
 import requests
@@ -28,7 +30,7 @@ if not api_key:
 # Initialize the client using the environment variable
 client = OpenAI(api_key=api_key)
 
-# --- YOUR SHARED HELPER FUNCTION ---
+# --- HELPER FUNCTION ---
 async def generate_questions_with_ai(extracted_text: str, config_data: list):
     prompt = f"""
     You are an educational assistant. Generate a quiz based ONLY on the text provided below.
@@ -142,7 +144,6 @@ async def generate_direct(
     
 @router.get("/workspaces/", response_model=list[schemas.WorkspaceResponse])
 def get_workspaces_with_materials(db: Session = Depends(get_db)):
-    # 👈 FIXED: Capitalized Workspace!
     workspaces = db.query(models.Workspace).all()
     return workspaces
 
