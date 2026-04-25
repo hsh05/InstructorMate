@@ -1,0 +1,11 @@
+STUDENT_ID,STUDENT_NAME,CAMPUS_CODE,CAMPUS_DESC,LEVEL_CODE,LEVEL_DESC,COLLEGE_CODE,COLLEGE_DESC,MAJOR_CODE,MAJOR_DESC,IS_REGISTERED,REGISTERED_HOURS,BUILDING_DESC,ROOM_DESC,TIMES,MEETINGDAYS
+202211741,Jana Almajanni,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202210101,Dr Tarik Elamsy,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202210088,Merna Elmehalawy,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202211528,Aroua Et-Tassafi,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202211505,Dr Yazeed Ghadi,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202210001,Dr Khubaib Alam,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202211517,Mohamad Kadah,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202210517,Fatima Omer,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202310228,Dareen Anwar,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
+202210914,Basem Salama,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,AD Main Building,LAB-210,02:00 pm-03:25 pm,MW
