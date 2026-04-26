@@ -43,9 +43,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void initState() {
     super.initState();
-    loadLastLecture();
-    loadAvailableLectures();
-    loadStudents();
+    _initLoad();
+  }
+
+  Future<void> _initLoad() async {
+    await loadLastLecture(); // sets lectureNumber to latest FIRST
+    loadAvailableLectures(); // runs in parallel after
+    loadStudents(); // now uses correct lectureNumber
   }
 
   Future<void> loadAvailableLectures() async {
@@ -133,6 +137,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool uploadedOk = false;
   List<String> uploadedFileNames = [];
   List<String> uploadedVideoIds = [];
+  List<File> _pickedVideoFiles =
+      []; // holds files after picking, before processing
 
   int? backendTotalPresent;
   int? backendTotalAbsent;
@@ -178,81 +184,43 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   // =============================
-  // Upload & Process (Pick from files)
+  // Step 1a: Pick video from files (no processing yet)
   // =============================
   Future<void> pickAndUploadVideo() async {
-    setState(() {
-      loading = true;
-      statusText = 'Picking video...';
-      for (var r in previewRows) {
-        r["Status"] = null;
-        r["Confidence"] = "Unknown";
-      }
-      uploadedOk = false;
-      uploadedVideoIds.clear();
-      uploadedFileNames.clear();
-    });
-
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.video);
 
-      if (result == null || result.files.isEmpty || result.files.first.path == null) {
-        setState(() {
-          loading = false;
-          statusText = 'Cancelled.';
-        });
+      if (result == null ||
+          result.files.isEmpty ||
+          result.files.first.path == null) {
         return;
       }
 
       final file = File(result.files.first.path!);
 
-      setState(() => statusText = 'Processing video... (this may take a minute)');
-
-      final upload = await api.uploadCheck(
-        videoFile: file,
-        lectureNumber: lectureNumber,
-        workspaceId: widget.workspaceId,
-        sectionId: widget.sectionId,
-      );
-
-      if (upload['ok'] == true) {
-        final rowsRaw = (upload['rows'] as List).cast<dynamic>();
-        _applyPreviewRows(rowsRaw);
-
-        setState(() {
-          uploadedVideoIds.add("processed_video"); // Fake ID to satisfy UI
-          uploadedFileNames.add(result.files.first.name);
-          uploadedOk = true;
-          loading = false;
-          statusText = 'Attendance preview ready ✅';
-        });
-      } else {
-        throw Exception(upload['error'] ?? 'Upload failed');
-      }
+      setState(() {
+        _pickedVideoFiles.add(file);
+        uploadedVideoIds.add("picked_video_${uploadedVideoIds.length}");
+        uploadedFileNames.add(result.files.first.name);
+        uploadedOk = false;
+        statusText = 'Video selected. Press "Take Attendance" to process.';
+        // Clear old results
+        for (var r in previewRows) {
+          r["Status"] = null;
+          r["Confidence"] = "Unknown";
+        }
+      });
     } catch (e) {
       setState(() {
-        loading = false;
-        statusText = 'Error: $e';
+        statusText = 'Error picking video: $e';
       });
     }
   }
 
   // =============================
-  // Upload & Process (Capture video)
+  // Step 1b: Capture video from camera (no processing yet)
   // =============================
   Future<void> captureAndUploadVideo() async {
-    setState(() {
-      loading = true;
-      statusText = 'Opening camera...';
-      for (var r in previewRows) {
-        r["Status"] = null;
-        r["Confidence"] = "Unknown";
-      }
-      uploadedOk = false;
-      uploadedVideoIds.clear();
-      uploadedFileNames.clear();
-    });
-
     try {
       final XFile? captured = await _picker.pickVideo(
         source: ImageSource.camera,
@@ -260,55 +228,82 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
 
       if (captured == null) {
-        setState(() {
-          loading = false;
-          statusText = 'Cancelled.';
-        });
         return;
       }
 
       final file = File(captured.path);
 
-      setState(() => statusText = 'Processing video... (this may take a minute)');
+      setState(() {
+        _pickedVideoFiles.add(file);
+        uploadedVideoIds.add("captured_video_${uploadedVideoIds.length}");
+        uploadedFileNames.add("Captured Video ${uploadedFileNames.length + 1}");
+        uploadedOk = false;
+        statusText = 'Video captured. Press "Take Attendance" to process.';
+        // Clear old results
+        for (var r in previewRows) {
+          r["Status"] = null;
+          r["Confidence"] = "Unknown";
+        }
+      });
+    } catch (e) {
+      setState(() {
+        statusText = 'Error capturing video: $e';
+      });
+    }
+  }
 
-      final upload = await api.uploadCheck(
-        videoFile: file,
-        lectureNumber: lectureNumber,
-        workspaceId: widget.workspaceId,
-        sectionId: widget.sectionId,
-      );
+  // =============================
+  // Step 2: Send video to backend and process attendance
+  // =============================
+  Future<void> runPreview() async {
+    if (_pickedVideoFiles.isEmpty) {
+      setState(() => statusText = 'Please select a video first.');
+      return;
+    }
 
-      if (upload['ok'] == true) {
-        final rowsRaw = (upload['rows'] as List).cast<dynamic>();
-        _applyPreviewRows(rowsRaw);
-
-        setState(() {
-          uploadedVideoIds.add("processed_video"); 
-          uploadedFileNames.add("Captured Video");
-          uploadedOk = true;
-          loading = false;
-          statusText = 'Attendance preview ready ✅';
-        });
-      } else {
-        throw Exception(upload['error'] ?? 'Upload failed');
+    setState(() {
+      loading = true;
+      statusText = 'Processing videos... (this may take a minute)';
+      for (var r in previewRows) {
+        r["Status"] = null;
+        r["Confidence"] = "Unknown";
       }
+    });
+
+    try {
+      // Run all video uploads in parallel
+      final futures = _pickedVideoFiles
+          .map((file) => api.uploadCheck(
+                videoFile: file,
+                lectureNumber: lectureNumber,
+                workspaceId: widget.workspaceId,
+                sectionId: widget.sectionId,
+              ))
+          .toList();
+
+      final results = await Future.wait(futures);
+
+      // Merge results from all videos
+      for (var upload in results) {
+        if (upload['ok'] == true) {
+          final rowsRaw = (upload['rows'] as List).cast<dynamic>();
+          _applyPreviewRows(rowsRaw);
+        } else {
+          throw Exception(upload['error'] ?? 'Processing failed');
+        }
+      }
+
+      setState(() {
+        uploadedOk = true;
+        loading = false;
+        statusText = 'Attendance preview ready ✅';
+      });
     } catch (e) {
       setState(() {
         loading = false;
         statusText = 'Error: $e';
       });
     }
-  }
-
-  // =============================
-  // Preview Attendance
-  // =============================
-  Future<void> runPreview() async {
-    // Because the video is now processed instantly during upload, 
-    // the "Take Attendance" button is technically obsolete! 
-    setState(() {
-      statusText = 'Preview is already generated above!';
-    });
   }
 
   // =============================
@@ -327,9 +322,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         sectionId: widget.sectionId,
       );
 
-      String cleanCourse = widget.courseTitle
-          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
-          .trim();
+      String cleanCourse =
+          widget.courseTitle.replaceAll(RegExp(r'[\\/:*?"<>|]'), '').trim();
 
       final fileName = '$cleanCourse-${widget.sectionId}(L$lectureNumber).csv';
 
@@ -372,9 +366,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         lectureNumber: null,
       );
 
-      String cleanCourse = widget.courseTitle
-          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
-          .trim();
+      String cleanCourse =
+          widget.courseTitle.replaceAll(RegExp(r'[\\/:*?"<>|]'), '').trim();
 
       final fileName = '$cleanCourse-${widget.sectionId}(ALL).csv';
 
@@ -451,6 +444,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         statusText = 'Attendance saved successfully ✅';
       });
 
+      // Refresh available lectures and last lecture indicator
+      // WITHOUT changing the current lectureNumber the user is on
+      loadAvailableLectures();
+      try {
+        final last = await api.getLastLecture(
+          workspaceId: widget.workspaceId,
+          sectionId: widget.sectionId,
+        );
+        setState(() {
+          lastLectureFromDb = last;
+          // intentionally NOT changing lectureNumber or lectureCtrl
+        });
+      } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Attendance saved successfully ✅')),
@@ -550,7 +556,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   bool get isLectureAlreadyRecorded {
-    return lastLectureFromDb != null && lectureNumber <= lastLectureFromDb!;
+    return availableLectures.contains(lectureNumber);
   }
 
   // =============================
@@ -576,7 +582,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ),
           // Your existing Statistics Button
           IconButton(
-            icon: const Icon(Icons.analytics, size: 36), // slightly resized to match
+            icon: const Icon(Icons.analytics,
+                size: 36), // slightly resized to match
             tooltip: "View Statistics",
             onPressed: () {
               Navigator.push(
@@ -757,7 +764,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           children: [
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: loading ? null : pickAndUploadVideo,
+                                onPressed:
+                                    (loading || _pickedVideoFiles.length >= 2)
+                                        ? null
+                                        : pickAndUploadVideo,
                                 icon: const Icon(Icons.upload_file),
                                 label: const Text('Upload recording'),
                               ),
@@ -765,9 +775,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: loading
-                                    ? null
-                                    : captureAndUploadVideo,
+                                onPressed:
+                                    (loading || _pickedVideoFiles.length >= 2)
+                                        ? null
+                                        : captureAndUploadVideo,
                                 icon: const Icon(Icons.videocam),
                                 label: const Text('Capture Video'),
                               ),
@@ -817,6 +828,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                         setState(() {
                                           uploadedVideoIds.removeAt(index);
                                           uploadedFileNames.removeAt(index);
+                                          _pickedVideoFiles.removeAt(index);
                                         });
                                       },
                                       child: const Icon(
@@ -996,8 +1008,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 final value =
                                     int.tryParse(dbExportLectureCtrl.text) ?? 1;
                                 if (value > 1) {
-                                  dbExportLectureCtrl.text = (value - 1)
-                                      .toString();
+                                  dbExportLectureCtrl.text =
+                                      (value - 1).toString();
                                 }
                               },
                             ),
@@ -1018,8 +1030,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               onPressed: () {
                                 final value =
                                     int.tryParse(dbExportLectureCtrl.text) ?? 0;
-                                dbExportLectureCtrl.text = (value + 1)
-                                    .toString();
+                                dbExportLectureCtrl.text =
+                                    (value + 1).toString();
                                 setState(() {});
                               },
                             ),
@@ -1047,8 +1059,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                         statusText = 'Exporting from DB...';
                                       });
 
-                                      final text = dbExportLectureCtrl.text
-                                          .trim();
+                                      final text =
+                                          dbExportLectureCtrl.text.trim();
                                       int lec = int.tryParse(text) ?? 1;
                                       if (lec < 1) lec = 1;
 
@@ -1070,10 +1082,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
                                       final bytes =
                                           await api.exportAttendanceCsvFromDb(
-                                            lectureNumber: lec,
-                                            workspaceId: widget.workspaceId,
-                                            sectionId: widget.sectionId,
-                                          );
+                                        lectureNumber: lec,
+                                        workspaceId: widget.workspaceId,
+                                        sectionId: widget.sectionId,
+                                      );
 
                                       String cleanCourse = widget.courseTitle
                                           .replaceAll(
@@ -1087,9 +1099,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
                                       final savedPath =
                                           await FileSaver.saveToDownloads(
-                                            bytes: bytes,
-                                            fileName: fileName,
-                                          );
+                                        bytes: bytes,
+                                        fileName: fileName,
+                                      );
 
                                       setState(() {
                                         loading = false;
