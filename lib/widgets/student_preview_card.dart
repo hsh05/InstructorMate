@@ -53,7 +53,6 @@ class StudentCard extends StatelessWidget {
             child: Text('${index + 1}'),
           ),
           const SizedBox(width: 8),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,9 +67,7 @@ class StudentCard extends StatelessWidget {
                       'ID: ${row['StudentID']}',
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
-
                     const SizedBox(width: 6),
-
                     if (confidence != null && confidence != "Unknown")
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -99,7 +96,6 @@ class StudentCard extends StatelessWidget {
               ],
             ),
           ),
-
           Row(
             children: [
               statusBtn('P', status == 'Present', Colors.green, onPresent),
