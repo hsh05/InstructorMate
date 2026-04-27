@@ -486,32 +486,6 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> previewAttendance({
-    required int lectureNumber,
-    required String videoId,
-    required int workspaceId,
-    required String sectionId,
-  }) async {
-    try {
-      final res = await http.post(
-        _u('/attendance/preview'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "lecture_number": lectureNumber,
-          "video_id": videoId,
-          "workspace_id": workspaceId,
-          "section_id": sectionId,
-        }),
-      );
-
-      if (res.statusCode == 200)
-        return Map<String, dynamic>.from(jsonDecode(res.body));
-      return {"ok": false, "status": res.statusCode, "error": res.body};
-    } catch (e) {
-      return {"ok": false, "error": e.toString()};
-    }
-  }
-
   Future<Map<String, dynamic>> confirmAttendance({
     required int lectureNumber,
     required int workspaceId,
@@ -582,8 +556,13 @@ class ApiService {
     final res = await http.Response.fromStream(streamed);
     final data = jsonDecode(res.body);
 
-    if (res.statusCode != 200)
-      return {"ok": false, "message": data["detail"] ?? "Unknown error"};
+    if (res.statusCode != 200) {
+      return {
+        "ok": false,
+        "needs_override": data["needs_override"] ?? false,
+        "message": data["detail"] ?? data["message"] ?? "Unknown error"
+      };
+    }
     return data;
   }
 

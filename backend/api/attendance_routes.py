@@ -4,6 +4,7 @@ import os
 import tempfile
 import io
 import csv
+import numpy as np
 from typing import Any, Dict, List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import Response
@@ -179,22 +180,28 @@ async def upload_encoding(
         raise HTTPException(status_code=404, detail="Student not found in database")
         
     if student.facial_encoding and len(student.facial_encoding) > 0 and not override:
-        return {"needs_override": True, "message": "Student already has encoding. Override?"}
+    return {
+        "ok": False,
+        "needs_override": True,
+        "message": "Student already has encoding. Override?"
+    }
     
     fr = FaceRecognizer()
-    image_bytes = await files[0].read()
-    encoding = fr.generate_encoding_from_image(image_bytes)
-    
-    if encoding is None:
-        raise HTTPException(status_code=400, detail="No face detected in image")
-        
-    encoding_list = encoding.tolist()
+    encodings = []
+
+    for f in files:
+        image_bytes = await f.read()
+        enc = fr.generate_encoding_from_image(image_bytes)
+        if enc is not None:
+            encodings.append(enc)
+
+    if not encodings:
+        raise HTTPException(status_code=400, detail="No face detected in any image")
+
+    avg_encoding = np.mean(encodings, axis=0)
+
+    encoding_list = avg_encoding.tolist()
     success = repo.update_student_encoding(student_id, encoding_list)
-    
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to save encoding")
-        
-    return {"ok": True, "message": "Encoding saved successfully"}
 
 @router.get("/encoding/students")
 def get_encoding_students(db: Session = Depends(get_db)):
