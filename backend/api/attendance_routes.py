@@ -180,11 +180,11 @@ async def upload_encoding(
         raise HTTPException(status_code=404, detail="Student not found in database")
         
     if student.facial_encoding and len(student.facial_encoding) > 0 and not override:
-    return {
-        "ok": False,
-        "needs_override": True,
-        "message": "Student already has encoding. Override?"
-    }
+        return {
+            "ok": False,
+            "needs_override": True,
+            "message": "Student already has encoding. Override?"
+        }
     
     fr = FaceRecognizer()
     encodings = []
