@@ -783,7 +783,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               onPressed:
                                   (loading || _pickedVideoFiles.length >= 2)
                                       ? null
-                                      : pickAndUploadVideo,
+                                      : captureAndUploadVideo,
                               style: OutlinedButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 side: BorderSide(
