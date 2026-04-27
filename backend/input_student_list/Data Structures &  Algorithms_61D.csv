@@ -1,0 +1,9 @@
+STUDENT_ID,STUDENT_NAME,CAMPUS_CODE,CAMPUS_DESC,LEVEL_CODE,LEVEL_DESC,COLLEGE_CODE,COLLEGE_DESC,MAJOR_CODE,MAJOR_DESC,IS_REGISTERED,REGISTERED_HOURS,COURSE_NUMBER,COURSE_NAME,BUILDING_DESC,ROOM_DESC,TIMES,MEETINGDAYS
+202411029,Albert Einstein,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BACY,Cybersecurity,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202320315,Bill Gates,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BACE,Computer Engineering,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202230144,Jennifer Gates,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BACY,Cybersecurity,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202340042,Harry Poter,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BACE,Computer Engineering,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202211741,Jana Almajanni,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202210101,Dr Tarik Elamsy,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202410156,Andrew Ng,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
+202311601,Magdi Yacoub,AD,Abu Dhabi ,UG,Undergraduates,1,Engineering,BASF,Software Engineering,Y,3,102270,Data Structures &  Algorithms,AD Main Building,241,11:00 am-12:25 pm,MW
