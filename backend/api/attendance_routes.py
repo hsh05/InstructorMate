@@ -4,6 +4,7 @@ import os
 import tempfile
 import io
 import csv
+import numpy as np
 from typing import Any, Dict, List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import Response
@@ -15,7 +16,7 @@ from db.database import get_db
 from repositories.pg_repository import PgAttendanceRepository
 from services.face_recognizer import FaceRecognizer
 from services.attendance_service import AttendanceService
-from db.models import Student, Workspace 
+from db.models import Student, Workspace, Instructor 
 
 router = APIRouter(tags=["Attendance"])
 
@@ -179,22 +180,28 @@ async def upload_encoding(
         raise HTTPException(status_code=404, detail="Student not found in database")
         
     if student.facial_encoding and len(student.facial_encoding) > 0 and not override:
-        return {"needs_override": True, "message": "Student already has a registered face. Override?"}
+    return {
+        "ok": False,
+        "needs_override": True,
+        "message": "Student already has encoding. Override?"
+    }
     
     fr = FaceRecognizer()
-    image_bytes = await files[0].read()
-    encoding = fr.generate_encoding_from_image(image_bytes)
-    
-    if encoding is None:
-        raise HTTPException(status_code=400, detail="No face detected in image")
-        
-    encoding_list = encoding.tolist()
+    encodings = []
+
+    for f in files:
+        image_bytes = await f.read()
+        enc = fr.generate_encoding_from_image(image_bytes)
+        if enc is not None:
+            encodings.append(enc)
+
+    if not encodings:
+        raise HTTPException(status_code=400, detail="No face detected in any image")
+
+    avg_encoding = np.mean(encodings, axis=0)
+
+    encoding_list = avg_encoding.tolist()
     success = repo.update_student_encoding(student_id, encoding_list)
-    
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to save encoding")
-        
-    return {"ok": True, "message": "Encoding saved successfully"}
 
 @router.get("/encoding/students")
 def get_encoding_students(db: Session = Depends(get_db)):
@@ -232,6 +239,11 @@ def generate_warning_report(data: WarningReportRequest, db: Session = Depends(ge
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
+        # Get instructor
+    instructor = db.query(Instructor).filter(Instructor.instructor_id == workspace.instructor_id).first()
+
+    instructor_name = instructor.full_name if instructor else "Unknown"
+
     # 3. Load Template
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     template_path = os.path.join(BASE_DIR, "templates", "warning_template.docx")
@@ -257,6 +269,7 @@ def generate_warning_report(data: WarningReportRequest, db: Session = Depends(ge
         "first_warning": "☑" if first else "☐",
         "second_warning": "☑" if second else "☐",
         "third_warning": "☑" if third else "☐",
+        "instructor_name": instructor_name,
     }
 
     doc.render(context)

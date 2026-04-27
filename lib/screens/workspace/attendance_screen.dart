@@ -140,9 +140,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   List<File> _pickedVideoFiles =
       []; // holds files after picking, before processing
 
-  int? backendTotalPresent;
-  int? backendTotalAbsent;
-
   Future<void> loadLastLecture() async {
     try {
       final last = await api.getLastLecture(
@@ -170,14 +167,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       final index = previewRows.indexWhere((x) => x["StudentID"] == sid);
 
       if (index != -1) {
-        if (status == "Present") {
+        final currentStatus = previewRows[index]["Status"];
+
+        if (currentStatus == "Present") {
+        } else if (status == "Present") {
           previewRows[index]["Status"] = "Present";
           previewRows[index]["Confidence"] = confidence;
-        } else {
-          if (previewRows[index]["Status"] == null) {
-            previewRows[index]["Status"] = status;
-            previewRows[index]["Confidence"] = confidence;
-          }
+        } else if (currentStatus == null) {
+          previewRows[index]["Status"] = status;
+          previewRows[index]["Confidence"] = confidence;
         }
       }
     }
@@ -204,11 +202,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         uploadedFileNames.add(result.files.first.name);
         uploadedOk = false;
         statusText = 'Video selected. Press "Take Attendance" to process.';
-        // Clear old results
-        for (var r in previewRows) {
-          r["Status"] = null;
-          r["Confidence"] = "Unknown";
-        }
       });
     } catch (e) {
       setState(() {
@@ -239,11 +232,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         uploadedFileNames.add("Captured Video ${uploadedFileNames.length + 1}");
         uploadedOk = false;
         statusText = 'Video captured. Press "Take Attendance" to process.';
-        // Clear old results
-        for (var r in previewRows) {
-          r["Status"] = null;
-          r["Confidence"] = "Unknown";
-        }
       });
     } catch (e) {
       setState(() {
@@ -618,6 +606,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
+                        color: Colors.black,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -641,7 +630,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         controller: lectureCtrl,
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(
@@ -763,26 +756,50 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed:
-                                    (loading || _pickedVideoFiles.length >= 2)
-                                        ? null
-                                        : pickAndUploadVideo,
-                                icon: const Icon(Icons.upload_file),
-                                label: const Text('Upload recording'),
+                                child: OutlinedButton.icon(
+                              onPressed:
+                                  (loading || _pickedVideoFiles.length >= 2)
+                                      ? null
+                                      : pickAndUploadVideo,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                side: BorderSide(
+                                    color: Colors.grey.shade400, width: 1.2),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
                               ),
-                            ),
+                              icon: const Icon(Icons.upload_file, size: 18),
+                              label: const Text(
+                                'Upload recording',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            )),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed:
-                                    (loading || _pickedVideoFiles.length >= 2)
-                                        ? null
-                                        : captureAndUploadVideo,
-                                icon: const Icon(Icons.videocam),
-                                label: const Text('Capture Video'),
+                                child: OutlinedButton.icon(
+                              onPressed:
+                                  (loading || _pickedVideoFiles.length >= 2)
+                                      ? null
+                                      : pickAndUploadVideo,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                side: BorderSide(
+                                    color: Colors.grey.shade400, width: 1.2),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
                               ),
-                            ),
+                              icon: const Icon(Icons.upload_file, size: 18),
+                              label: const Text(
+                                'Capture Video',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            )),
                           ],
                         ),
 
@@ -847,15 +864,29 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
                         // Take Attendance button
                         SizedBox(
-                          width: double.infinity,
-                          height: 40,
-                          child: ElevatedButton(
-                            onPressed: (loading || uploadedVideoIds.isEmpty)
-                                ? null
-                                : runPreview,
-                            child: const Text("Take Attendance"),
-                          ),
-                        ),
+                            width: double.infinity,
+                            height: 40,
+                            child: ElevatedButton(
+                              onPressed: (loading || uploadedVideoIds.isEmpty)
+                                  ? null
+                                  : runPreview,
+                              style: ElevatedButton.styleFrom(
+                                elevation: 7,
+                                shadowColor: Colors.black.withOpacity(0.2),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              child: const Text(
+                                "Take Attendance",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            )),
                       ],
                     ),
                   ),
@@ -936,29 +967,54 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               children: [
                 // Confirm & Save
                 SizedBox(
-                  width: double.infinity,
-                  height: 42,
-                  child: ElevatedButton.icon(
-                    onPressed: (loading || previewRows.isEmpty)
-                        ? null
-                        : confirmAndSave,
-                    icon: const Icon(Icons.check_circle),
-                    label: const Text('Confirm & Save'),
-                  ),
-                ),
+                    width: double.infinity,
+                    height: 42,
+                    child: OutlinedButton.icon(
+                      onPressed: (loading || previewRows.isEmpty)
+                          ? null
+                          : confirmAndSave,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        side: BorderSide(
+                          color: Colors.grey.shade500,
+                          width: 1.5,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.check_circle),
+                      label: const Text(
+                        'Confirm & Save',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )),
 
                 const SizedBox(height: 6),
 
                 // Export Attendance
                 SizedBox(
-                  width: double.infinity,
-                  height: 42,
-                  child: OutlinedButton.icon(
-                    onPressed: previewRows.isEmpty ? null : exportAttendance,
-                    icon: const Icon(Icons.ios_share),
-                    label: const Text('Export Attendance'),
-                  ),
-                ),
+                    width: double.infinity,
+                    height: 42,
+                    child: OutlinedButton.icon(
+                      onPressed: previewRows.isEmpty ? null : exportAttendance,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        side: BorderSide(
+                            color: const Color.fromARGB(255, 145, 78, 167),
+                            width: 1.3),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.ios_share),
+                      label: const Text(
+                        'Export Attendance',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    )),
 
                 // Collapsed: Export from DB (History)
                 Align(
@@ -970,7 +1026,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     icon: Icon(
                       showDbExport ? Icons.expand_less : Icons.expand_more,
                     ),
-                    label: const Text('Export from database…'),
+                    label: const Text(
+                      'Export from database…',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
 
@@ -995,12 +1057,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       children: [
                         const Text(
                           'Select Lecture',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            const Text('Lecture:'),
+                            const Text(
+                              'Lecture:',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             const SizedBox(width: 12),
                             IconButton(
                               icon: const Icon(Icons.remove),
@@ -1019,6 +1090,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 controller: dbExportLectureCtrl,
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.number,
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 decoration: const InputDecoration(
                                   border: UnderlineInputBorder(),
                                   isDense: true,

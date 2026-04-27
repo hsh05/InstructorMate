@@ -165,6 +165,9 @@ class _GenerateEncodingsScreenState extends State<GenerateEncodingsScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: studentIdCtrl,
+                  style: const TextStyle(
+                    color: Colors.black,
+                  ),
                   decoration: InputDecoration(
                     labelText: "Student ID",
                     border: OutlineInputBorder(
@@ -231,9 +234,8 @@ class _GenerateEncodingsScreenState extends State<GenerateEncodingsScreen> {
                   height: 140,
                   child: DropTarget(
                     onDragDone: (detail) async {
-                      final newFiles = detail.files
-                          .map((f) => File(f.path))
-                          .toList();
+                      final newFiles =
+                          detail.files.map((f) => File(f.path)).toList();
                       final combined = [...selectedImages, ...newFiles];
 
                       if (combined.length > 3) {
@@ -270,9 +272,8 @@ class _GenerateEncodingsScreenState extends State<GenerateEncodingsScreen> {
                                       ? "Release to upload"
                                       : "Drag & drop images here",
                                   style: TextStyle(
-                                    color: isDragging
-                                        ? Colors.blue
-                                        : Colors.grey,
+                                    color:
+                                        isDragging ? Colors.blue : Colors.grey,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -370,7 +371,11 @@ class _GenerateEncodingsScreenState extends State<GenerateEncodingsScreen> {
                   const SizedBox(width: 10),
                   const Text(
                     "|  Students with Encodings",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
                   ),
                 ],
               ),
@@ -438,8 +443,8 @@ class _GenerateEncodingsScreenState extends State<GenerateEncodingsScreen> {
           // On mobile, show which panel the user is on
           isMobile
               ? (showRightPanel
-                    ? "Students with Encodings"
-                    : "Generate Encodings")
+                  ? "Students with Encodings"
+                  : "Generate Encodings")
               : "Generate Encodings",
         ),
         elevation: 0,

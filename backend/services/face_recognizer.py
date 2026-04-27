@@ -37,7 +37,7 @@ class FaceRecognizer:
 
     def generate_encoding_from_image(self, image_bytes: bytes) -> Optional[np.ndarray]:
         """
-        Takes raw image bytes, decodes them, and returns the first valid face encoding.
+        Takes raw image bytes, decodes them, and returns face encoding.
         """
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -52,9 +52,6 @@ class FaceRecognizer:
         if not encodings:
             print("[WARN] No face found in image.")
             return None
-
-        if len(encodings) > 1:
-            print("[WARN] Multiple faces found. Using the first face.")
 
         return encodings[0]
 

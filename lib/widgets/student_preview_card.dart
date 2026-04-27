@@ -50,7 +50,13 @@ class StudentCard extends StatelessWidget {
         children: [
           CircleAvatar(
             backgroundColor: Colors.grey.shade200,
-            child: Text('${index + 1}'),
+            child: Text(
+              '${index + 1}',
+              style: const TextStyle(
+                color: Color.fromARGB(255, 131, 102, 141),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -59,7 +65,10 @@ class StudentCard extends StatelessWidget {
               children: [
                 Text(
                   row['Name'] ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
                 Row(
                   children: [
