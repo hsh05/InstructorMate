@@ -39,9 +39,6 @@ class _SignupScreenState extends State<SignupScreen> {
     final val = v ?? '';
     if (val.isEmpty) return 'Enter password';
     if (val.length < 6) return 'Min 6 chars';
-    if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(val)) {
-      return 'Only letters & numbers allowed';
-    }
     return null;
   }
 
