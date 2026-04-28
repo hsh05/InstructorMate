@@ -21,7 +21,7 @@ class InstructorMateApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/login',
       routes: {
-        '/login': (_) => const LoginScreen(),
+        '/login': (_) => const LoginController(),
       },
       // Profile needs a userId argument so it uses onGenerateRoute
       onGenerateRoute: (settings) {

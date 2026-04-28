@@ -92,9 +92,7 @@ class AuthService {
     try {
       final account = await _googleSignIn.authenticate();
 
-      if (account == null) return null;
-
-      final auth = await account.authentication;
+      final auth = account.authentication;
       final idToken = auth.idToken;
 
       if (idToken == null) {
