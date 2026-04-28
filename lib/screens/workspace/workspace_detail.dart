@@ -314,8 +314,9 @@ class _WorkspaceDetailPageState extends State<WorkspaceDetailPage>
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AppStyles.primary, foregroundColor: Colors.white),
                   onPressed: () {
-                    Navigator.pop(ctx);
-                    _generateQuiz(); 
+                    Navigator.pop(ctx);          // 1. Close the settings modal
+                    _tabs.animateTo(3);          // 2. Jump to the Materials Tab (Index 3)
+                    _generateQuiz();             // 3. Start the API call
                   },
                   child: const Text("Confirm & Generate"),
                 )
