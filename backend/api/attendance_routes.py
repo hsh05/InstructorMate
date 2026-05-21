@@ -203,6 +203,11 @@ async def upload_encoding(
     encoding_list = avg_encoding.tolist()
     success = repo.update_student_encoding(student_id, encoding_list)
 
+    return {
+        "ok": True,
+        "message": "Encoding saved successfully"
+    }
+
 @router.get("/encoding/students")
 def get_encoding_students(db: Session = Depends(get_db)):
     """Fetches all students and flags whether they have a saved facial encoding."""

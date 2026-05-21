@@ -23,6 +23,25 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
 
+  static String? validateEmail(String? v) {
+    final trimmed = v?.trim() ?? '';
+    if (trimmed.isEmpty) return 'Enter email';
+    final atCount = trimmed.split('@').length - 1;
+    if (atCount == 0) return 'Invalid email';
+    if (atCount > 1) return 'Invalid email';
+    final parts = trimmed.split('@');
+    if (parts[0].isEmpty) return 'Invalid email';
+    if (parts[1].isEmpty) return 'Invalid email';
+    return null;
+  }
+
+  static String? validatePassword(String? v) {
+    final val = v ?? '';
+    if (val.isEmpty) return 'Enter password';
+    if (val.length < 6) return 'Min 6 chars';
+    return null;
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -109,8 +128,7 @@ class _SignupScreenState extends State<SignupScreen> {
               const SizedBox(height: AppStyles.spacingL),
               _field(_email, 'Email', Icons.email_rounded, AppStyles.primary,
                   type: TextInputType.emailAddress,
-                  validator: (v) =>
-                      v!.isEmpty ? 'Enter email' : !v.contains('@') ? 'Invalid email' : null),
+                  validator: validateEmail),
               const SizedBox(height: AppStyles.spacingL),
               _field(_password, 'Password', Icons.lock_rounded, AppStyles.primaryDark,
                   obscure: _obscurePassword,
@@ -121,7 +139,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         color: AppStyles.darkGray),
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
-                  validator: (v) => v!.isEmpty ? 'Enter password' : v.length < 6 ? 'Min 6 chars' : null),
+                  validator: validatePassword),
               const SizedBox(height: AppStyles.spacingL),
               _field(_confirmPassword, 'Confirm Password', Icons.lock_outline_rounded,
                   AppStyles.primaryDark,

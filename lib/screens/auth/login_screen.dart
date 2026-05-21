@@ -22,6 +22,25 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  static String? validateEmail(String? v) {
+    final trimmed = v?.trim() ?? '';
+    if (trimmed.isEmpty) return 'Enter email';
+    final atCount = trimmed.split('@').length - 1;
+    if (atCount == 0) return 'Invalid email';
+    if (atCount > 1) return 'Invalid email';
+    final parts = trimmed.split('@');
+    if (parts[0].isEmpty) return 'Invalid email';
+    if (parts[1].isEmpty) return 'Invalid email';
+    return null;
+  }
+
+  static String? validatePassword(String? v) {
+    final val = v ?? '';
+    if (val.isEmpty) return 'Enter password';
+    if (val.length < 6) return 'Min 6 chars';
+    return null;
+  }
+
   @override
   void dispose() {
     _email.dispose();
@@ -113,11 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
               _field(_email, 'Email Address', Icons.email_rounded,
                   AppStyles.primary,
                   type: TextInputType.emailAddress,
-                  validator: (v) => v!.isEmpty
-                      ? 'Enter email'
-                      : !v.contains('@')
-                          ? 'Invalid email'
-                          : null),
+                  validator: validateEmail),
               const SizedBox(height: AppStyles.spacingL),
               _field(_password, 'Password', Icons.lock_rounded,
                   AppStyles.primaryDark,
@@ -132,11 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: () =>
                         setState(() => _obscurePassword = !_obscurePassword),
                   ),
-                  validator: (v) => v!.isEmpty
-                      ? 'Enter password'
-                      : v.length < 6
-                          ? '6 Characters Minimum'
-                          : null),
+                  validator: validatePassword),
               const SizedBox(height: AppStyles.spacingM),
               Align(
                 alignment: Alignment.centerRight,
