@@ -88,6 +88,7 @@ class FaceRecognizer:
         return "Unknown", "Unknown"
 
     def detect_faces(self, frame) -> List[Dict[str, Any]]:
+        frame = cv2.convertScaleAbs(frame, alpha=1.15, beta=10)
         small = cv2.resize(frame, (0, 0), fx=self.frame_resizing, fy=self.frame_resizing)
         rgb_small = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
 
