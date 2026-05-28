@@ -6,7 +6,7 @@ import numpy as np
 import face_recognition
 
 class FaceRecognizer:
-    def __init__(self, frame_resizing: float = 0.4, high_confidence: float = 0.45, low_confidence: float = 0.60):
+    def __init__(self, frame_resizing: float = 0.7, high_confidence: float = 0.45, low_confidence: float = 0.60):
         self.frame_resizing = frame_resizing
         self.high_confidence = high_confidence
         self.low_confidence = low_confidence
