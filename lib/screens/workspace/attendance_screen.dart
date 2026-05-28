@@ -9,6 +9,7 @@ import '../../widgets/student_preview_card.dart';
 import 'statistics_screen.dart';
 import '../../utils/file_saver.dart';
 import 'generate_encodings_screen.dart';
+import 'webcam_capture_screen.dart';
 
 class AttendanceScreen extends StatefulWidget {
   final int workspaceId;
@@ -101,20 +102,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         lectureNumber: lectureNumber,
       );
 
-      if (rows.isEmpty) {
-        for (var r in previewRows) {
-          r["Status"] = null;
-          r["Confidence"] = "Unknown";
-        }
-      } else {
-        for (var dbRow in rows) {
-          final index = previewRows.indexWhere(
-            (r) => r["StudentID"] == dbRow["student_id"],
-          );
-          if (index != -1) {
-            previewRows[index]["Status"] = dbRow["status"];
-            previewRows[index]["Confidence"] = dbRow["confidence"];
-          }
+      for (var r in previewRows) {
+        r["Status"] = null;
+        r["Confidence"] = "Unknown";
+      }
+
+      for (var dbRow in rows) {
+        final index = previewRows.indexWhere(
+          (r) => r["StudentID"] == dbRow["student_id"],
+        );
+
+        if (index != -1) {
+          previewRows[index]["Status"] = dbRow["status"];
+          previewRows[index]["Confidence"] = dbRow["confidence"];
         }
       }
 
@@ -137,8 +137,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool uploadedOk = false;
   List<String> uploadedFileNames = [];
   List<String> uploadedVideoIds = [];
-  List<File> _pickedVideoFiles =
-      []; // holds files after picking, before processing
+  List<File> _pickedVideoFiles = [];
+  List<File> selectedImages = [];
 
   Future<void> loadLastLecture() async {
     try {
@@ -215,22 +215,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // =============================
   Future<void> captureAndUploadVideo() async {
     try {
-      final XFile? captured = await _picker.pickVideo(
-        source: ImageSource.camera,
-        maxDuration: const Duration(seconds: 30),
-      );
+      File? file;
 
-      if (captured == null) {
-        return;
+      if (Platform.isWindows) {
+        file = await Navigator.push<File>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const WebcamCaptureScreen(mode: CaptureMode.video),
+          ),
+        );
+      } else {
+        final XFile? captured = await _picker.pickVideo(
+          source: ImageSource.camera,
+          maxDuration: const Duration(seconds: 30),
+        );
+
+        if (captured != null) {
+          file = File(captured.path);
+        }
       }
 
-      final file = File(captured.path);
+      if (file == null) return;
 
       setState(() {
-        _pickedVideoFiles.add(file);
-        uploadedVideoIds.add("captured_video_${uploadedVideoIds.length}");
-        uploadedFileNames.add("Captured Video ${uploadedFileNames.length + 1}");
+        _pickedVideoFiles.add(file!);
+
+        uploadedVideoIds.add(
+          "captured_video_${uploadedVideoIds.length}",
+        );
+
+        uploadedFileNames.add(
+          "Captured Video ${uploadedFileNames.length + 1}",
+        );
+
         uploadedOk = false;
+
         statusText = 'Video captured. Press "Take Attendance" to process.';
       });
     } catch (e) {
@@ -240,18 +259,112 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+  Future<void> pickImages() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowMultiple: true,
+        allowedExtensions: [
+          'jpg',
+          'jpeg',
+          'png',
+          'jfif',
+          'webp',
+        ],
+      );
+
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final files = result.files
+          .where((f) => f.path != null)
+          .map((f) => File(f.path!))
+          .toList();
+
+      if (files.isEmpty) {
+        return;
+      }
+
+      setState(() {
+        selectedImages.addAll(
+          files.where(
+            (f) => !selectedImages.any(
+              (e) => e.path == f.path,
+            ),
+          ),
+        );
+
+        // limit max images
+        selectedImages = selectedImages.take(10).toList();
+
+        uploadedOk = false;
+
+        statusText = 'Images selected. Press "Take Attendance" to process.';
+      });
+    } catch (e) {
+      setState(() {
+        statusText = 'Error picking images: $e';
+      });
+    }
+  }
+
+  Future<void> captureImage() async {
+    try {
+      File? file;
+
+      if (Platform.isWindows) {
+        file = await Navigator.push<File>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const WebcamCaptureScreen(
+              mode: CaptureMode.photo,
+            ),
+          ),
+        );
+      } else {
+        final XFile? captured = await _picker.pickImage(
+          source: ImageSource.camera,
+        );
+
+        if (captured != null) {
+          file = File(captured.path);
+        }
+      }
+
+      if (file == null) {
+        return;
+      }
+
+      setState(() {
+        selectedImages.add(file!);
+
+        uploadedOk = false;
+
+        statusText = 'Image captured. Press "Take Attendance" to process.';
+      });
+    } catch (e) {
+      setState(() {
+        statusText = 'Error capturing image: $e';
+      });
+    }
+  }
+
   // =============================
   // Step 2: Send video to backend and process attendance
   // =============================
   Future<void> runPreview() async {
-    if (_pickedVideoFiles.isEmpty) {
-      setState(() => statusText = 'Please select a video first.');
+    if (_pickedVideoFiles.isEmpty && selectedImages.isEmpty) {
+      setState(() {
+        statusText = 'Please select at least one image or video.';
+      });
       return;
     }
 
     setState(() {
       loading = true;
-      statusText = 'Processing videos... (this may take a minute)';
+      statusText = 'Processing media...';
+
       for (var r in previewRows) {
         r["Status"] = null;
         r["Confidence"] = "Unknown";
@@ -259,25 +372,53 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     });
 
     try {
-      // Run all video uploads in parallel
-      final futures = _pickedVideoFiles
-          .map((file) => api.uploadCheck(
+      // =============================
+      // Process Images First
+      // =============================
+      if (selectedImages.isNotEmpty) {
+        final data = await api.previewImagesAttendance(
+          lectureNumber: lectureNumber,
+          workspaceId: widget.workspaceId,
+          sectionId: widget.sectionId,
+          images: selectedImages,
+        );
+
+        if (data['ok'] == true) {
+          final rowsRaw = (data['rows'] as List).cast<dynamic>();
+          _applyPreviewRows(rowsRaw);
+        } else {
+          throw Exception(
+            data['error'] ?? 'Image processing failed',
+          );
+        }
+      }
+
+      // =============================
+      // Process Videos
+      // =============================
+      if (_pickedVideoFiles.isNotEmpty) {
+        final futures = _pickedVideoFiles
+            .map(
+              (file) => api.uploadCheck(
                 videoFile: file,
                 lectureNumber: lectureNumber,
                 workspaceId: widget.workspaceId,
                 sectionId: widget.sectionId,
-              ))
-          .toList();
+              ),
+            )
+            .toList();
 
-      final results = await Future.wait(futures);
+        final results = await Future.wait(futures);
 
-      // Merge results from all videos
-      for (var upload in results) {
-        if (upload['ok'] == true) {
-          final rowsRaw = (upload['rows'] as List).cast<dynamic>();
-          _applyPreviewRows(rowsRaw);
-        } else {
-          throw Exception(upload['error'] ?? 'Processing failed');
+        for (var upload in results) {
+          if (upload['ok'] == true) {
+            final rowsRaw = (upload['rows'] as List).cast<dynamic>();
+            _applyPreviewRows(rowsRaw);
+          } else {
+            throw Exception(
+              upload['error'] ?? 'Video processing failed',
+            );
+          }
         }
       }
 
@@ -730,7 +871,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     icon: Icon(
                       showUploadPanel ? Icons.expand_less : Icons.expand_more,
                     ),
-                    label: const Text('Take Attendnace by Video'),
+                    label: const Text('Take Attendnace by Face Recognition'),
                   ),
                 ),
 
@@ -756,50 +897,134 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         Row(
                           children: [
                             Expanded(
-                                child: OutlinedButton.icon(
-                              onPressed:
-                                  (loading || _pickedVideoFiles.length >= 2)
-                                      ? null
-                                      : pickAndUploadVideo,
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                side: BorderSide(
-                                    color: Colors.grey.shade400, width: 1.2),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                              child: OutlinedButton.icon(
+                                onPressed: loading
+                                    ? null
+                                    : () async {
+                                        final result =
+                                            await showModalBottomSheet<String>(
+                                          context: context,
+                                          builder: (_) {
+                                            return SafeArea(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  ListTile(
+                                                    leading:
+                                                        const Icon(Icons.image),
+                                                    title: const Text(
+                                                        "Upload Images"),
+                                                    onTap: () => Navigator.pop(
+                                                      context,
+                                                      "images",
+                                                    ),
+                                                  ),
+                                                  ListTile(
+                                                    leading: const Icon(
+                                                        Icons.videocam),
+                                                    title: const Text(
+                                                        "Upload Video"),
+                                                    onTap: () => Navigator.pop(
+                                                      context,
+                                                      "video",
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        );
+
+                                        if (result == "images") {
+                                          pickImages();
+                                        } else if (result == "video") {
+                                          pickAndUploadVideo();
+                                        }
+                                      },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.grey.shade400,
+                                    width: 1.2,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                icon: const Icon(Icons.upload_file, size: 18),
+                                label: const Text(
+                                  'Upload Media',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
                               ),
-                              icon: const Icon(Icons.upload_file, size: 18),
-                              label: const Text(
-                                'Upload recording',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            )),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
-                                child: OutlinedButton.icon(
-                              onPressed:
-                                  (loading || _pickedVideoFiles.length >= 2)
-                                      ? null
-                                      : captureAndUploadVideo,
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                side: BorderSide(
-                                    color: Colors.grey.shade400, width: 1.2),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                              child: OutlinedButton.icon(
+                                onPressed: loading
+                                    ? null
+                                    : () async {
+                                        final result =
+                                            await showModalBottomSheet<String>(
+                                          context: context,
+                                          builder: (_) {
+                                            return SafeArea(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  ListTile(
+                                                    leading: const Icon(
+                                                        Icons.camera_alt),
+                                                    title: const Text(
+                                                        "Capture Image"),
+                                                    onTap: () => Navigator.pop(
+                                                      context,
+                                                      "image",
+                                                    ),
+                                                  ),
+                                                  ListTile(
+                                                    leading: const Icon(
+                                                        Icons.videocam),
+                                                    title: const Text(
+                                                        "Capture Video"),
+                                                    onTap: () => Navigator.pop(
+                                                      context,
+                                                      "video",
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        );
+
+                                        if (result == "image") {
+                                          captureImage();
+                                        } else if (result == "video") {
+                                          captureAndUploadVideo();
+                                        }
+                                      },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.grey.shade400,
+                                    width: 1.2,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                icon: const Icon(Icons.camera_alt, size: 18),
+                                label: const Text(
+                                  'Capture Media',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
                               ),
-                              icon: const Icon(Icons.upload_file, size: 18),
-                              label: const Text(
-                                'Capture Video',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            )),
+                            ),
                           ],
                         ),
 
@@ -859,7 +1084,51 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               );
                             }),
                           ),
-
+// Image Preview
+                        if (selectedImages.isNotEmpty)
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children:
+                                List.generate(selectedImages.length, (index) {
+                              return Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.file(
+                                      selectedImages[index],
+                                      width: 90,
+                                      height: 90,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 2,
+                                    right: 2,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          selectedImages.removeAt(index);
+                                        });
+                                      },
+                                      child: Container(
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        padding: const EdgeInsets.all(3),
+                                        child: const Icon(
+                                          Icons.close,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }),
+                          ),
                         const SizedBox(height: 10),
 
                         // Take Attendance button
@@ -867,7 +1136,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             width: double.infinity,
                             height: 40,
                             child: ElevatedButton(
-                              onPressed: (loading || uploadedVideoIds.isEmpty)
+                              onPressed: (loading ||
+                                      (_pickedVideoFiles.isEmpty &&
+                                          selectedImages.isEmpty))
                                   ? null
                                   : runPreview,
                               style: ElevatedButton.styleFrom(

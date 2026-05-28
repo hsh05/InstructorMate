@@ -5,6 +5,9 @@ import tempfile
 import io
 import csv
 import numpy as np
+import cv2
+import face_recognition
+
 from typing import Any, Dict, List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import Response
@@ -89,6 +92,167 @@ async def process_video_attendance(
         if os.path.exists(temp_video_path):
             os.remove(temp_video_path)
 
+@router.post("/attendance/preview-images")
+async def preview_images_attendance(
+    workspace_id: int = Form(...),
+    section_id: str = Form(...),
+    lecture_number: int = Form(...),
+    images: List[UploadFile] = File(...),
+    repo: PgAttendanceRepository = Depends(get_attendance_repo)
+):
+    try:
+        fr = FaceRecognizer()
+
+        # Load students and encodings
+        db_students = repo.get_students_with_encodings(
+            workspace_id,
+            section_id,
+        )
+
+        fr.set_known_faces(db_students)
+
+        detection_counts = {}
+
+        for student in db_students:
+            detection_counts[str(student.student_id)] = {
+                "count": 0,
+                "confidence": "Unknown",
+            }
+
+        # ==========================================
+        # Process each uploaded image
+        # ==========================================
+        for uploaded in images:
+            image_bytes = await uploaded.read()
+
+            np_arr = np.frombuffer(image_bytes, np.uint8)
+
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+            if frame is None:
+                continue
+
+            # =========================
+            # Image enhancement only
+            # =========================
+            # shrink extremely large images first
+            MAX_DIM = 1920
+
+            h, w = frame.shape[:2]
+
+            if max(w, h) > MAX_DIM:
+                scale = MAX_DIM / max(w, h)
+
+                frame = cv2.resize(
+                    frame,
+                    None,
+                    fx=scale,
+                    fy=scale,
+                    interpolation=cv2.INTER_AREA,
+                                            )
+            # upscale small images
+            h, w = frame.shape[:2]
+
+            if w < 1280:
+                scale = 1280 / w
+                frame = cv2.resize(
+                    frame,
+                    None,
+                    fx=scale,
+                    fy=scale,
+                    interpolation=cv2.INTER_CUBIC,
+                )
+
+            # improve contrast
+            frame = cv2.convertScaleAbs(
+                frame,
+                alpha=1.15,
+                beta=10,
+            )
+
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            face_locations = face_recognition.face_locations(
+                rgb,
+                model="hog",
+            )
+
+            if not face_locations:
+                continue
+
+            face_encodings = face_recognition.face_encodings(
+                rgb,
+                face_locations,
+            )
+
+            for encoding in face_encodings:
+                name, confidence = fr.recognize_face(encoding)
+
+                if name != "Unknown":
+                    sid = str(name)
+
+                    if sid not in detection_counts:
+                        detection_counts[sid] = {
+                            "count": 0,
+                            "confidence": confidence,
+                        }
+
+                    detection_counts[sid]["count"] += 1
+                    detection_counts[sid]["confidence"] = confidence
+
+        # ==========================================
+        # Build attendance rows
+        # ==========================================
+        rows = []
+
+        for student in db_students:
+            sid = str(student.student_id)
+
+            count = detection_counts.get(sid, {}).get("count", 0)
+
+            confidence = detection_counts.get(
+                sid,
+                {},
+            ).get("confidence", "Unknown")
+
+            status = (
+                "Present"
+                if count >= 1
+                else "Absent"
+            )
+
+            rows.append({
+                "student_id": sid,
+                "name": student.student_name,
+                "status": status,
+                "confidence": confidence,
+            })
+
+        total_present = sum(
+            1 for r in rows
+            if r["status"] == "Present"
+        )
+
+        total_absent = sum(
+            1 for r in rows
+            if r["status"] == "Absent"
+        )
+
+        return {
+            "ok": True,
+            "lecture_number": lecture_number,
+            "total_students": len(rows),
+            "total_present": total_present,
+            "total_absent": total_absent,
+            "rows": rows,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
+        
 class ConfirmRow(BaseModel):
     student_id: str
     status: str

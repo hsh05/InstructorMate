@@ -486,6 +486,56 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> previewImagesAttendance({
+    required int lectureNumber,
+    required int workspaceId,
+    required String sectionId,
+    required List<File> images,
+  }) async {
+    try {
+      final req = http.MultipartRequest(
+        'POST',
+        _u('/attendance/preview-images'),
+      );
+
+      req.fields['lecture_number'] = lectureNumber.toString();
+      req.fields['workspace_id'] = workspaceId.toString();
+      req.fields['section_id'] = sectionId;
+
+      for (final img in images) {
+        req.files.add(
+          await http.MultipartFile.fromPath(
+            'images',
+            img.path,
+          ),
+        );
+      }
+
+      final streamed = await req.send().timeout(
+            const Duration(minutes: 5),
+          );
+
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(
+          jsonDecode(response.body),
+        );
+      }
+
+      return {
+        "ok": false,
+        "status": response.statusCode,
+        "error": response.body,
+      };
+    } catch (e) {
+      return {
+        "ok": false,
+        "error": e.toString(),
+      };
+    }
+  }
+
   Future<Map<String, dynamic>> confirmAttendance({
     required int lectureNumber,
     required int workspaceId,
