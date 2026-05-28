@@ -54,7 +54,38 @@ class FaceRecognizer:
             return None
 
         return encodings[0]
+    def recognize_face(self, face_encoding):
+    """
+    Matches a single face encoding against known faces.
+    Returns:
+        (student_id, confidence)
+    """
 
+    if not self.known_face_encodings:
+        return "Unknown", "Unknown"
+
+    distances = face_recognition.face_distance(
+        self.known_face_encodings,
+        face_encoding,
+    )
+
+    best_match_idx = int(np.argmin(distances))
+    best_distance = float(distances[best_match_idx])
+
+    if best_distance <= self.high_confidence:
+        return (
+            self.known_student_ids[best_match_idx],
+            "High confidence",
+        )
+
+    elif best_distance <= self.low_confidence:
+        return (
+            self.known_student_ids[best_match_idx],
+            "Low confidence",
+        )
+
+    return "Unknown", "Unknown"
+    
     def detect_faces(self, frame) -> List[Dict[str, Any]]:
         small = cv2.resize(frame, (0, 0), fx=self.frame_resizing, fy=self.frame_resizing)
         rgb_small = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
