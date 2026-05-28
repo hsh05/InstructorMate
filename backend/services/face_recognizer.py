@@ -54,7 +54,8 @@ class FaceRecognizer:
             return None
 
         return encodings[0]
-    def recognize_face(self, face_encoding):
+
+def recognize_face(self, face_encoding):
     """
     Matches a single face encoding against known faces.
     Returns:
