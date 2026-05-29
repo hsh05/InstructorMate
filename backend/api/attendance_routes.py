@@ -177,6 +177,39 @@ async def preview_images_attendance(
             bottom_left = frame[h//2:h, 0:w//2]
             bottom_right = frame[h//2:h, w//2:w]
 
+            # Zoom quadrants by 1.5x
+            top_left = cv2.resize(
+                top_left,
+                None,
+                fx=1.5,
+                fy=1.5,
+                interpolation=cv2.INTER_CUBIC,
+            )
+
+            top_right = cv2.resize(
+                top_right,
+                None,
+                fx=1.5,
+                fy=1.5,
+                interpolation=cv2.INTER_CUBIC,
+            )
+
+            bottom_left = cv2.resize(
+                bottom_left,
+                None,
+                fx=1.5,
+                fy=1.5,
+                interpolation=cv2.INTER_CUBIC,
+            )
+
+            bottom_right = cv2.resize(
+                bottom_right,
+                None,
+                fx=1.5,
+                fy=1.5,
+                interpolation=cv2.INTER_CUBIC,
+            )
+            
             regions = [
                 frame,         
                 top_left,
@@ -185,7 +218,7 @@ async def preview_images_attendance(
                 bottom_right,
             ]
         
-                    # One student should count only once per uploaded image
+            # One student should count only once per uploaded image
             image_detected_students = {}
 
             for region_idx, region in enumerate(regions):
