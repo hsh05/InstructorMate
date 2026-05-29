@@ -170,67 +170,83 @@ async def preview_images_attendance(
                 beta=10,
             )
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w = frame.shape[:2]
 
-            # ==========================================
-            # Scan 1: full image
-            # ==========================================
-            all_encodings = []
+            top_left = frame[0:h//2, 0:w//2]
+            top_right = frame[0:h//2, w//2:w]
+            bottom_left = frame[h//2:h, 0:w//2]
+            bottom_right = frame[h//2:h, w//2:w]
 
-            full_locs = face_recognition.face_locations(rgb, model="hog")
-            full_encs = face_recognition.face_encodings(rgb, full_locs)
-            all_encodings.extend(full_encs)
-
-            # ==========================================
-            # Scan 2-5: 4 tiles (2x2 grid)
-            # Helps detect small/distant faces
-            # ==========================================
-            img_h, img_w = rgb.shape[:2]
-            half_h, half_w = img_h // 2, img_w // 2
-
-            tiles = [
-                (0,      half_h, 0,      half_w),  # top-left
-                (0,      half_h, half_w, img_w),   # top-right
-                (half_h, img_h,  0,      half_w),  # bottom-left
-                (half_h, img_h,  half_w, img_w),   # bottom-right
+            regions = [
+                frame,         
+                top_left,
+                top_right,
+                bottom_left,
+                bottom_right,
             ]
+        
+                    # One student should count only once per uploaded image
+            image_detected_students = {}
 
-            for (r1, r2, c1, c2) in tiles:
-                tile = rgb[r1:r2, c1:c2]
-                tile_locs = face_recognition.face_locations(tile, model="hog")
-                tile_encs = face_recognition.face_encodings(tile, tile_locs)
-                all_encodings.extend(tile_encs)
+            for region_idx, region in enumerate(regions):
 
-            if not all_encodings:
-                continue
+                rh, rw = region.shape[:2]
 
-            # ==========================================
-            # Recognize every detected face encoding
-            # ==========================================
-            seen_in_this_image = set()
-
-            for encoding in all_encodings:
-                name, confidence = fr.recognize_face(encoding)
-
-                if name == "Unknown":
+                # Skip tiny regions
+                if rw < 200 or rh < 200:
                     continue
 
-                sid = str(name)
+                rgb = cv2.cvtColor(region, cv2.COLOR_BGR2RGB)
 
-                # Only count each student ONCE per image (tiles may detect same face twice)
-                if sid in seen_in_this_image:
+                face_locations = face_recognition.face_locations(
+                    rgb,
+                    model="hog",
+                )
+
+                print(
+                    f"[INFO] Region {region_idx} found "
+                    f"{len(face_locations)} faces"
+                )
+
+                if not face_locations:
                     continue
-                seen_in_this_image.add(sid)
 
-                if sid not in detection_counts:
-                    detection_counts[sid] = {
-                        "count": 0,
-                        "confidence": confidence,
-                    }
+                face_encodings = face_recognition.face_encodings(
+                    rgb,
+                    face_locations,
+                )
+
+                for encoding in face_encodings:
+
+                    student_id, confidence = fr.recognize_face(
+                        encoding
+                    )
+
+                    if student_id == "Unknown":
+                        continue
+
+                    sid = str(student_id)
+
+                    # Keep best confidence found for this image
+                    if sid not in image_detected_students:
+                        image_detected_students[sid] = confidence
+
+                    elif (
+                        image_detected_students[sid] != "High confidence"
+                        and confidence == "High confidence"
+                    ):
+                        image_detected_students[sid] = confidence
+
+            # Count each student only once per uploaded image
+            for sid, confidence in image_detected_students.items():
 
                 detection_counts[sid]["count"] += 1
-                # Keep the best confidence seen so far
-                if detection_counts[sid]["confidence"] != "High confidence":
+
+                if (
+                    detection_counts[sid]["confidence"]
+                    != "High confidence"
+                    and confidence == "High confidence"
+                ):
                     detection_counts[sid]["confidence"] = confidence
 
         # ==========================================
