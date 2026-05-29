@@ -172,32 +172,65 @@ async def preview_images_attendance(
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            face_locations = face_recognition.face_locations(
-                rgb,
-                model="hog",
-            )
+            # ==========================================
+            # Scan 1: full image
+            # ==========================================
+            all_encodings = []
 
-            if not face_locations:
+            full_locs = face_recognition.face_locations(rgb, model="hog")
+            full_encs = face_recognition.face_encodings(rgb, full_locs)
+            all_encodings.extend(full_encs)
+
+            # ==========================================
+            # Scan 2-5: 4 tiles (2x2 grid)
+            # Helps detect small/distant faces
+            # ==========================================
+            img_h, img_w = rgb.shape[:2]
+            half_h, half_w = img_h // 2, img_w // 2
+
+            tiles = [
+                (0,      half_h, 0,      half_w),  # top-left
+                (0,      half_h, half_w, img_w),   # top-right
+                (half_h, img_h,  0,      half_w),  # bottom-left
+                (half_h, img_h,  half_w, img_w),   # bottom-right
+            ]
+
+            for (r1, r2, c1, c2) in tiles:
+                tile = rgb[r1:r2, c1:c2]
+                tile_locs = face_recognition.face_locations(tile, model="hog")
+                tile_encs = face_recognition.face_encodings(tile, tile_locs)
+                all_encodings.extend(tile_encs)
+
+            if not all_encodings:
                 continue
 
-            face_encodings = face_recognition.face_encodings(
-                rgb,
-                face_locations,
-            )
+            # ==========================================
+            # Recognize every detected face encoding
+            # ==========================================
+            seen_in_this_image = set()
 
-            for encoding in face_encodings:
+            for encoding in all_encodings:
                 name, confidence = fr.recognize_face(encoding)
 
-                if name != "Unknown":
-                    sid = str(name)
+                if name == "Unknown":
+                    continue
 
-                    if sid not in detection_counts:
-                        detection_counts[sid] = {
-                            "count": 0,
-                            "confidence": confidence,
-                        }
+                sid = str(name)
 
-                    detection_counts[sid]["count"] += 1
+                # Only count each student ONCE per image (tiles may detect same face twice)
+                if sid in seen_in_this_image:
+                    continue
+                seen_in_this_image.add(sid)
+
+                if sid not in detection_counts:
+                    detection_counts[sid] = {
+                        "count": 0,
+                        "confidence": confidence,
+                    }
+
+                detection_counts[sid]["count"] += 1
+                # Keep the best confidence seen so far
+                if detection_counts[sid]["confidence"] != "High confidence":
                     detection_counts[sid]["confidence"] = confidence
 
         # ==========================================
