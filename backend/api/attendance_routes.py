@@ -172,10 +172,22 @@ async def preview_images_attendance(
 
             h, w = frame.shape[:2]
 
-            top_left = frame[0:h//2, 0:w//2]
-            top_right = frame[0:h//2, w//2:w]
-            bottom_left = frame[h//2:h, 0:w//2]
-            bottom_right = frame[h//2:h, w//2:w]
+            # Overlapping quadrants — each region extends 20% into the
+            # adjacent half so faces near the edges/center aren't cut off.
+            overlap_x = int(w * 0.20)   # horizontal overlap in pixels
+            overlap_y = int(h * 0.20)   # vertical overlap in pixels
+
+            mid_x = w // 2
+            mid_y = h // 2
+
+            top_left     = frame[0          : mid_y + overlap_y,
+                                0          : mid_x + overlap_x]
+            top_right    = frame[0          : mid_y + overlap_y,
+                                mid_x - overlap_x : w]
+            bottom_left  = frame[mid_y - overlap_y : h,
+                                0          : mid_x + overlap_x]
+            bottom_right = frame[mid_y - overlap_y : h,
+                                mid_x - overlap_x : w]
 
             # Zoom quadrants by 1.5x
             top_left = cv2.resize(
