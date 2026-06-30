@@ -193,32 +193,32 @@ async def preview_images_attendance(
             top_left = cv2.resize(
                 top_left,
                 None,
-                fx=1.5,
-                fy=1.5,
+                fx=1.6,
+                fy=1.6,
                 interpolation=cv2.INTER_CUBIC,
             )
 
             top_right = cv2.resize(
                 top_right,
                 None,
-                fx=1.5,
-                fy=1.5,
+                fx=1.6,
+                fy=1.6,
                 interpolation=cv2.INTER_CUBIC,
             )
 
             bottom_left = cv2.resize(
                 bottom_left,
                 None,
-                fx=1.5,
-                fy=1.5,
+                fx=1.6,
+                fy=1.6,
                 interpolation=cv2.INTER_CUBIC,
             )
 
             bottom_right = cv2.resize(
                 bottom_right,
                 None,
-                fx=1.5,
-                fy=1.5,
+                fx=1.6,
+                fy=1.6,
                 interpolation=cv2.INTER_CUBIC,
             )
             
