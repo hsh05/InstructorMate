@@ -70,7 +70,8 @@ class AttendanceService:
                 )
 
                 last_detections = facerec.detect_faces(zoomed_frame)
-
+                del zoomed_frame
+                
                 for d in last_detections:
                     if d["student_id"] is None:
                         continue
