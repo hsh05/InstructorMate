@@ -65,13 +65,13 @@ class AttendanceService:
 
                 # Upscale the whole frame 
                 zoomed_frame = cv2.resize(
-                    frame, None, fx=2.0, fy=2.0,
+                    frame, None, fx=1.6, fy=1.6,
                     interpolation=cv2.INTER_CUBIC,
                 )
 
                 last_detections = facerec.detect_faces(zoomed_frame)
                 del zoomed_frame
-                
+
                 for d in last_detections:
                     if d["student_id"] is None:
                         continue
