@@ -62,12 +62,19 @@ class AttendanceService:
 
             if (current_time - last_process_time) >= process_interval:
                 last_process_time = current_time
-                last_detections = facerec.detect_faces(frame)
+
+                # Upscale the whole frame 
+                zoomed_frame = cv2.resize(
+                    frame, None, fx=1.5, fy=1.5,
+                    interpolation=cv2.INTER_CUBIC,
+                )
+
+                last_detections = facerec.detect_faces(zoomed_frame)
 
                 for d in last_detections:
                     if d["student_id"] is None:
                         continue
-                    self.record_detection(d["student_id"], d["name"], d["confidence"])
+                    self.record_detection(d["student_id"], d["name"], d["confidence"])        
 
         cap.release()
 
