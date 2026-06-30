@@ -40,7 +40,7 @@ class AttendanceService:
 
         return rows
 
-    def process_video_preview(self, facerec, video_path: str, lecture_number: str, students, process_fps: int = 2, min_detections_for_present: int = 2):
+    def process_video_preview(self, facerec, video_path: str, lecture_number: str, students, process_fps: int = 3, min_detections_for_present: int = 2):
         self.reset()
 
         cap = cv2.VideoCapture(video_path)
@@ -65,7 +65,7 @@ class AttendanceService:
 
                 # Upscale the whole frame 
                 zoomed_frame = cv2.resize(
-                    frame, None, fx=1.7, fy=1.7,
+                    frame, None, fx=1.6, fy=1.6,
                     interpolation=cv2.INTER_CUBIC,
                 )
 
