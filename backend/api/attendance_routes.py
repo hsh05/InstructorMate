@@ -63,7 +63,7 @@ async def process_video_attendance(
             lecture_number=str(lecture_number),
             students=db_students,
             process_fps=4,
-            min_detections_for_present=2
+            min_detections_for_present=1
         )
 
         rows = [
