@@ -40,7 +40,7 @@ class AttendanceService:
 
         return rows
 
-    def process_video_preview(self, facerec, video_path: str, lecture_number: str, students, process_fps: int = 2, min_detections_for_present: int = 2):
+    def process_video_preview(self, facerec, video_path: str, lecture_number: str, students, process_fps: int = 1, min_detections_for_present: int = 2):
         self.reset()
 
         cap = cv2.VideoCapture(video_path)
