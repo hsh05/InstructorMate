@@ -469,7 +469,7 @@ class ApiService {
       req.files.add(videoPart);
 
       final streamed = await req.send().timeout(
-          const Duration(minutes: 5)); // Allow longer for video processing
+          const Duration(minutes: 20)); // Allow longer for video processing
       final response = await http.Response.fromStream(streamed);
 
       if (response.statusCode == 200) {
