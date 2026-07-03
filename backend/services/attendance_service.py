@@ -75,6 +75,7 @@ class AttendanceService:
                 for d in last_detections:
                     if d["student_id"] is None:
                         continue
+                    print(f"[DETECTED] {d['name']} ({d['student_id']}) - {d['confidence']}")    
                     self.record_detection(d["student_id"], d["name"], d["confidence"])        
 
         cap.release()
