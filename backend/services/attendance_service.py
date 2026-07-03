@@ -65,7 +65,7 @@ class AttendanceService:
 
                 # Upscale the whole frame 
                 zoomed_frame = cv2.resize(
-                    frame, None, fx=1.8, fy=1.8,
+                    frame, None, fx=1.7, fy=1.7,
                     interpolation=cv2.INTER_CUBIC,
                 )
 
