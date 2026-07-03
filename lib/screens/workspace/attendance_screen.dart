@@ -169,11 +169,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       if (index != -1) {
         final currentStatus = previewRows[index]["Status"];
 
+        // If this source says Present, always apply it (union across multiple videos/images)
+        // If current is already Present, keep it — don't downgrade to Absent
+        // If current is null or Absent, apply whatever the backend says
         if (currentStatus == "Present") {
-        } else if (status == "Present") {
-          previewRows[index]["Status"] = "Present";
-          previewRows[index]["Confidence"] = confidence;
-        } else if (currentStatus == null) {
+          // already present — don't downgrade
+        } else {
           previewRows[index]["Status"] = status;
           previewRows[index]["Confidence"] = confidence;
         }
